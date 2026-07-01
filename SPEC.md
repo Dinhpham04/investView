@@ -151,6 +151,10 @@ docs/
 
 InvestView is a modular monolith backend with a React SPA frontend.
 
+Architecture decisions:
+
+- ADR-001: `docs/decisions/ADR-001-depend-on-internal-contracts.md`
+
 ```text
 DNSE REST API / DNSE WebSocket
         |
@@ -179,6 +183,8 @@ React frontend
 ```
 
 Core rule: the frontend never calls DNSE directly. All DNSE credentials, retries, caching, data normalization, and logging stay in the backend.
+
+Core dependency rule: application, domain, API, and frontend code depend on InvestView-owned contracts, not DNSE payloads or SDK types. DNSE-specific code stays in `InvestView.Infrastructure`.
 
 ## Backend Architecture
 
