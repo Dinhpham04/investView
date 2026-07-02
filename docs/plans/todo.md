@@ -3,8 +3,8 @@
 ## Milestone 1: Scaffold and Walking Skeleton
 
 - [x] Task 1: Scaffold backend solution
-- [ ] Task 2: Scaffold React app
-- [ ] Checkpoint: Walking skeleton
+- [x] Task 2: Scaffold React app
+- [x] Checkpoint: Walking skeleton
 
 ## Milestone 2: Market Data Contracts, Mock Provider, and Caching
 

@@ -90,6 +90,8 @@ Goal: create a runnable app from frontend to backend before adding real business
 
 ### Task 2: Scaffold React App
 
+**Status:** Done
+
 **Description:** Create the React TypeScript app with routing, feature folder structure, API client shell, and a basic shell page that can call the backend health endpoint.
 
 **Acceptance criteria:**
@@ -116,10 +118,12 @@ Goal: create a runnable app from frontend to backend before adding real business
 
 ### Checkpoint: Walking Skeleton
 
-- [ ] Backend builds and tests pass.
-- [ ] Frontend builds and tests pass.
-- [ ] Frontend can call backend.
-- [ ] No business logic has been added prematurely.
+**Status:** Done
+
+- [x] Backend builds and tests pass.
+- [x] Frontend builds and tests pass.
+- [x] Frontend can call backend.
+- [x] No business logic has been added prematurely.
 
 ## Milestone 2: Market Data Contracts, Mock Provider, and Caching
 
