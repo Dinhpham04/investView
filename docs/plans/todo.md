@@ -2,7 +2,7 @@
 
 ## Milestone 1: Scaffold and Walking Skeleton
 
-- [ ] Task 1: Scaffold backend solution
+- [x] Task 1: Scaffold backend solution
 - [ ] Task 2: Scaffold React app
 - [ ] Checkpoint: Walking skeleton
 

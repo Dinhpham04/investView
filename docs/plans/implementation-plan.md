@@ -57,6 +57,8 @@ Goal: create a runnable app from frontend to backend before adding real business
 
 ### Task 1: Scaffold Backend Solution
 
+**Status:** Done
+
 **Description:** Create the .NET solution, backend projects, test projects, references, basic configuration, Swagger, health endpoint, and build/test pipeline.
 
 **Acceptance criteria:**

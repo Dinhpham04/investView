@@ -1,0 +1,6 @@
+@InvestView.Api_HostAddress = http://localhost:5122
+
+GET {{InvestView.Api_HostAddress}}/health
+Accept: application/json
+
+###
