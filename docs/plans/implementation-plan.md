@@ -17,9 +17,25 @@ Primary strategy:
 - Use a modular monolith backend: `Api`, `Application`, `Domain`, `Infrastructure`.
 - Use React feature folders for frontend workflows.
 - Depend on internal contracts, not DNSE payloads. See `docs/decisions/ADR-001-depend-on-internal-contracts.md`.
+- Use REST snapshot plus WebSocket stream for market data. See `docs/decisions/ADR-002-market-data-snapshot-plus-stream.md`.
 - Use mock market data first, then DNSE behind the same interfaces.
 - Use `IMemoryCache` for MVP caching; Redis is out of scope unless approved later.
 - Use SignalR for app-facing realtime updates.
+
+## DNSE Source Alignment
+
+Use `docs/openapi-sdk-main` as the implementation reference for DNSE details that are missing or ambiguous in the public docs.
+
+Important SDK-derived constraints:
+
+- REST adapter defaults: base URL `https://openapi.dnse.com.vn`, API version `2026-05-07`.
+- REST signing is isolated from business logic and must be unit-tested. The SDK signs method plus path, date header, and nonce; query parameters are sent on the URL but are not part of the SDK signature string.
+- REST date header defaults to `Date`, but the header name must be configurable because DNSE documentation/examples may use `X-Aux-Date`.
+- WebSocket auth is a separate flow from REST auth: after connect/welcome, sign `api_key:timestamp:nonce` with HMAC-SHA256 hex.
+- WebSocket adapter must handle subscribe acknowledgements, `ping`/`pong`, `error`, reconnect, re-auth, re-subscribe, and stream health.
+- WebSocket event type mapping must handle at least `t`, `q`, `sd`, and optionally `s` for MVP.
+- Internal DTO mapping must normalize REST/WebSocket field differences such as `quantity` versus `qtty`.
+- Do not copy unsafe SDK behavior such as disabling TLS certificate validation.
 
 ## Dependency Graph
 
@@ -131,21 +147,28 @@ Goal: establish the market data boundary before DNSE integration.
 
 ### Task 3: Add Market Data Contracts and Mock Provider
 
-**Description:** Define app-owned market data DTOs and interfaces, then implement mock quote data behind `IMarketDataProvider`.
+**Status:** Done
+
+**Description:** Define app-owned market data DTOs and interfaces, then implement mock quote data behind `IMarketDataProvider`. Contracts should be shaped for the future DNSE REST snapshot plus WebSocket stream design, without depending on DNSE payload types.
 
 **Acceptance criteria:**
 
-- [ ] `MarketQuoteDto`, `SymbolDetailDto`, and `OhlcBarDto` exist in Application.
-- [ ] `IMarketDataProvider` exists in Application abstractions.
-- [ ] `MockMarketDataProvider` lives in Infrastructure.
-- [ ] API returns mock market board data without exposing infrastructure types.
+- [x] `MarketQuoteDto`, `SymbolDetailDto`, and `OhlcBarDto` exist in Application.
+- [x] `PriceLevelDto` or equivalent exists for bid/ask levels.
+- [x] Quote DTOs include the fields needed by market board snapshot and updates: symbol, board, last price, changed value/percent, volume, value, reference/ceiling/floor, bid/ask levels, trading status, and updated time.
+- [x] `IMarketDataProvider` exists in Application abstractions.
+- [x] `IMarketDataStream` or a planned stream update DTO exists if needed to keep snapshot and realtime contracts aligned.
+- [x] `MockMarketDataProvider` lives in Infrastructure.
+- [x] API returns mock market board data without exposing infrastructure types.
+- [x] Contract names are provider-neutral and do not contain `Dnse`.
 
 **Verification:**
 
-- [ ] Unit tests prove mock provider returns stable sample quotes.
-- [ ] API test proves `GET /api/market/quotes` returns expected DTO shape.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] Unit tests prove mock provider returns stable sample quotes.
+- [x] API test proves `GET /api/market/quotes` returns expected DTO shape.
+- [x] Tests prove bid/ask level structure and timestamp fields serialize predictably.
+- [x] `dotnet build`
+- [x] `dotnet test`
 
 **Dependencies:** Task 1
 
@@ -161,20 +184,22 @@ Goal: establish the market data boundary before DNSE integration.
 
 ### Task 4: Add Cached Market Data Provider
 
+**Status:** Done
+
 **Description:** Add `CachedMarketDataProvider` as a decorator around `IMarketDataProvider` using `IMemoryCache`.
 
 **Acceptance criteria:**
 
-- [ ] Market board reads go through cache.
-- [ ] TTL values are explicit and configurable.
-- [ ] Development logs can show cache hit/miss.
-- [ ] Existing provider contract does not change.
+- [x] Market board reads go through cache.
+- [x] TTL values are explicit and configurable.
+- [x] Development logs can show cache hit/miss.
+- [x] Existing provider contract does not change.
 
 **Verification:**
 
-- [ ] Unit tests cover cache hit and cache miss behavior.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] Unit tests cover cache hit and cache miss behavior.
+- [x] `dotnet build`
+- [x] `dotnet test`
 
 **Dependencies:** Task 3
 
@@ -227,13 +252,14 @@ Goal: prove realtime data handling before adding trading complexity.
 
 ### Task 6: Add SignalR Quote Hub with Mock Stream
 
-**Description:** Add backend SignalR `QuoteHub` and a mock quote update service that broadcasts quote changes.
+**Description:** Add backend SignalR `QuoteHub` and a mock quote update service that broadcasts quote changes. This establishes the app-facing realtime contract before DNSE WebSocket is introduced.
 
 **Acceptance criteria:**
 
 - [ ] API exposes `/hubs/quotes`.
 - [ ] Mock stream publishes quote updates for known symbols.
 - [ ] SignalR payload uses internal `MarketQuoteDto` or a dedicated app-owned update DTO.
+- [ ] SignalR contract supports partial quote updates without exposing DNSE message type names.
 - [ ] Stream can be disabled in tests/config.
 
 **Verification:**
@@ -406,7 +432,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 11: Add DNSE REST Adapter
 
-**Description:** Implement `DnseMarketDataProvider` behind `IMarketDataProvider` and map DNSE REST responses into internal DTOs.
+**Description:** Implement `DnseMarketDataProvider` behind `IMarketDataProvider` and map DNSE REST responses into internal DTOs. Use the local SDK and DNSE docs as the source of truth for endpoints, signature shape, API version, and header names.
 
 **Acceptance criteria:**
 
@@ -414,10 +440,18 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [ ] Missing credentials fall back to mock provider or fail with a clear startup/config message.
 - [ ] DNSE response models do not leave Infrastructure.
 - [ ] REST adapter supports market board, symbol detail, and OHLC data needed by MVP.
+- [ ] REST client uses default base URL `https://openapi.dnse.com.vn` unless overridden.
+- [ ] REST client sends API version `2026-05-07` unless overridden.
+- [ ] REST date header name is configurable and defaults to `Date`.
+- [ ] REST signer is isolated and signs method, path, date header, and nonce as shown by the local SDK.
+- [ ] Query parameters are handled consistently with the SDK: present in the request URL but not in the signed path string.
+- [ ] Adapter uses TLS certificate validation; it does not copy the SDK's disabled-cert behavior.
 
 **Verification:**
 
 - [ ] Unit tests cover DNSE response mapping using fixture JSON.
+- [ ] Unit tests cover REST signature construction with deterministic timestamp and nonce.
+- [ ] Unit tests cover URL/query construction for `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/ohlc`.
 - [ ] Integration path can be manually verified when credentials are available.
 - [ ] `dotnet build`
 - [ ] `dotnet test`
@@ -435,7 +469,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 12: Add DNSE WebSocket Adapter
 
-**Description:** Implement DNSE inbound WebSocket client and forward normalized quote updates through existing SignalR flow.
+**Description:** Implement DNSE inbound WebSocket client and forward normalized quote updates through existing SignalR flow. Use the local SDK WebSocket implementation as the reference for auth, channel names, message types, heartbeat, and reconnect behavior.
 
 **Acceptance criteria:**
 
@@ -443,10 +477,18 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [ ] Client can subscribe, handle ping/pong, reconnect, and resubscribe.
 - [ ] DNSE messages are mapped to internal quote update DTOs.
 - [ ] Mock realtime remains available without DNSE credentials.
+- [ ] WebSocket auth signs `api_key:timestamp:nonce` with HMAC-SHA256 hex and is not confused with REST HTTP signing.
+- [ ] MVP subscribes to `tick.G1.json`, `top_price.G1.json`, and `security_definition.G1.json`.
+- [ ] Optional session state uses `session.{productGroupId}.G1.json` only when needed by the UI.
+- [ ] Adapter handles control `action` values and market data type `T` values.
+- [ ] Adapter tracks stream health: connected, authenticated, last pong, last message time, and active subscriptions.
+- [ ] Per-symbol update ordering is preserved before broadcasting updates through SignalR.
 
 **Verification:**
 
 - [ ] Unit tests cover signature construction and message mapping.
+- [ ] Unit tests cover ping/pong handling, reconnect re-subscription state, and unknown message tolerance.
+- [ ] Fixture tests cover at least trade `t`, quote `q`, security definition `sd`, and session `s` if session is implemented.
 - [ ] Manual verification with credentials if available.
 - [ ] `dotnet build`
 - [ ] `dotnet test`

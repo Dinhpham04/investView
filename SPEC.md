@@ -4,7 +4,7 @@
 
 Accepted working spec.
 
-Last updated: 2026-07-01.
+Last updated: 2026-07-03.
 
 ## Source References
 
@@ -12,6 +12,14 @@ Last updated: 2026-07-01.
 - DNSE Market Data SDKs: https://developers.dnse.com.vn/docs/sdk/market_data/
 - DNSE custom WebSocket client: https://developers.dnse.com.vn/docs/sdk/build_websocket/
 - DNSE Market Data REST APIs: https://developers.dnse.com.vn/docs/dnse/market-data/
+- DNSE market data WebSocket connection guide: https://developers.dnse.com.vn/docs/guide/market-data/connect
+- DNSE market data enum guide: https://developers.dnse.com.vn/docs/guide/enum/market_data
+- DNSE authentication guide: https://developers.dnse.com.vn/docs/guide/intro/authentication
+- Local DNSE SDK reference: `docs/openapi-sdk-main/python/dnse/api/client.py`
+- Local DNSE REST signing reference: `docs/openapi-sdk-main/python/dnse/api/common.py`
+- Local DNSE WebSocket reference: `docs/openapi-sdk-main/python/dnse/websocket/client.py`
+- Local DNSE WebSocket auth reference: `docs/openapi-sdk-main/python/dnse/websocket/auth.py`
+- Local DNSE WebSocket model reference: `docs/openapi-sdk-main/python/dnse/websocket/models.py`
 
 ## Assumptions
 
@@ -154,6 +162,7 @@ InvestView is a modular monolith backend with a React SPA frontend.
 Architecture decisions:
 
 - ADR-001: `docs/decisions/ADR-001-depend-on-internal-contracts.md`
+- ADR-002: `docs/decisions/ADR-002-market-data-snapshot-plus-stream.md`
 
 ```text
 DNSE REST API / DNSE WebSocket
@@ -263,17 +272,33 @@ Responsibilities:
 
 Provider interfaces:
 
+Initial app-owned market data contracts:
+
+- `MarketQuoteDto`: normalized market-board row and snapshot/update payload.
+- `PriceLevelDto`: normalized bid/ask level with price and quantity.
+- `SymbolDetailDto`: symbol metadata, exchange/board data, and daily reference data.
+- `OhlcBarDto`: normalized historical bar data.
+- `MarketDataChannel`: app-owned channel enum such as trade, top price, security definition, OHLC, and session.
+
 ```csharp
 public interface IMarketDataProvider
 {
-    Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
+        IReadOnlyCollection<string> symbols,
+        string boardId,
+        CancellationToken cancellationToken);
+
     Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, CancellationToken cancellationToken);
     Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(string symbol, string resolution, CancellationToken cancellationToken);
 }
 
 public interface IMarketDataStream
 {
-    Task SubscribeAsync(IReadOnlyCollection<string> symbols, CancellationToken cancellationToken);
+    Task SubscribeAsync(
+        IReadOnlyCollection<string> symbols,
+        string boardId,
+        IReadOnlyCollection<MarketDataChannel> channels,
+        CancellationToken cancellationToken);
 }
 ```
 
@@ -327,6 +352,10 @@ Frontend principles:
 
 DNSE REST APIs provide baseline and historical market data. The market data documentation includes endpoints for instrument details, security definitions, OHLC history, latest trades, latest bid/ask, trading days, foreign investor data, and trading session data.
 
+The DNSE SDK stored under `docs/openapi-sdk-main` is treated as the implementation reference when the public documentation is ambiguous. The SDK clarifies REST signature construction, default API version, configurable date header, WebSocket authentication, channel names, message type mapping, reconnect behavior, and payload model differences.
+
+DNSE-specific protocol code must stay in `InvestView.Infrastructure`. Application, API, SignalR, and React code use InvestView-owned contracts only.
+
 MVP REST usage:
 
 - `GET /instruments`: symbol metadata and basic instrument data.
@@ -334,6 +363,17 @@ MVP REST usage:
 - `GET /price/ohlc`: historical OHLC bars for symbol detail chart.
 - `GET /price/:symbol/trades/latest`: latest matched trades.
 - `GET /price/:symbol/quotes/latest`: latest bid/ask data.
+- `GET /market/trading-session`: trading session state where the market board needs exchange/session labels.
+- `GET /market/working-dates`: optional calendar support for end-of-day and stale-data handling.
+
+REST adapter requirements:
+
+- Base URL defaults to `https://openapi.dnse.com.vn`.
+- API version defaults to `2026-05-07` unless overridden by configuration.
+- The date header defaults to `Date`, but the header name must be configurable because DNSE examples may also use `X-Aux-Date`.
+- REST signatures must be implemented in an isolated signer service and covered by unit tests with deterministic timestamp and nonce inputs.
+- The local SDK signs the request method plus path, date header, and nonce; query parameters are sent on the URL but are not part of the SDK signature string.
+- REST response models must be mapped into internal DTOs before leaving Infrastructure.
 
 DNSE WebSocket provides realtime market updates. The documented base stream endpoint is:
 
@@ -345,16 +385,29 @@ MVP WebSocket choices:
 
 - Use `encoding=json` first for debuggability.
 - Consider `msgpack` later for performance.
-- Authenticate with HMAC-SHA256 using backend-held `api_key` and `api_secret`.
+- Authenticate after connection/welcome using backend-held `api_key` and `api_secret`.
+- WebSocket authentication uses an HMAC-SHA256 hex digest over `api_key:timestamp:nonce`, which is different from the REST HTTP signature flow.
 - Subscribe to channels needed for the market board:
   - `tick.G1.json` for trade ticks.
   - `top_price.G1.json` for best bid/ask.
   - `security_definition.G1.json` where daily reference/ceiling/floor status is needed.
+- Optionally subscribe to `session.{productGroupId}.G1.json` when the UI needs session state.
 - Handle DNSE application-level `ping` and reply with `pong`.
 - Reconnect with backoff and resubscribe after disconnect.
 - Treat control messages by known `action` values, and market data messages by payload type such as `T`.
+- Preserve per-symbol update ordering inside the backend stream adapter before broadcasting through SignalR.
+- Expose a health signal for DNSE stream status: connected, authenticated, last pong, subscriptions, and last message time.
 
 The backend converts DNSE-specific payloads into InvestView DTOs before sending them to the frontend.
+
+Known DNSE mapping details from the local SDK:
+
+- WebSocket message types include `t` for trade, `te` for trade extra, `sd` for security definition, `q` for top price, `b` for OHLC, `bc` for closed OHLC, and `s` for trading session.
+- REST quote price levels use `quantity`; WebSocket quote models use `qtty`. Internal DTOs must normalize both to one field name.
+- DNSE timestamps may arrive as ISO strings, Unix timestamps, or protobuf-style objects with seconds/nanos. Internal DTOs should use a single timestamp type.
+- `G1` is the first MVP board scope for normal stock market-board data unless a later spec update expands the market scope.
+
+Do not copy unsafe SDK behavior blindly. In particular, production .NET HTTP clients must keep TLS certificate validation enabled.
 
 ## Caching Strategy
 
