@@ -1,0 +1,23 @@
+namespace InvestView.Application.Dtos.MarketData;
+
+public sealed record MarketQuoteDto(
+    string Symbol,
+    string BoardId,
+    string MarketId,
+    string DisplayName,
+    decimal ReferencePrice,
+    decimal CeilingPrice,
+    decimal FloorPrice,
+    decimal LastPrice,
+    decimal Change,
+    decimal ChangePercent,
+    long LastQuantity,
+    long TotalVolume,
+    decimal TotalValue,
+    decimal OpenPrice,
+    decimal HighPrice,
+    decimal LowPrice,
+    IReadOnlyList<PriceLevelDto> BidLevels,
+    IReadOnlyList<PriceLevelDto> AskLevels,
+    string TradingStatus,
+    DateTimeOffset UpdatedAt);

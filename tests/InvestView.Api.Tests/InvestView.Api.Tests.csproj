@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\InvestView.Api\InvestView.Api.csproj" />
+    <ProjectReference Include="..\..\src\InvestView.Infrastructure\InvestView.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
