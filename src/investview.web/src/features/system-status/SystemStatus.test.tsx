@@ -1,14 +1,14 @@
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SystemStatus } from './SystemStatus';
+import { SystemStatusIndicator } from './SystemStatus';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 
-describe('SystemStatus', () => {
+describe('SystemStatusIndicator', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('renders backend health when the API is reachable', async () => {
+  it('renders a compact online API status when the API is reachable', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -19,15 +19,14 @@ describe('SystemStatus', () => {
       ),
     );
 
-    renderWithQueryClient(<SystemStatus />);
+    renderWithQueryClient(<SystemStatusIndicator />);
 
-    expect(screen.getByText('Checking')).toBeInTheDocument();
-    expect(await screen.findByText('Healthy')).toBeInTheDocument();
-    expect(screen.getByText('InvestView.Api')).toBeInTheDocument();
-    expect(screen.getByText('Connected')).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'API checking' })).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'API online' })).toBeInTheDocument();
+    expect(screen.getByText('API')).toBeInTheDocument();
   });
 
-  it('renders an offline state when the API request fails', async () => {
+  it('renders a compact offline API status when the API request fails', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -38,9 +37,8 @@ describe('SystemStatus', () => {
       ),
     );
 
-    renderWithQueryClient(<SystemStatus />);
+    renderWithQueryClient(<SystemStatusIndicator />);
 
-    expect(await screen.findByText('Offline')).toBeInTheDocument();
-    expect(screen.getByText('Request failed: 503 Service Unavailable')).toBeInTheDocument();
+    expect(await screen.findByRole('status', { name: 'API offline' })).toBeInTheDocument();
   });
 });

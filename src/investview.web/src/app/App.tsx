@@ -1,7 +1,7 @@
 import { AllCommunityModule } from 'ag-grid-community';
 import { AgGridProvider } from 'ag-grid-react';
 import { MarketBoard } from '../features/market-board/MarketBoard';
-import { SystemStatus } from '../features/system-status/SystemStatus';
+import { SystemStatusIndicator } from '../features/system-status/SystemStatus';
 
 const agGridModules = [AllCommunityModule];
 
@@ -15,6 +15,7 @@ export function App() {
             <h1 className="text-base font-bold leading-tight text-market-text">Market workstation</h1>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-semibold">
+            <SystemStatusIndicator />
             <span className="rounded-sm border border-market-border bg-market-surface-2 px-2 py-1 text-state-warning">
               Local demo
             </span>
@@ -24,11 +25,8 @@ export function App() {
           </div>
         </header>
 
-        <section className="grid min-h-[calc(100svh-45px)] grid-cols-1 gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_320px]" aria-label="InvestView workspace">
+        <section className="grid min-h-[calc(100svh-45px)] grid-cols-1 p-3" aria-label="InvestView workspace">
           <MarketBoard />
-          <aside className="min-w-0">
-            <SystemStatus />
-          </aside>
         </section>
       </main>
     </AgGridProvider>
