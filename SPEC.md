@@ -4,7 +4,7 @@
 
 Accepted working spec.
 
-Last updated: 2026-07-03.
+Last updated: 2026-07-06.
 
 ## Source References
 
@@ -20,6 +20,8 @@ Last updated: 2026-07-03.
 - Local DNSE WebSocket reference: `docs/openapi-sdk-main/python/dnse/websocket/client.py`
 - Local DNSE WebSocket auth reference: `docs/openapi-sdk-main/python/dnse/websocket/auth.py`
 - Local DNSE WebSocket model reference: `docs/openapi-sdk-main/python/dnse/websocket/models.py`
+- AG Grid React data grid: https://www.ag-grid.com/react-data-grid/
+- AG Grid high-frequency update guidance: https://www.ag-grid.com/react-data-grid/data-update/
 
 ## Assumptions
 
@@ -59,6 +61,7 @@ Success means the project tells a clear technical story:
 - Realtime outbound to frontend: SignalR.
 - Third-party market data: DNSE REST APIs and DNSE WebSocket.
 - Frontend: React with TypeScript.
+- Market board grid: AG Grid Community for grouped, pinned, high-density quote display.
 - Database: SQL Server.
 - Data access: Entity Framework Core.
 - Authentication: JWT-based demo auth.
@@ -163,6 +166,7 @@ Architecture decisions:
 
 - ADR-001: `docs/decisions/ADR-001-depend-on-internal-contracts.md`
 - ADR-002: `docs/decisions/ADR-002-market-data-snapshot-plus-stream.md`
+- ADR-003: `docs/decisions/ADR-003-use-ag-grid-for-market-board.md`
 
 ```text
 DNSE REST API / DNSE WebSocket
@@ -318,7 +322,7 @@ app/
   router, providers, app shell, query client setup
 
 features/market-board/
-  market board page, table, quote row, quote store
+  market board page, AG Grid configuration, quote mapping, quote update store
 
 features/watchlist/
   watchlist panel, add/remove interactions
@@ -346,7 +350,18 @@ Frontend principles:
 - Use TypeScript types for API responses and component props.
 - Keep realtime state localized to market/watchlist features.
 - Avoid full-page re-renders when a single quote changes.
-- Use accessible table semantics for market data.
+- Use AG Grid Community for the market board because the UI needs grouped headers, pinned columns, dense cells, virtualization, and future high-frequency quote updates.
+- Keep AG Grid as a view-layer implementation detail. API types, quote mapping, price color rules, and SignalR update merge logic must remain InvestView-owned and testable outside the grid where practical.
+- Do not use AG Grid Enterprise features for the MVP.
+
+Market board UI requirements:
+
+- Render a securities-style grouped header, not a generic table.
+- Include at least: `CK`, `Trần`, `Sàn`, `TC`, 3 bid price/quantity levels, matched price/quantity/change/change percent, 3 ask price/quantity levels, total volume, high, low, status, and updated time.
+- Use Vietnamese market color semantics: ceiling purple, floor cyan/blue, reference yellow, increase green, decrease red, unchanged/reference yellow or neutral according to context.
+- Keep the symbol column pinned/sticky on wide horizontal boards.
+- Support horizontal scroll on narrow screens without breaking row alignment.
+- For Task 5, load the initial snapshot from `GET /api/market/quotes`; SignalR updates are added in Task 7.
 
 ## DNSE Market Data Integration
 
@@ -568,6 +583,7 @@ Frontend:
 
 - Component tests for:
   - market board rendering,
+  - market board price color rules and quote mapping,
   - watchlist add/remove,
   - order ticket validation,
   - portfolio summary.

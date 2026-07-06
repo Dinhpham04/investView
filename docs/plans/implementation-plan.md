@@ -21,6 +21,7 @@ Primary strategy:
 - Use mock market data first, then DNSE behind the same interfaces.
 - Use `IMemoryCache` for MVP caching; Redis is out of scope unless approved later.
 - Use SignalR for app-facing realtime updates.
+- Use AG Grid Community for the market board UI. See `docs/decisions/ADR-003-use-ag-grid-for-market-board.md`.
 
 ## DNSE Source Alignment
 
@@ -213,18 +214,26 @@ Goal: establish the market data boundary before DNSE integration.
 
 ### Task 5: Build Market Board UI
 
-**Description:** Build the first real UI slice: React market board consumes `GET /api/market/quotes` and renders dense securities data.
+**Description:** Build the first real UI slice: React market board consumes `GET /api/market/quotes` and renders a dense Vietnamese securities-style board with AG Grid Community. This task is REST snapshot only; realtime updates are added in Task 7.
 
 **Acceptance criteria:**
 
-- [ ] Market board page renders symbol, last price, change, percent change, volume, and trading status.
+- [ ] AG Grid Community is added as the market board grid dependency.
+- [ ] Market board page renders grouped columns for `CK`, `Trần`, `Sàn`, `TC`, `Bên mua`, `Khớp lệnh`, `Bên bán`, total volume, high, low, status, and updated time.
+- [ ] Bid and ask depth display 3 price/quantity levels from `bidLevels` and `askLevels`.
+- [ ] Matched quote columns display last price, last quantity, absolute change, percent change, and total volume.
+- [ ] Securities color rules are implemented for ceiling, floor, reference, increase, decrease, and unchanged values.
+- [ ] Symbol column is pinned/sticky and the wide board supports horizontal scrolling.
 - [ ] API client types are separate from components.
+- [ ] Quote-to-grid mapping and price formatting are testable outside the grid component.
 - [ ] UI handles loading and error states.
 - [ ] Layout works on desktop and mobile widths.
+- [ ] The UI does not imply data is live realtime until Task 7 is complete.
 
 **Verification:**
 
 - [ ] Component tests cover market board render states.
+- [ ] Unit tests cover quote mapping, price formatting, and color classification.
 - [ ] `npm run build`
 - [ ] `npm run test`
 - [ ] Manual browser check against backend.
@@ -287,7 +296,7 @@ Goal: prove realtime data handling before adding trading complexity.
 **Acceptance criteria:**
 
 - [ ] SignalR connection is isolated in `shared/realtime`.
-- [ ] Market board updates changed rows without replacing unrelated UI state.
+- [ ] Market board updates changed rows through stable row identity and AG Grid transactions instead of replacing unrelated UI state.
 - [ ] Connection state is visible enough for debugging.
 - [ ] UI still works if realtime connection fails.
 

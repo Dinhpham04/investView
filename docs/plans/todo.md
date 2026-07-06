@@ -13,7 +13,12 @@
   - [x] Include bid/ask level DTO and normalized timestamp fields
   - [x] Keep all contracts provider-neutral; no DNSE types outside Infrastructure
 - [x] Task 4: Add cached market data provider
-- [ ] Task 5: Build market board UI
+- [ ] Task 5: Build market board UI with AG Grid Community
+  - [ ] Render grouped securities-board columns, not a generic quote table
+  - [ ] Show 3 bid levels, matched quote fields, and 3 ask levels
+  - [ ] Apply ceiling/floor/reference/increase/decrease color rules
+  - [ ] Keep API client, quote mapping, and grid component separated
+  - [ ] Keep Task 5 as REST snapshot only; SignalR updates come in Task 7
 - [ ] Checkpoint: Market board REST
 
 ## Milestone 3: Realtime Quote Updates
@@ -21,6 +26,7 @@
 - [ ] Task 6: Add SignalR quote hub with mock stream
   - [ ] Establish app-facing realtime DTO before DNSE WebSocket adapter
 - [ ] Task 7: Connect frontend to realtime quotes
+  - [ ] Apply quote updates through AG Grid row identity and transactions
 - [ ] Checkpoint: Realtime market board
 
 ## Milestone 4: Persistence, Watchlist, Portfolio, and Simulated Orders
