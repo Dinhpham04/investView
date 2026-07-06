@@ -14,6 +14,7 @@
   - [x] Keep all contracts provider-neutral; no DNSE types outside Infrastructure
 - [x] Task 4: Add cached market data provider
 - [ ] Task 5: Build market board UI with AG Grid Community
+  - [ ] Configure Tailwind CSS and apply `docs/design.md`
   - [ ] Render grouped securities-board columns, not a generic quote table
   - [ ] Show 3 bid levels, matched quote fields, and 3 ask levels
   - [ ] Apply ceiling/floor/reference/increase/decrease color rules

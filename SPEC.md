@@ -61,6 +61,7 @@ Success means the project tells a clear technical story:
 - Realtime outbound to frontend: SignalR.
 - Third-party market data: DNSE REST APIs and DNSE WebSocket.
 - Frontend: React with TypeScript.
+- Styling: Tailwind CSS using the InvestView design standard in `docs/design.md`.
 - Market board grid: AG Grid Community for grouped, pinned, high-density quote display.
 - Database: SQL Server.
 - Data access: Entity Framework Core.
@@ -346,6 +347,7 @@ shared/ui/
 Frontend principles:
 
 - Optimize for dense financial data scanning, not landing-page visuals.
+- Follow `docs/design.md` for Tailwind tokens, layout rules, market-board columns, and price color semantics.
 - Keep API clients separate from UI components.
 - Use TypeScript types for API responses and component props.
 - Keep realtime state localized to market/watchlist features.
@@ -673,8 +675,7 @@ MVP is complete when:
 
 ## Open Questions
 
-1. Which React UI approach should be used: Tailwind CSS, CSS Modules, MUI, Ant Design, or a minimal custom system?
-2. Will DNSE credentials be available during development, or should the first implementation rely on mock data only?
-3. Should demo auth use a seeded local user only, or allow simple registration?
-4. Should the first market scope focus on Vietnamese stock symbols only?
-5. Should the first chart use OHLC candles, a simple line chart, or no chart until core trading flow is complete?
+1. Will DNSE credentials be available during development, or should the first implementation rely on mock data only?
+2. Should demo auth use a seeded local user only, or allow simple registration?
+3. Should the first market scope focus on Vietnamese stock symbols only?
+4. Should the first chart use OHLC candles, a simple line chart, or no chart until core trading flow is complete?

@@ -21,6 +21,7 @@ Primary strategy:
 - Use mock market data first, then DNSE behind the same interfaces.
 - Use `IMemoryCache` for MVP caching; Redis is out of scope unless approved later.
 - Use SignalR for app-facing realtime updates.
+- Use Tailwind CSS and follow `docs/design.md` for frontend UI/UX rules.
 - Use AG Grid Community for the market board UI. See `docs/decisions/ADR-003-use-ag-grid-for-market-board.md`.
 
 ## DNSE Source Alignment
@@ -218,6 +219,8 @@ Goal: establish the market data boundary before DNSE integration.
 
 **Acceptance criteria:**
 
+- [ ] Tailwind CSS is configured for `src/investview.web`.
+- [ ] Frontend follows `docs/design.md` for workstation layout, market-board columns, and price color tokens.
 - [ ] AG Grid Community is added as the market board grid dependency.
 - [ ] Market board page renders grouped columns for `CK`, `Trần`, `Sàn`, `TC`, `Bên mua`, `Khớp lệnh`, `Bên bán`, total volume, high, low, status, and updated time.
 - [ ] Bid and ask depth display 3 price/quantity levels from `bidLevels` and `askLevels`.
@@ -565,10 +568,9 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ## Open Questions
 
-1. Which frontend styling approach should be used for MVP: Tailwind CSS, CSS Modules, MUI, Ant Design, or minimal custom CSS?
-2. Will DNSE credentials be available during implementation, or should DNSE tasks stay behind fixture tests until later?
-3. Should demo auth be seeded-login only, or should simple registration be included?
-4. Should the initial market board focus only on Vietnamese symbols from DNSE?
+1. Will DNSE credentials be available during implementation, or should DNSE tasks stay behind fixture tests until later?
+2. Should demo auth be seeded-login only, or should simple registration be included?
+3. Should the initial market board focus only on Vietnamese symbols from DNSE?
 
 ## Plan Control
 
