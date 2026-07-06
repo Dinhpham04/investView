@@ -1,6 +1,7 @@
 import { screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MarketBoard } from './MarketBoard';
+import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { MarketQuote } from '../../shared/types/market';
 
@@ -14,9 +15,10 @@ vi.mock('ag-grid-react', () => ({
   }) => (
     <div role="grid">
       <div>
-        {columnDefs.map((column) => (
-          <span key={column.headerName}>{column.headerName}</span>
-        ))}
+        {columnDefs.map((column) => [
+          <span key={column.headerName}>{column.headerName}</span>,
+          ...(column.children?.map((child) => <span key={`${column.headerName}-${child.headerName}`}>{child.headerName}</span>) ?? []),
+        ])}
       </div>
       {rowData.map((row) => (
         <div key={row.symbol} role="row">
@@ -43,6 +45,9 @@ const quote: MarketQuote = {
   lastQuantity: 18_000,
   totalVolume: 12_345_678,
   totalValue: 347_000_000_000,
+  foreignBuyVolume: 786_100,
+  foreignSellVolume: 1_227_649,
+  foreignRoom: 1_742_502_798,
   openPrice: 27.6,
   highPrice: 28.4,
   lowPrice: 27.2,
@@ -84,10 +89,44 @@ describe('MarketBoard', () => {
     expect(screen.getByText('Bên mua')).toBeInTheDocument();
     expect(screen.getByText('Khớp lệnh')).toBeInTheDocument();
     expect(screen.getByText('Bên bán')).toBeInTheDocument();
+    expect(screen.getByText('ĐTNN')).toBeInTheDocument();
+    expect(screen.getByText('NN mua')).toBeInTheDocument();
+    expect(screen.getByText('NN bán')).toBeInTheDocument();
+    expect(screen.getByText('Room')).toBeInTheDocument();
 
     const row = screen.getByRole('row');
     expect(within(row).getByText('HPG')).toBeInTheDocument();
     expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1', expect.any(Object));
+  });
+
+  it('keeps the symbol pin column before the stock code column', () => {
+    expect(marketBoardColumnDefs[0]).toMatchObject({
+      colId: 'pinSymbol',
+      pinned: 'left',
+      lockPinned: true,
+    });
+    expect(marketBoardColumnDefs[1]).toMatchObject({
+      field: 'symbol',
+      pinned: 'left',
+      lockPinned: true,
+    });
+  });
+
+  it('enables sorting for market data columns and sorts stock codes alphabetically', () => {
+    const symbolColumn = marketBoardColumnDefs[1];
+
+    expect(defaultMarketBoardColumnDef.sortable).toBe(true);
+    expect(defaultMarketBoardColumnDef.unSortIcon).toBeUndefined();
+    expect(marketBoardColumnDefs[0]).toMatchObject({ sortable: false });
+    expect(symbolColumn).toMatchObject({ field: 'symbol', sortable: true });
+    expect('comparator' in symbolColumn).toBe(true);
+
+    const comparator = 'comparator' in symbolColumn ? symbolColumn.comparator : undefined;
+    expect(typeof comparator).toBe('function');
+    if (typeof comparator === 'function') {
+      expect(comparator('AAA', 'BBB', undefined as never, undefined as never, false)).toBeLessThan(0);
+      expect(comparator('SSI', 'HPG', undefined as never, undefined as never, false)).toBeGreaterThan(0);
+    }
   });
 
   it('renders an error state when the market quote request fails', async () => {

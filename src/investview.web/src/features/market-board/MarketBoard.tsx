@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { useMarketQuotesQuery } from './useMarketQuotesQuery';
 import { mapQuoteToMarketBoardRow } from './marketBoardFormatters';
-import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
+import { defaultMarketBoardColumnDef, defaultMarketBoardColumnGroupDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { marketBoardTheme } from './marketBoardTheme';
 
 const marketTabs = ['VN30', 'HOSE', 'HNX', 'UPCOM', 'Watchlist'];
@@ -76,12 +76,26 @@ export function MarketBoard() {
       {quotesQuery.isSuccess && rows.length > 0 ? (
         <div className="min-h-0 flex-1" data-testid="market-board-grid">
           <AgGridReact
+            autoSizeStrategy={{
+              type: 'fitGridWidth',
+              defaultMinWidth: 40,
+              columnLimits: [
+                { colId: 'pinSymbol', minWidth: 28, maxWidth: 28 },
+                { colId: 'symbol', minWidth: 52, maxWidth: 64 },
+                { colId: 'totalVolume', minWidth: 72 },
+                { colId: 'foreignBuyVolume', minWidth: 72 },
+                { colId: 'foreignSellVolume', minWidth: 72 },
+                { colId: 'foreignRoom', minWidth: 90 },
+              ],
+            }}
             columnDefs={marketBoardColumnDefs}
             defaultColDef={defaultMarketBoardColumnDef}
+            defaultColGroupDef={defaultMarketBoardColumnGroupDef}
             getRowId={(params) => params.data.id}
             headerHeight={30}
             rowData={rows}
             suppressCellFocus
+            suppressHorizontalScroll
             theme={marketBoardTheme}
             tooltipShowDelay={300}
           />

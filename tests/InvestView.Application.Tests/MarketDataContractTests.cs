@@ -37,6 +37,9 @@ public sealed class MarketDataContractTests
             LastQuantity: 2500,
             TotalVolume: 12_450_000,
             TotalValue: 362_917_500_000m,
+            ForeignBuyVolume: 786_100,
+            ForeignSellVolume: 1_227_649,
+            ForeignRoom: 1_742_502_798,
             OpenPrice: 28700m,
             HighPrice: 29200m,
             LowPrice: 28450m,
@@ -54,6 +57,9 @@ public sealed class MarketDataContractTests
         Assert.Equal(550m, quote.Change);
         Assert.Equal(1.92m, quote.ChangePercent);
         Assert.Equal(12_450_000, quote.TotalVolume);
+        Assert.Equal(786_100, quote.ForeignBuyVolume);
+        Assert.Equal(1_227_649, quote.ForeignSellVolume);
+        Assert.Equal(1_742_502_798, quote.ForeignRoom);
         Assert.Single(quote.BidLevels);
         Assert.Single(quote.AskLevels);
         Assert.Equal(new DateTimeOffset(2026, 7, 3, 7, 45, 0, TimeSpan.Zero), quote.UpdatedAt);

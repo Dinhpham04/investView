@@ -25,7 +25,7 @@ export function App() {
           </div>
         </header>
 
-        <section className="grid min-h-[calc(100svh-45px)] grid-cols-1 p-3" aria-label="InvestView workspace">
+        <section className="grid min-h-[calc(100svh-45px)] grid-cols-1" aria-label="InvestView workspace">
           <MarketBoard />
         </section>
       </main>

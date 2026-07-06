@@ -17,6 +17,9 @@ public sealed class MockMarketDataProviderTests
             Assert.Equal("G1", quote.BoardId);
             Assert.Equal("Continuous", quote.TradingStatus);
             Assert.Equal(new DateTimeOffset(2026, 7, 3, 7, 45, 0, TimeSpan.Zero), quote.UpdatedAt);
+            Assert.True(quote.ForeignBuyVolume > 0);
+            Assert.True(quote.ForeignSellVolume > 0);
+            Assert.True(quote.ForeignRoom > 0);
             Assert.Equal(3, quote.BidLevels.Count);
             Assert.Equal(3, quote.AskLevels.Count);
             Assert.All(quote.BidLevels.Concat(quote.AskLevels), level => Assert.True(level.Quantity > 0));

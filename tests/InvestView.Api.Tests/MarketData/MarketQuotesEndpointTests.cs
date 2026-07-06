@@ -33,6 +33,9 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
         Assert.Equal(29150m, firstQuote.GetProperty("lastPrice").GetDecimal());
         Assert.Equal(550m, firstQuote.GetProperty("change").GetDecimal());
         Assert.Equal(1.92m, firstQuote.GetProperty("changePercent").GetDecimal());
+        Assert.Equal(786100, firstQuote.GetProperty("foreignBuyVolume").GetInt64());
+        Assert.Equal(1227649, firstQuote.GetProperty("foreignSellVolume").GetInt64());
+        Assert.Equal(1742502798, firstQuote.GetProperty("foreignRoom").GetInt64());
         Assert.Equal("Continuous", firstQuote.GetProperty("tradingStatus").GetString());
         Assert.Equal("2026-07-03T07:45:00+00:00", firstQuote.GetProperty("updatedAt").GetString());
 

@@ -31,7 +31,7 @@ body {
   min-width: 320px;
   background: #0b0f14;
   color: #e6edf3;
-  font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
+  font-family: Roboto, Inter, ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif;
   font-synthesis: none;
   line-height: 1.5;
   text-rendering: optimizeLegibility;
@@ -68,20 +68,102 @@ input::placeholder {
 .market-cell {
   align-items: center;
   display: flex;
-  font-size: 12px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
 }
 
+.header-group-cell-label-center .ag-header-group-cell-label {
+  justify-content: center;
+}
+
+.header-cell-label-right .ag-header-cell-label {
+  justify-content: flex-end;
+}
+
+.ag-header-cell-label {
+  gap: 2px;
+}
+
+.ag-header-cell-label .ag-sort-indicator-container {
+  flex: 0 0 auto;
+  order: -1;
+}
+
+.ag-header-cell,
+.ag-header-group-cell {
+  padding-left: 4px;
+  padding-right: 4px;
+  border-right: 1px solid var(--color-market-border);
+}
+
+.ag-header-cell-text,
+.ag-header-group-text {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.ag-center-cols-viewport,
+.ag-body-horizontal-scroll-viewport,
+.ag-horizontal-left-spacer {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.ag-center-cols-viewport::-webkit-scrollbar,
+.ag-body-horizontal-scroll-viewport::-webkit-scrollbar,
+.ag-horizontal-left-spacer::-webkit-scrollbar {
+  display: none;
+}
+
+.ag-header-cell-resize::after {
+  display: none;
+}
+
+:where(.ag-ltr) .ag-header-cell::after,
+:where(.ag-ltr) .ag-header-group-cell::after {
+  display: none;
+}
+
+.ag-header {
+  border-width: 0 0 1px 0;
+  border-style: solid;
+  border-color: var(--color-market-border);
+}
+
+.ag-row .ag-cell {
+  padding-left: 4px;
+  padding-right: 4px;
+  border-width: 0 1px 0 0;
+  border-style: solid;
+  border-color: var(--color-market-border);
+}
 .market-cell--number {
   justify-content: flex-end;
 }
 
+.market-cell--pin {
+  color: var(--color-market-text-subtle);
+  font-size: 12px;
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.market-cell--pin:hover {
+  color: var(--color-price-ref);
+}
+
 .market-cell--symbol {
   color: #e6edf3;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   justify-content: flex-start;
+}
+
+.market-cell-center .ag-header-cell-label {
+  justify-content: center;
 }
 
 .market-cell--status,

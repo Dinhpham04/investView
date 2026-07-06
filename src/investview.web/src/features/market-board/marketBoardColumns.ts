@@ -18,42 +18,57 @@ const priceClassNames: Record<PriceClass, string> = {
 };
 
 export const defaultMarketBoardColumnDef: ColDef<MarketBoardRow> = {
-  sortable: false,
+  sortable: true,
   resizable: true,
   suppressMovable: true,
+  minWidth: 40,
   cellClass: 'market-cell market-cell--number',
-  headerClass: 'market-header',
+  headerClass: 'header-cell-label-right',
+};
+
+export const defaultMarketBoardColumnGroupDef = {
+  headerClass: 'header-group-cell-label-center',
 };
 
 export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<MarketBoardRow>)[] = [
   {
-    headerName: 'CK',
-    field: 'symbol',
+    colId: 'pinSymbol',
+    headerName: '',
     pinned: 'left',
-    width: 112,
+    width: 28,
+    minWidth: 28,
+    maxWidth: 28,
     lockPinned: true,
-    cellClass: 'market-cell market-cell--symbol',
-    tooltipField: 'displayName',
+    resizable: false,
+    sortable: false,
+    cellClass: 'market-cell market-cell--pin',
+    cellRenderer: () => '☆',
   },
   {
-    headerName: 'Giá tham chiếu',
-    marryChildren: true,
-    children: [
+    headerName: 'CK',
+    headerClass: 'flex-start',
+    field: 'symbol',
+    pinned: 'left',
+    width: 72,
+    lockPinned: true,
+    sortable: true,
+    comparator: symbolComparator,
+    cellClass: (params) => classForCell(params, 'symbolClass', 'market-cell--symbol'),
+    tooltipField: 'displayName',
+  },
       priceColumn('Trần', 'ceilingPrice', 'ceilingPriceClass'),
       priceColumn('Sàn', 'floorPrice', 'floorPriceClass'),
       priceColumn('TC', 'referencePrice', 'referencePriceClass'),
-    ],
-  },
   {
     headerName: 'Bên mua',
     marryChildren: true,
     children: [
       priceColumn('Giá 3', 'bid3Price', 'bid3PriceClass'),
-      quantityColumn('KL 3', 'bid3Quantity'),
+      quantityColumn('KL 3', 'bid3Quantity', 'bid3QuantityClass'),
       priceColumn('Giá 2', 'bid2Price', 'bid2PriceClass'),
-      quantityColumn('KL 2', 'bid2Quantity'),
+      quantityColumn('KL 2', 'bid2Quantity', 'bid2QuantityClass'),
       priceColumn('Giá 1', 'bid1Price', 'bid1PriceClass'),
-      quantityColumn('KL 1', 'bid1Quantity'),
+      quantityColumn('KL 1', 'bid1Quantity', 'bid1QuantityClass'),
     ],
   },
   {
@@ -61,7 +76,7 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     marryChildren: true,
     children: [
       priceColumn('Giá', 'lastPrice', 'lastPriceClass'),
-      quantityColumn('KL', 'lastQuantity'),
+      quantityColumn('KL', 'lastQuantity', 'lastQuantityClass'),
       changeColumn('+/-', 'change'),
       percentColumn('+/- (%)', 'changePercent'),
     ],
@@ -71,27 +86,24 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     marryChildren: true,
     children: [
       priceColumn('Giá 1', 'ask1Price', 'ask1PriceClass'),
-      quantityColumn('KL 1', 'ask1Quantity'),
+      quantityColumn('KL 1', 'ask1Quantity', 'ask1QuantityClass'),
       priceColumn('Giá 2', 'ask2Price', 'ask2PriceClass'),
-      quantityColumn('KL 2', 'ask2Quantity'),
+      quantityColumn('KL 2', 'ask2Quantity', 'ask2QuantityClass'),
       priceColumn('Giá 3', 'ask3Price', 'ask3PriceClass'),
-      quantityColumn('KL 3', 'ask3Quantity'),
+      quantityColumn('KL 3', 'ask3Quantity', 'ask3QuantityClass'),
     ],
   },
   quantityColumn('Tổng KL', 'totalVolume', 104),
   priceColumn('Cao', 'highPrice', 'highPriceClass'),
   priceColumn('Thấp', 'lowPrice', 'lowPriceClass'),
   {
-    headerName: 'TT',
-    field: 'tradingStatus',
-    width: 112,
-    cellClass: 'market-cell market-cell--status',
-  },
-  {
-    headerName: 'Cập nhật',
-    field: 'updatedTime',
-    width: 96,
-    cellClass: 'market-cell market-cell--time',
+    headerName: 'ĐTNN',
+    marryChildren: true,
+    children: [
+      quantityColumn('NN mua', 'foreignBuyVolume', 92),
+      quantityColumn('NN bán', 'foreignSellVolume', 92),
+      quantityColumn('Room', 'foreignRoom', 112),
+    ],
   },
 ];
 
@@ -106,17 +118,30 @@ function priceColumn(
     field,
     width,
     valueFormatter: priceValueFormatter,
-    cellClass: (params) => classForPrice(params, classField),
+    cellClass: (params) => classForCell(params, classField),
   };
 }
 
-function quantityColumn(headerName: string, field: keyof MarketBoardRow, width = 84): ColDef<MarketBoardRow> {
-  return {
+function quantityColumn(
+  headerName: string,
+  field: keyof MarketBoardRow,
+  classFieldOrWidth?: keyof MarketBoardRow | number,
+  width = 84,
+): ColDef<MarketBoardRow> {
+  const classField = typeof classFieldOrWidth === 'string' ? classFieldOrWidth : undefined;
+  const columnWidth = typeof classFieldOrWidth === 'number' ? classFieldOrWidth : width;
+  const column: ColDef<MarketBoardRow> = {
     headerName,
     field,
-    width,
+    width: columnWidth,
     valueFormatter: quantityValueFormatter,
   };
+
+  if (classField) {
+    column.cellClass = (params) => classForCell(params, classField);
+  }
+
+  return column;
 }
 
 function changeColumn(headerName: string, field: keyof MarketBoardRow): ColDef<MarketBoardRow> {
@@ -125,7 +150,7 @@ function changeColumn(headerName: string, field: keyof MarketBoardRow): ColDef<M
     field,
     width: 76,
     valueFormatter: (params) => formatChange(params.value as number | null | undefined),
-    cellClass: (params) => classForPrice(params, 'changeClass'),
+    cellClass: (params) => classForCell(params, 'changeClass'),
   };
 }
 
@@ -135,8 +160,12 @@ function percentColumn(headerName: string, field: keyof MarketBoardRow): ColDef<
     field,
     width: 88,
     valueFormatter: (params) => formatPercent(params.value as number | null | undefined),
-    cellClass: (params) => classForPrice(params, 'changeClass'),
+    cellClass: (params) => classForCell(params, 'changeClass'),
   };
+}
+
+function symbolComparator(valueA: string | null | undefined, valueB: string | null | undefined) {
+  return (valueA ?? '').localeCompare(valueB ?? '', 'en', { sensitivity: 'base' });
 }
 
 function priceValueFormatter(params: ValueFormatterParams<MarketBoardRow>) {
@@ -147,7 +176,7 @@ function quantityValueFormatter(params: ValueFormatterParams<MarketBoardRow>) {
   return formatQuantity(params.value as number | null | undefined);
 }
 
-function classForPrice(params: CellClassParams<MarketBoardRow>, classField: keyof MarketBoardRow) {
+function classForCell(params: CellClassParams<MarketBoardRow>, classField: keyof MarketBoardRow, extraClass?: string) {
   const priceClass = params.data?.[classField] as PriceClass | undefined;
-  return ['market-cell', 'market-cell--number', priceClassNames[priceClass ?? 'neutral']];
+  return ['market-cell', extraClass ?? 'market-cell--number', priceClassNames[priceClass ?? 'neutral']];
 }

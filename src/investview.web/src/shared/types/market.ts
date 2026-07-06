@@ -17,6 +17,9 @@ export type MarketQuote = {
   lastQuantity: number | null;
   totalVolume: number | null;
   totalValue: number | null;
+  foreignBuyVolume: number | null;
+  foreignSellVolume: number | null;
+  foreignRoom: number | null;
   openPrice: number | null;
   highPrice: number | null;
   lowPrice: number | null;

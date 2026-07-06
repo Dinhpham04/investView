@@ -28,21 +28,32 @@ export type MarketBoardRow = {
   ask3Price: number | null;
   ask3Quantity: number | null;
   totalVolume: number | null;
+  foreignBuyVolume: number | null;
+  foreignSellVolume: number | null;
+  foreignRoom: number | null;
   highPrice: number | null;
   lowPrice: number | null;
   tradingStatus: string;
   updatedTime: string;
+  symbolClass: PriceClass;
   ceilingPriceClass: PriceClass;
   floorPriceClass: PriceClass;
   referencePriceClass: PriceClass;
   bid3PriceClass: PriceClass;
+  bid3QuantityClass: PriceClass;
   bid2PriceClass: PriceClass;
+  bid2QuantityClass: PriceClass;
   bid1PriceClass: PriceClass;
+  bid1QuantityClass: PriceClass;
   lastPriceClass: PriceClass;
+  lastQuantityClass: PriceClass;
   changeClass: PriceClass;
   ask1PriceClass: PriceClass;
+  ask1QuantityClass: PriceClass;
   ask2PriceClass: PriceClass;
+  ask2QuantityClass: PriceClass;
   ask3PriceClass: PriceClass;
+  ask3QuantityClass: PriceClass;
   highPriceClass: PriceClass;
   lowPriceClass: PriceClass;
 };
@@ -87,7 +98,18 @@ export function formatChange(value: number | null | undefined) {
     return '-';
   }
 
-  return value > 0 ? `+${formatPrice(value)}` : formatPrice(value);
+  const displayValue = value / 1000;
+  const formattedValue = priceFormatter.format(Math.abs(displayValue));
+
+  if (value > 0) {
+    return `+${formattedValue}`;
+  }
+
+  if (value < 0) {
+    return `-${formattedValue}`;
+  }
+
+  return formattedValue;
 }
 
 export function classifyChange(value: number | null | undefined): PriceClass {
@@ -141,6 +163,13 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote): MarketBoardRow {
   const ask1 = getLevel(quote.askLevels, 0);
   const ask2 = getLevel(quote.askLevels, 1);
   const ask3 = getLevel(quote.askLevels, 2);
+  const bid3Class = classifyPrice(bid3.price, quote);
+  const bid2Class = classifyPrice(bid2.price, quote);
+  const bid1Class = classifyPrice(bid1.price, quote);
+  const lastClass = classifyPrice(quote.lastPrice, quote);
+  const ask1Class = classifyPrice(ask1.price, quote);
+  const ask2Class = classifyPrice(ask2.price, quote);
+  const ask3Class = classifyPrice(ask3.price, quote);
 
   return {
     id: `${quote.boardId}:${quote.symbol}`,
@@ -168,21 +197,32 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote): MarketBoardRow {
     ask3Price: ask3.price,
     ask3Quantity: ask3.quantity,
     totalVolume: quote.totalVolume,
+    foreignBuyVolume: quote.foreignBuyVolume,
+    foreignSellVolume: quote.foreignSellVolume,
+    foreignRoom: quote.foreignRoom,
     highPrice: quote.highPrice,
     lowPrice: quote.lowPrice,
     tradingStatus: quote.tradingStatus,
     updatedTime: formatUpdatedTime(quote.updatedAt),
+    symbolClass: lastClass,
     ceilingPriceClass: 'ceiling',
     floorPriceClass: 'floor',
     referencePriceClass: 'reference',
-    bid3PriceClass: classifyPrice(bid3.price, quote),
-    bid2PriceClass: classifyPrice(bid2.price, quote),
-    bid1PriceClass: classifyPrice(bid1.price, quote),
-    lastPriceClass: classifyPrice(quote.lastPrice, quote),
+    bid3PriceClass: bid3Class,
+    bid3QuantityClass: bid3Class,
+    bid2PriceClass: bid2Class,
+    bid2QuantityClass: bid2Class,
+    bid1PriceClass: bid1Class,
+    bid1QuantityClass: bid1Class,
+    lastPriceClass: lastClass,
+    lastQuantityClass: lastClass,
     changeClass: classifyChange(quote.change),
-    ask1PriceClass: classifyPrice(ask1.price, quote),
-    ask2PriceClass: classifyPrice(ask2.price, quote),
-    ask3PriceClass: classifyPrice(ask3.price, quote),
+    ask1PriceClass: ask1Class,
+    ask1QuantityClass: ask1Class,
+    ask2PriceClass: ask2Class,
+    ask2QuantityClass: ask2Class,
+    ask3PriceClass: ask3Class,
+    ask3QuantityClass: ask3Class,
     highPriceClass: classifyPrice(quote.highPrice, quote),
     lowPriceClass: classifyPrice(quote.lowPrice, quote),
   };
