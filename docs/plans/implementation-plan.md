@@ -215,31 +215,34 @@ Goal: establish the market data boundary before DNSE integration.
 
 ### Task 5: Build Market Board UI
 
+**Status:** Done
+
 **Description:** Build the first real UI slice: React market board consumes `GET /api/market/quotes` and renders a dense Vietnamese securities-style board with AG Grid Community. This task is REST snapshot only; realtime updates are added in Task 7.
 
 **Acceptance criteria:**
 
-- [ ] Tailwind CSS is configured for `src/investview.web`.
-- [ ] Frontend follows `docs/design.md` for workstation layout, market-board columns, and price color tokens.
-- [ ] AG Grid Community is added as the market board grid dependency.
-- [ ] Market board page renders grouped columns for `CK`, `Trần`, `Sàn`, `TC`, `Bên mua`, `Khớp lệnh`, `Bên bán`, total volume, high, low, status, and updated time.
-- [ ] Bid and ask depth display 3 price/quantity levels from `bidLevels` and `askLevels`.
-- [ ] Matched quote columns display last price, last quantity, absolute change, percent change, and total volume.
-- [ ] Securities color rules are implemented for ceiling, floor, reference, increase, decrease, and unchanged values.
-- [ ] Symbol column is pinned/sticky and the wide board supports horizontal scrolling.
-- [ ] API client types are separate from components.
-- [ ] Quote-to-grid mapping and price formatting are testable outside the grid component.
-- [ ] UI handles loading and error states.
-- [ ] Layout works on desktop and mobile widths.
-- [ ] The UI does not imply data is live realtime until Task 7 is complete.
+- [x] Tailwind CSS is configured for `src/investview.web`.
+- [x] Frontend follows `docs/design.md` for workstation layout, market-board columns, and price color tokens.
+- [x] AG Grid Community is added as the market board grid dependency.
+- [x] Market board page renders grouped columns for `CK`, `Trần`, `Sàn`, `TC`, `Bên mua`, `Khớp lệnh`, `Bên bán`, total volume, high, low, status, and updated time.
+- [x] Bid and ask depth display 3 price/quantity levels from `bidLevels` and `askLevels`.
+- [x] Matched quote columns display last price, last quantity, absolute change, percent change, and total volume.
+- [x] Securities color rules are implemented for ceiling, floor, reference, increase, decrease, and unchanged values.
+- [x] Symbol column is pinned/sticky and the wide board supports horizontal scrolling.
+- [x] API client types are separate from components.
+- [x] Quote-to-grid mapping and price formatting are testable outside the grid component.
+- [x] UI handles loading and error states.
+- [x] Layout works on desktop and mobile widths.
+- [x] The UI does not imply data is live realtime until Task 7 is complete.
 
 **Verification:**
 
-- [ ] Component tests cover market board render states.
-- [ ] Unit tests cover quote mapping, price formatting, and color classification.
-- [ ] `npm run build`
-- [ ] `npm run test`
-- [ ] Manual browser check against backend.
+- [x] Component tests cover market board render states.
+- [x] Unit tests cover quote mapping, price formatting, and color classification.
+- [x] `npm run lint`
+- [x] `npm run build`
+- [x] `npm run test`
+- [x] Manual browser check against backend.
 
 **Dependencies:** Task 3
 
@@ -253,10 +256,10 @@ Goal: establish the market data boundary before DNSE integration.
 
 ### Checkpoint: Market Board REST
 
-- [ ] Market board works end-to-end with mock data.
-- [ ] Backend contracts are provider-neutral.
-- [ ] Caching behavior is tested.
-- [ ] Frontend does not depend on DNSE payloads.
+- [x] Market board works end-to-end with mock data.
+- [x] Backend contracts are provider-neutral.
+- [x] Caching behavior is tested.
+- [x] Frontend does not depend on DNSE payloads.
 
 ## Milestone 3: Realtime Quote Updates
 

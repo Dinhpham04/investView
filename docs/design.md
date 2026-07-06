@@ -191,6 +191,7 @@ Column behavior:
 - Group headers are center-aligned.
 - Data rows use thin grid lines.
 - Empty values render as `-`, not `0`.
+- Price values from the API are raw VND values when using Vietnamese equities; market board cells display them in thousand-VND units with two decimals, for example `29150` renders as `29.15`.
 - Quantity may be shortened only if the label states the unit. For MVP, use raw integer formatting with thousands separators.
 
 ## Price Color Rules

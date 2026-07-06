@@ -5,42 +5,48 @@ export function SystemStatus() {
 
   if (healthQuery.isPending) {
     return (
-      <section className="status-panel" aria-busy="true">
-        <div className="panel-heading">
-          <h2>System status</h2>
-          <span className="status-chip status-chip--pending">Checking</span>
+      <section className="border border-market-border bg-market-surface p-4" aria-busy="true">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-market-text">System status</h2>
+          <span className="rounded-sm border border-market-border px-2 py-1 text-xs font-bold text-state-warning">
+            Checking
+          </span>
         </div>
-        <p className="muted-text">Connecting to API...</p>
+        <p className="text-sm text-market-text-muted">Connecting to API...</p>
       </section>
     );
   }
 
   if (healthQuery.isError) {
     return (
-      <section className="status-panel">
-        <div className="panel-heading">
-          <h2>System status</h2>
-          <span className="status-chip status-chip--down">Offline</span>
+      <section className="border border-market-border bg-market-surface p-4">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-bold text-market-text">System status</h2>
+          <span className="rounded-sm border border-market-border px-2 py-1 text-xs font-bold text-state-error">
+            Offline
+          </span>
         </div>
-        <p className="error-text">{healthQuery.error.message}</p>
+        <p className="text-sm font-semibold text-state-error">{healthQuery.error.message}</p>
       </section>
     );
   }
 
   return (
-    <section className="status-panel">
-      <div className="panel-heading">
-        <h2>System status</h2>
-        <span className="status-chip status-chip--up">{healthQuery.data.status}</span>
+    <section className="border border-market-border bg-market-surface p-4">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-bold text-market-text">System status</h2>
+        <span className="rounded-sm border border-market-border px-2 py-1 text-xs font-bold text-state-online">
+          {healthQuery.data.status}
+        </span>
       </div>
-      <dl className="status-list">
-        <div>
-          <dt>Service</dt>
-          <dd>{healthQuery.data.service}</dd>
+      <dl className="grid gap-3">
+        <div className="flex items-baseline justify-between gap-3 border-t border-market-border pt-3">
+          <dt className="text-sm text-market-text-muted">Service</dt>
+          <dd className="m-0 text-right text-sm font-bold text-market-text">{healthQuery.data.service}</dd>
         </div>
-        <div>
-          <dt>API</dt>
-          <dd>Connected</dd>
+        <div className="flex items-baseline justify-between gap-3 border-t border-market-border pt-3">
+          <dt className="text-sm text-market-text-muted">API</dt>
+          <dd className="m-0 text-right text-sm font-bold text-market-text">Connected</dd>
         </div>
       </dl>
     </section>

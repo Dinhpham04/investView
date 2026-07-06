@@ -13,14 +13,14 @@
   - [x] Include bid/ask level DTO and normalized timestamp fields
   - [x] Keep all contracts provider-neutral; no DNSE types outside Infrastructure
 - [x] Task 4: Add cached market data provider
-- [ ] Task 5: Build market board UI with AG Grid Community
-  - [ ] Configure Tailwind CSS and apply `docs/design.md`
-  - [ ] Render grouped securities-board columns, not a generic quote table
-  - [ ] Show 3 bid levels, matched quote fields, and 3 ask levels
-  - [ ] Apply ceiling/floor/reference/increase/decrease color rules
-  - [ ] Keep API client, quote mapping, and grid component separated
-  - [ ] Keep Task 5 as REST snapshot only; SignalR updates come in Task 7
-- [ ] Checkpoint: Market board REST
+- [x] Task 5: Build market board UI with AG Grid Community
+  - [x] Configure Tailwind CSS and apply `docs/design.md`
+  - [x] Render grouped securities-board columns, not a generic quote table
+  - [x] Show 3 bid levels, matched quote fields, and 3 ask levels
+  - [x] Apply ceiling/floor/reference/increase/decrease color rules
+  - [x] Keep API client, quote mapping, and grid component separated
+  - [x] Keep Task 5 as REST snapshot only; SignalR updates come in Task 7
+- [x] Checkpoint: Market board REST
 
 ## Milestone 3: Realtime Quote Updates
 
