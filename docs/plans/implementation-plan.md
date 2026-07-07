@@ -54,6 +54,9 @@ Market board REST vertical slice
 Caching decorator and tests
         |
         v
+DNSE REST snapshot adapter
+        |
+        v
 SignalR quote stream with mock data
         |
         v
@@ -261,11 +264,49 @@ Goal: establish the market data boundary before DNSE integration.
 - [x] Caching behavior is tested.
 - [x] Frontend does not depend on DNSE payloads.
 
-## Milestone 3: Realtime Quote Updates
+## Milestone 3: Real Market Snapshot and Realtime Quote Updates
 
-Goal: prove realtime data handling before adding trading complexity.
+Goal: connect the REST snapshot path to DNSE before proving realtime data handling.
 
-### Task 6: Add SignalR Quote Hub with Mock Stream
+### Task 6: Add DNSE REST Snapshot Adapter
+
+**Description:** Implement `DnseMarketDataProvider` behind `IMarketDataProvider` so the existing market board can load a real DNSE REST snapshot without changing the React API contract. This task integrates snapshot data first; DNSE WebSocket remains a later task.
+
+**Acceptance criteria:**
+
+- [ ] DNSE credentials/config are read from environment/configuration.
+- [ ] Market data provider can be selected by config: `Mock` or `Dnse`.
+- [ ] Missing DNSE credentials fall back to mock provider or fail with a clear config message.
+- [ ] DNSE response models do not leave Infrastructure.
+- [ ] REST adapter supports the market board snapshot using `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading` where available.
+- [ ] REST client uses default base URL `https://openapi.dnse.com.vn` unless overridden.
+- [ ] REST client sends API version `2026-05-07` unless overridden.
+- [ ] REST date header name is configurable and defaults to `Date`.
+- [ ] REST signer is isolated and signs method, path, date header, and nonce as shown by the local SDK.
+- [ ] Query parameters are present in the request URL but not in the signed path string.
+- [ ] Adapter uses normal .NET TLS certificate validation; it does not copy the SDK's disabled-cert behavior.
+
+**Verification:**
+
+- [ ] Unit tests cover REST signature construction with deterministic timestamp and nonce.
+- [ ] Unit tests cover URL/query construction for `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading`.
+- [ ] Unit tests cover DNSE response mapping using fixture JSON.
+- [ ] Integration path can be manually verified when DNSE credentials are available.
+- [ ] `dotnet build`
+- [ ] `dotnet test`
+
+**Dependencies:** Task 4, Task 5
+
+**Files likely touched:**
+
+- `src/InvestView.Infrastructure/Dnse/*`
+- `src/InvestView.Infrastructure/MarketData/*`
+- `src/InvestView.Infrastructure/DependencyInjection.cs`
+- `tests/InvestView.Api.Tests/*`
+
+**Estimated scope:** Medium
+
+### Task 7: Add SignalR Quote Hub with Mock Stream
 
 **Description:** Add backend SignalR `QuoteHub` and a mock quote update service that broadcasts quote changes. This establishes the app-facing realtime contract before DNSE WebSocket is introduced.
 
@@ -295,7 +336,7 @@ Goal: prove realtime data handling before adding trading complexity.
 
 **Estimated scope:** Medium
 
-### Task 7: Connect Frontend to Realtime Quotes
+### Task 8: Connect Frontend to Realtime Quotes
 
 **Description:** Add frontend SignalR client and update the market board from live quote messages.
 
@@ -313,7 +354,7 @@ Goal: prove realtime data handling before adding trading complexity.
 - [ ] `npm run test`
 - [ ] Manual browser check: quote rows update.
 
-**Dependencies:** Task 6
+**Dependencies:** Task 7
 
 **Files likely touched:**
 
@@ -333,7 +374,7 @@ Goal: prove realtime data handling before adding trading complexity.
 
 Goal: add backend domain depth and the main investor workflow.
 
-### Task 8: Add Persistence and Demo Auth Foundation
+### Task 9: Add Persistence and Demo Auth Foundation
 
 **Description:** Add EF Core SQL Server setup, initial entities, migrations, seed data, and demo JWT login.
 
@@ -363,7 +404,7 @@ Goal: add backend domain depth and the main investor workflow.
 
 **Estimated scope:** Medium
 
-### Task 9: Add Watchlist Flow
+### Task 10: Add Watchlist Flow
 
 **Description:** Implement watchlist REST endpoints and frontend watchlist interactions using authenticated demo user state.
 
@@ -383,7 +424,7 @@ Goal: add backend domain depth and the main investor workflow.
 - [ ] `npm run test`
 - [ ] Manual browser check.
 
-**Dependencies:** Task 5, Task 8
+**Dependencies:** Task 5, Task 9
 
 **Files likely touched:**
 
@@ -395,7 +436,7 @@ Goal: add backend domain depth and the main investor workflow.
 
 **Estimated scope:** Medium
 
-### Task 10: Add Simulated Order and Portfolio Flow
+### Task 11: Add Simulated Order and Portfolio Flow
 
 **Description:** Implement order placement/cancellation, cash and holding updates, portfolio summary, and frontend order ticket.
 
@@ -416,7 +457,7 @@ Goal: add backend domain depth and the main investor workflow.
 - [ ] `npm run test`
 - [ ] Manual demo: place order and see portfolio update.
 
-**Dependencies:** Task 8, Task 9
+**Dependencies:** Task 9, Task 10
 
 **Files likely touched:**
 
@@ -445,33 +486,26 @@ Goal: add backend domain depth and the main investor workflow.
 
 Goal: add real provider integration behind stable contracts and package the demo.
 
-### Task 11: Add DNSE REST Adapter
+### Task 12: Expand DNSE REST Adapter for Symbol Detail and OHLC
 
-**Description:** Implement `DnseMarketDataProvider` behind `IMarketDataProvider` and map DNSE REST responses into internal DTOs. Use the local SDK and DNSE docs as the source of truth for endpoints, signature shape, API version, and header names.
+**Description:** Expand the DNSE REST integration beyond the market-board snapshot to cover symbol detail and OHLC data needed by later detail/chart screens. Use the local SDK and DNSE docs as the source of truth for endpoint behavior, payload shape, and mapping edge cases.
 
 **Acceptance criteria:**
 
-- [ ] DNSE credentials/config are read from environment/configuration.
-- [ ] Missing credentials fall back to mock provider or fail with a clear startup/config message.
-- [ ] DNSE response models do not leave Infrastructure.
-- [ ] REST adapter supports market board, symbol detail, and OHLC data needed by MVP.
-- [ ] REST client uses default base URL `https://openapi.dnse.com.vn` unless overridden.
-- [ ] REST client sends API version `2026-05-07` unless overridden.
-- [ ] REST date header name is configurable and defaults to `Date`.
-- [ ] REST signer is isolated and signs method, path, date header, and nonce as shown by the local SDK.
-- [ ] Query parameters are handled consistently with the SDK: present in the request URL but not in the signed path string.
-- [ ] Adapter uses TLS certificate validation; it does not copy the SDK's disabled-cert behavior.
+- [ ] Symbol detail maps DNSE instrument and security definition data into `SymbolDetailDto`.
+- [ ] OHLC maps DNSE `/price/ohlc` data into `OhlcBarDto`.
+- [ ] Existing market-board snapshot integration remains unchanged.
+- [ ] DNSE response models remain inside Infrastructure.
 
 **Verification:**
 
-- [ ] Unit tests cover DNSE response mapping using fixture JSON.
-- [ ] Unit tests cover REST signature construction with deterministic timestamp and nonce.
-- [ ] Unit tests cover URL/query construction for `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/ohlc`.
+- [ ] Unit tests cover symbol detail and OHLC mapping using fixture JSON.
+- [ ] Unit tests cover URL/query construction for `/price/ohlc`.
 - [ ] Integration path can be manually verified when credentials are available.
 - [ ] `dotnet build`
 - [ ] `dotnet test`
 
-**Dependencies:** Task 4
+**Dependencies:** Task 6
 
 **Files likely touched:**
 
@@ -482,7 +516,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 12: Add DNSE WebSocket Adapter
+### Task 13: Add DNSE WebSocket Adapter
 
 **Description:** Implement DNSE inbound WebSocket client and forward normalized quote updates through existing SignalR flow. Use the local SDK WebSocket implementation as the reference for auth, channel names, message types, heartbeat, and reconnect behavior.
 
@@ -509,7 +543,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [ ] `dotnet test`
 - [ ] Manual browser check: frontend receives updates through SignalR.
 
-**Dependencies:** Task 6, Task 11
+**Dependencies:** Task 7, Task 12
 
 **Files likely touched:**
 
@@ -520,7 +554,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 13: Add Docker Compose and Demo Documentation
+### Task 14: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 
@@ -538,7 +572,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [ ] `npm run test`
 - [ ] Manual full demo flow from login to simulated order.
 
-**Dependencies:** Task 10
+**Dependencies:** Task 11
 
 **Files likely touched:**
 
@@ -562,7 +596,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| DNSE credentials are unavailable | Medium | Build mock provider and mock stream first; DNSE adapters are late milestone. |
+| DNSE credentials are unavailable | Medium | Keep mock provider as default and make DNSE provider opt-in by config. |
 | DNSE payload shape changes | Medium | Keep DNSE models in Infrastructure and map to internal DTOs. |
 | Foundation becomes too large | High | Milestone 1 only creates walking skeleton, not full domain/database. |
 | Realtime adds complexity before UI is stable | Medium | Build REST market board first, then add SignalR. |

@@ -98,7 +98,7 @@ export function formatChange(value: number | null | undefined) {
     return '-';
   }
 
-  const displayValue = value / 1000;
+  const displayValue = Math.abs(value) >= 100 ? value / 1000 : value;
   const formattedValue = priceFormatter.format(Math.abs(displayValue));
 
   if (value > 0) {

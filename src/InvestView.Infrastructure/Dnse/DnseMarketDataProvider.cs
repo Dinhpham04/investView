@@ -1,0 +1,305 @@
+using System.Text.Json;
+using InvestView.Application.Abstractions.MarketData;
+using InvestView.Application.Dtos.MarketData;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+
+namespace InvestView.Infrastructure.Dnse;
+
+public sealed class DnseMarketDataProvider : IMarketDataProvider
+{
+    private const string DefaultBoardId = "G1";
+    private readonly IDnseMarketDataClient _client;
+    private readonly ILogger<DnseMarketDataProvider> _logger;
+    private readonly DnseMarketDataOptions _options;
+
+    public DnseMarketDataProvider(
+        IDnseMarketDataClient client,
+        IOptions<DnseMarketDataOptions> options,
+        ILogger<DnseMarketDataProvider>? logger = null)
+    {
+        _client = client;
+        _options = options.Value;
+        _logger = logger ?? NullLogger<DnseMarketDataProvider>.Instance;
+    }
+
+    public async Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
+        MarketBoardQuery query,
+        CancellationToken cancellationToken)
+    {
+        var normalizedBoardId = NormalizeBoardId(query.BoardId);
+        using var instruments = await GetInstrumentsAsync(query, cancellationToken);
+        var normalizedSymbols = ResolveSymbols(query, instruments.RootElement);
+        if (normalizedSymbols.Count == 0)
+        {
+            return [];
+        }
+
+        var quoteTasks = normalizedSymbols.Select(symbol =>
+            GetMarketQuoteAsync(symbol, normalizedBoardId, instruments.RootElement, cancellationToken));
+
+        var quotes = await Task.WhenAll(quoteTasks);
+        return quotes.OrderBy(quote => quote.Symbol, StringComparer.Ordinal).ToArray();
+    }
+
+    public async Task<SymbolDetailDto?> GetSymbolDetailAsync(
+        string symbol,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return null;
+        }
+
+        using var instruments = await _client.GetJsonAsync(
+            "/instruments",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = normalizedSymbol,
+                ["limit"] = "1",
+                ["page"] = "1"
+            },
+            cancellationToken);
+        using var securityDefinition = await _client.GetJsonAsync(
+            $"/price/{normalizedSymbol}/secdef",
+            new Dictionary<string, string?> { ["boardId"] = DefaultBoardId },
+            cancellationToken);
+
+        var instrument = DnseMarketDataMapper.FindObjectBySymbol(instruments.RootElement, normalizedSymbol);
+        return DnseMarketDataMapper.MapSymbolDetail(
+            normalizedSymbol,
+            DefaultBoardId,
+            instrument,
+            securityDefinition.RootElement,
+            DateTimeOffset.UtcNow);
+    }
+
+    public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
+        string symbol,
+        string resolution,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+    }
+
+    private async Task<MarketQuoteDto> GetMarketQuoteAsync(
+        string symbol,
+        string boardId,
+        JsonElement instruments,
+        CancellationToken cancellationToken)
+    {
+        var instrument = DnseMarketDataMapper.FindObjectBySymbol(instruments, symbol);
+
+        using var securityDefinition = await _client.GetJsonAsync(
+            $"/price/{symbol}/secdef",
+            new Dictionary<string, string?> { ["boardId"] = boardId },
+            cancellationToken);
+        using var latestTrade = await _client.GetJsonAsync(
+            $"/price/{symbol}/trades/latest",
+            new Dictionary<string, string?> { ["boardId"] = boardId },
+            cancellationToken);
+        using var latestQuote = await _client.GetJsonAsync(
+            $"/price/{symbol}/quotes/latest",
+            new Dictionary<string, string?> { ["boardId"] = boardId },
+            cancellationToken);
+        using var foreignTrading = await GetForeignTradingAsync(symbol, boardId, cancellationToken);
+
+        var marketQuote = DnseMarketDataMapper.MapMarketQuote(
+            symbol,
+            boardId,
+            instrument,
+            securityDefinition.RootElement,
+            latestTrade.RootElement,
+            latestQuote.RootElement,
+            foreignTrading.RootElement,
+            DateTimeOffset.UtcNow,
+            _options.QuantityScaleFactor);
+
+        _logger.LogInformation(
+            "DNSE mapped quote {Symbol}: last={LastPrice}, ref={ReferencePrice}, change={Change}, bidLevels={BidLevelCount}, askLevels={AskLevelCount}, totalVolume={TotalVolume}, foreignBuy={ForeignBuyVolume}, foreignSell={ForeignSellVolume}, updatedAt={UpdatedAt}",
+            marketQuote.Symbol,
+            marketQuote.LastPrice,
+            marketQuote.ReferencePrice,
+            marketQuote.Change,
+            marketQuote.BidLevels.Count,
+            marketQuote.AskLevels.Count,
+            marketQuote.TotalVolume,
+            marketQuote.ForeignBuyVolume,
+            marketQuote.ForeignSellVolume,
+            marketQuote.UpdatedAt);
+
+        return marketQuote;
+    }
+
+    private Task<JsonDocument> GetInstrumentsAsync(
+        MarketBoardQuery query,
+        CancellationToken cancellationToken)
+    {
+        var explicitSymbols = NormalizeSymbols(query.Symbols);
+        var marketId = NormalizeToken(query.MarketId);
+        var indexName = NormalizeToken(query.IndexName);
+        var hasFilter = !string.IsNullOrWhiteSpace(marketId) || !string.IsNullOrWhiteSpace(indexName);
+        var symbols = explicitSymbols.Count > 0
+            ? explicitSymbols
+            : hasFilter
+                ? []
+                : NormalizeSymbols(_options.DefaultSymbols);
+
+        if (symbols.Count == 0 && hasFilter)
+        {
+            return GetPagedInstrumentsAsync(marketId, indexName, cancellationToken);
+        }
+
+        return GetInstrumentPageAsync(
+            symbols.Count > 0 ? string.Join(',', symbols) : null,
+            marketId,
+            hasFilter,
+            indexName,
+            Math.Max(symbols.Count, 1),
+            1,
+            cancellationToken);
+    }
+
+    private async Task<JsonDocument> GetPagedInstrumentsAsync(
+        string marketId,
+        string indexName,
+        CancellationToken cancellationToken)
+    {
+        var pageSize = Math.Max(_options.InstrumentPageSize, 1);
+        var maxPages = Math.Max(_options.MaxInstrumentPages, 1);
+        var instrumentPayloads = new List<string>();
+
+        for (var page = 1; page <= maxPages; page++)
+        {
+            using var instruments = await GetInstrumentPageAsync(
+                null,
+                marketId,
+                hasFilter: true,
+                indexName,
+                pageSize,
+                page,
+                cancellationToken);
+            var pageSymbols = DnseMarketDataMapper.ExtractInstrumentSymbols(instruments.RootElement, pageSize);
+            instrumentPayloads.AddRange(DnseMarketDataMapper.ExtractInstrumentPayloads(instruments.RootElement));
+
+            if (pageSymbols.Count < pageSize)
+            {
+                break;
+            }
+        }
+
+        return JsonDocument.Parse($$"""{"data":[{{string.Join(',', instrumentPayloads)}}]}""");
+    }
+
+    private Task<JsonDocument> GetInstrumentPageAsync(
+        string? symbols,
+        string marketId,
+        bool hasFilter,
+        string indexName,
+        int limit,
+        int page,
+        CancellationToken cancellationToken)
+    {
+        return _client.GetJsonAsync(
+            "/instruments",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = symbols,
+                ["marketId"] = string.IsNullOrWhiteSpace(marketId) ? null : marketId,
+                ["securityGroupId"] = hasFilter ? "ST" : null,
+                ["indexName"] = string.IsNullOrWhiteSpace(indexName) ? null : indexName,
+                ["limit"] = limit.ToString(),
+                ["page"] = page.ToString()
+            },
+            cancellationToken);
+    }
+
+    private IReadOnlyCollection<string> ResolveSymbols(
+        MarketBoardQuery query,
+        JsonElement instruments)
+    {
+        var explicitSymbols = NormalizeSymbols(query.Symbols);
+        if (explicitSymbols.Count > 0)
+        {
+            return explicitSymbols;
+        }
+
+        var marketId = NormalizeToken(query.MarketId);
+        var indexName = NormalizeToken(query.IndexName);
+        if (!string.IsNullOrWhiteSpace(marketId) || !string.IsNullOrWhiteSpace(indexName))
+        {
+            return DnseMarketDataMapper.ExtractInstrumentSymbols(instruments, int.MaxValue);
+        }
+
+        return NormalizeSymbols(_options.DefaultSymbols);
+    }
+
+    private async Task<JsonDocument> GetForeignTradingAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        var to = DateTimeOffset.UtcNow;
+        var lookbackHours = Math.Max(_options.ForeignTradingLookbackHours, 1);
+        var from = to.AddHours(-lookbackHours);
+
+        try
+        {
+            return await _client.GetJsonAsync(
+                $"/price/{symbol}/foreign-trading",
+                new Dictionary<string, string?>
+                {
+                    ["boardId"] = boardId,
+                    ["from"] = from.ToUnixTimeSeconds().ToString(),
+                    ["to"] = to.ToUnixTimeSeconds().ToString(),
+                    ["limit"] = "1",
+                    ["order"] = "DESC"
+                },
+                cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "DNSE foreign trading snapshot failed for {Symbol}. Market board will continue without foreign trading data.",
+                symbol);
+
+            return JsonDocument.Parse("{}");
+        }
+    }
+
+    private static IReadOnlyCollection<string> NormalizeSymbols(IReadOnlyCollection<string> symbols)
+    {
+        return symbols
+            .SelectMany(symbol => symbol.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Select(NormalizeSymbol)
+            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string NormalizeBoardId(string boardId)
+    {
+        return string.IsNullOrWhiteSpace(boardId)
+            ? DefaultBoardId
+            : boardId.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeSymbol(string symbol)
+    {
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeToken(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().ToUpperInvariant();
+    }
+}

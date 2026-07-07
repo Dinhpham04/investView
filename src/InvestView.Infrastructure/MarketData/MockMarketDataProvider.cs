@@ -117,18 +117,21 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
     ];
 
     public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
-        IReadOnlyCollection<string> symbols,
-        string boardId,
+        MarketBoardQuery query,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var normalizedBoardId = NormalizeBoardId(boardId);
-        var symbolFilter = NormalizeSymbols(symbols);
+        var normalizedBoardId = NormalizeBoardId(query.BoardId);
+        var symbolFilter = NormalizeSymbols(query.Symbols);
+        var exchangeFilter = NormalizeExchange(query.MarketId);
+        var indexFilter = NormalizeToken(query.IndexName);
 
         var quotes = Quotes
             .Where(quote => quote.BoardId.Equals(normalizedBoardId, StringComparison.OrdinalIgnoreCase))
             .Where(quote => symbolFilter.Count == 0 || symbolFilter.Contains(quote.Symbol))
+            .Where(quote => string.IsNullOrWhiteSpace(exchangeFilter) || quote.MarketId.Equals(exchangeFilter, StringComparison.OrdinalIgnoreCase))
+            .Where(quote => string.IsNullOrWhiteSpace(indexFilter) || IsMockIndexMember(indexFilter, quote.Symbol))
             .OrderBy(quote => quote.Symbol, StringComparer.Ordinal)
             .ToArray();
 
@@ -194,8 +197,36 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
     private static HashSet<string> NormalizeSymbols(IReadOnlyCollection<string> symbols)
     {
         return symbols
-            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .SelectMany(symbol => symbol.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(symbol => symbol.Trim().ToUpperInvariant())
             .ToHashSet(StringComparer.Ordinal);
+    }
+
+    private static string NormalizeExchange(string? marketId)
+    {
+        return NormalizeToken(marketId) switch
+        {
+            "STO" => "HOSE",
+            "STX" => "HNX",
+            "UPX" => "UPCOM",
+            var normalizedMarketId => normalizedMarketId
+        };
+    }
+
+    private static string NormalizeToken(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().ToUpperInvariant();
+    }
+
+    private static bool IsMockIndexMember(string indexName, string symbol)
+    {
+        if (indexName is "VNINDEX" or "VN30" or "VN100" or "VNXALLSHARE")
+        {
+            return symbol is "HPG" or "SSI" or "VCB";
+        }
+
+        return false;
     }
 }

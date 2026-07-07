@@ -26,13 +26,19 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
     }
 
     public async Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
-        IReadOnlyCollection<string> symbols,
-        string boardId,
+        MarketBoardQuery query,
         CancellationToken cancellationToken)
     {
-        var normalizedSymbols = NormalizeSymbols(symbols);
-        var normalizedBoardId = NormalizeToken(boardId, MockMarketDataProvider.DefaultBoardId);
-        var cacheKey = $"market-board:{normalizedBoardId}:{string.Join(',', normalizedSymbols)}";
+        var normalizedSymbols = NormalizeSymbols(query.Symbols);
+        var normalizedBoardId = NormalizeToken(query.BoardId, MockMarketDataProvider.DefaultBoardId);
+        var normalizedMarketId = NormalizeToken(query.MarketId ?? string.Empty, string.Empty);
+        var normalizedIndexName = NormalizeToken(query.IndexName ?? string.Empty, string.Empty);
+        var normalizedQuery = new MarketBoardQuery(
+            normalizedSymbols,
+            normalizedBoardId,
+            normalizedMarketId,
+            normalizedIndexName);
+        var cacheKey = $"market-board:{normalizedBoardId}:{normalizedMarketId}:{normalizedIndexName}:{string.Join(',', normalizedSymbols)}";
 
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketQuoteDto>? cachedQuotes) && cachedQuotes is not null)
         {
@@ -41,7 +47,7 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         }
 
         _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
-        var quotes = await _inner.GetMarketBoardAsync(normalizedSymbols, normalizedBoardId, cancellationToken);
+        var quotes = await _inner.GetMarketBoardAsync(normalizedQuery, cancellationToken);
         _cache.Set(cacheKey, quotes, _options.MarketBoardTtl);
 
         return quotes;
@@ -102,7 +108,7 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
     private static IReadOnlyCollection<string> NormalizeSymbols(IReadOnlyCollection<string> symbols)
     {
         return symbols
-            .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+            .SelectMany(symbol => symbol.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             .Select(symbol => symbol.Trim().ToUpperInvariant())
             .Order(StringComparer.Ordinal)
             .ToArray();

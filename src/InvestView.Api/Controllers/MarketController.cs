@@ -22,11 +22,16 @@ public sealed class MarketController : ControllerBase
     public async Task<ActionResult<IReadOnlyList<MarketQuoteDto>>> GetQuotes(
         [FromQuery] string[]? symbols,
         [FromQuery] string? boardId,
+        [FromQuery] string? marketId,
+        [FromQuery] string? indexName,
         CancellationToken cancellationToken)
     {
         var quotes = await _marketDataProvider.GetMarketBoardAsync(
-            symbols ?? [],
-            string.IsNullOrWhiteSpace(boardId) ? DefaultBoardId : boardId,
+            new MarketBoardQuery(
+                symbols ?? [],
+                string.IsNullOrWhiteSpace(boardId) ? DefaultBoardId : boardId,
+                marketId,
+                indexName),
             cancellationToken);
 
         return Ok(quotes);

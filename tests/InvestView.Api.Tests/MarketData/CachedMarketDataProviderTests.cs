@@ -16,8 +16,8 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
 
-        var first = await provider.GetMarketBoardAsync(["SSI", "HPG"], "G1", CancellationToken.None);
-        var second = await provider.GetMarketBoardAsync(["hpg", "ssi"], "g1", CancellationToken.None);
+        var first = await provider.GetMarketBoardAsync(new MarketBoardQuery(["SSI", "HPG"], "G1"), CancellationToken.None);
+        var second = await provider.GetMarketBoardAsync(new MarketBoardQuery(["hpg", "ssi"], "g1"), CancellationToken.None);
 
         Assert.Equal(1, inner.MarketBoardCalls);
         Assert.Same(first, second);
@@ -30,8 +30,8 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
 
-        await provider.GetMarketBoardAsync(["HPG"], "G1", CancellationToken.None);
-        await provider.GetMarketBoardAsync(["SSI"], "G1", CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["HPG"], "G1"), CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["SSI"], "G1"), CancellationToken.None);
 
         Assert.Equal(2, inner.MarketBoardCalls);
     }
@@ -43,8 +43,21 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
 
-        await provider.GetMarketBoardAsync(["HPG"], "G1", CancellationToken.None);
-        await provider.GetMarketBoardAsync(["HPG"], "G2", CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["HPG"], "G1"), CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["HPG"], "G2"), CancellationToken.None);
+
+        Assert.Equal(2, inner.MarketBoardCalls);
+    }
+
+    [Fact]
+    public async Task GetMarketBoardAsync_WhenMarketFilterDiffers_UsesDifferentCacheEntries()
+    {
+        using var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var inner = new CountingMarketDataProvider();
+        var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
+
+        await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", MarketId: "STO"), CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", IndexName: "VN30"), CancellationToken.None);
 
         Assert.Equal(2, inner.MarketBoardCalls);
     }
@@ -56,9 +69,9 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMilliseconds(30));
 
-        await provider.GetMarketBoardAsync(["HPG"], "G1", CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["HPG"], "G1"), CancellationToken.None);
         await Task.Delay(80);
-        await provider.GetMarketBoardAsync(["HPG"], "G1", CancellationToken.None);
+        await provider.GetMarketBoardAsync(new MarketBoardQuery(["HPG"], "G1"), CancellationToken.None);
 
         Assert.Equal(2, inner.MarketBoardCalls);
     }
@@ -117,8 +130,7 @@ public sealed class CachedMarketDataProviderTests
         public int OhlcCalls { get; private set; }
 
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
-            IReadOnlyCollection<string> symbols,
-            string boardId,
+            MarketBoardQuery query,
             CancellationToken cancellationToken)
         {
             MarketBoardCalls++;
@@ -126,8 +138,8 @@ public sealed class CachedMarketDataProviderTests
             IReadOnlyList<MarketQuoteDto> quotes =
             [
                 new(
-                    Symbol: string.Join(",", symbols),
-                    BoardId: boardId,
+                    Symbol: string.Join(",", query.Symbols),
+                    BoardId: query.BoardId,
                     MarketId: "MOCK",
                     DisplayName: "Mock quote",
                     ReferencePrice: 100m,

@@ -1,3 +1,4 @@
+using InvestView.Application.Abstractions.MarketData;
 using InvestView.Infrastructure.MarketData;
 
 namespace InvestView.Api.Tests.MarketData;
@@ -9,7 +10,7 @@ public sealed class MockMarketDataProviderTests
     {
         var provider = new MockMarketDataProvider();
 
-        var quotes = await provider.GetMarketBoardAsync([], "G1", CancellationToken.None);
+        var quotes = await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1"), CancellationToken.None);
 
         Assert.Equal(["HPG", "SSI", "VCB"], quotes.Select(quote => quote.Symbol));
         Assert.All(quotes, quote =>
@@ -31,12 +32,36 @@ public sealed class MockMarketDataProviderTests
     {
         var provider = new MockMarketDataProvider();
 
-        var quotes = await provider.GetMarketBoardAsync(["ssi"], "g1", CancellationToken.None);
+        var quotes = await provider.GetMarketBoardAsync(new MarketBoardQuery(["ssi"], "g1"), CancellationToken.None);
 
         var quote = Assert.Single(quotes);
         Assert.Equal("SSI", quote.Symbol);
         Assert.True(quote.Change < 0);
         Assert.Equal(-0.99m, quote.ChangePercent);
+    }
+
+    [Fact]
+    public async Task GetMarketBoardAsync_FiltersByExchangeMarketId()
+    {
+        var provider = new MockMarketDataProvider();
+
+        var hoseQuotes = await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", MarketId: "STO"), CancellationToken.None);
+        var hnxQuotes = await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", MarketId: "STX"), CancellationToken.None);
+
+        Assert.Equal(["HPG", "SSI", "VCB"], hoseQuotes.Select(quote => quote.Symbol));
+        Assert.Empty(hnxQuotes);
+    }
+
+    [Fact]
+    public async Task GetMarketBoardAsync_FiltersByIndexName()
+    {
+        var provider = new MockMarketDataProvider();
+
+        var vn30Quotes = await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", IndexName: "VN30"), CancellationToken.None);
+        var hnx30Quotes = await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1", IndexName: "HNX30"), CancellationToken.None);
+
+        Assert.Equal(["HPG", "SSI", "VCB"], vn30Quotes.Select(quote => quote.Symbol));
+        Assert.Empty(hnx30Quotes);
     }
 
     [Fact]

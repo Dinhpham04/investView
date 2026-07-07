@@ -1,6 +1,8 @@
 using System.Net;
 using System.Text.Json;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 
 namespace InvestView.Api.Tests.MarketData;
 
@@ -10,7 +12,12 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
 
     public MarketQuotesEndpointTests(WebApplicationFactory<Program> factory)
     {
-        _factory = factory;
+        _factory = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+                configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["MarketData:Provider"] = "Mock"
+                })));
     }
 
     [Fact]
@@ -61,5 +68,43 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(1, payload.RootElement.GetArrayLength());
         Assert.Equal("SSI", payload.RootElement[0].GetProperty("symbol").GetString());
+    }
+
+    [Fact]
+    public async Task GetMarketQuotes_WhenSymbolsAreCommaSeparated_ReturnsFilteredQuotes()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/quotes?symbols=HPG,SSI&boardId=G1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["HPG", "SSI"], payload.RootElement.EnumerateArray().Select(quote => quote.GetProperty("symbol").GetString()));
+    }
+
+    [Fact]
+    public async Task GetMarketQuotes_WhenMarketIdIsProvided_ReturnsExchangeQuotes()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/quotes?marketId=STO&boardId=G1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(3, payload.RootElement.GetArrayLength());
+        Assert.All(payload.RootElement.EnumerateArray(), quote =>
+            Assert.Equal("HOSE", quote.GetProperty("marketId").GetString()));
+    }
+
+    [Fact]
+    public async Task GetMarketQuotes_WhenIndexNameIsProvided_ReturnsIndexQuotes()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/quotes?indexName=VN30&boardId=G1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(["HPG", "SSI", "VCB"], payload.RootElement.EnumerateArray().Select(quote => quote.GetProperty("symbol").GetString()));
     }
 }

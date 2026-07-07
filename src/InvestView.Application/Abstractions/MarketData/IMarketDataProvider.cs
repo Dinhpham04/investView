@@ -5,8 +5,7 @@ namespace InvestView.Application.Abstractions.MarketData;
 public interface IMarketDataProvider
 {
     Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
-        IReadOnlyCollection<string> symbols,
-        string boardId,
+        MarketBoardQuery query,
         CancellationToken cancellationToken);
 
     Task<SymbolDetailDto?> GetSymbolDetailAsync(

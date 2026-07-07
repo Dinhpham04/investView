@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MarketBoard } from './MarketBoard';
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
@@ -93,10 +93,50 @@ describe('MarketBoard', () => {
     expect(screen.getByText('NN mua')).toBeInTheDocument();
     expect(screen.getByText('NN bán')).toBeInTheDocument();
     expect(screen.getByText('Room')).toBeInTheDocument();
+    expect(screen.getByRole('searchbox')).toBeInTheDocument();
+    expect(screen.getByLabelText('User market list')).toBeInTheDocument();
+
+    const indexMarketList = screen.getByLabelText('Index market list') as HTMLSelectElement;
+    expect(indexMarketList.value).toBe('VN30');
+    expect(screen.queryByRole('button', { name: 'VN30' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HOSE' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'HNX' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'UPCOM' })).toBeInTheDocument();
 
     const row = screen.getByRole('row');
     expect(within(row).getByText('HPG')).toBeInTheDocument();
-    expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1', expect.any(Object));
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'SSI' } });
+    await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
+    expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN30', expect.any(Object));
+  });
+
+  it('requests market quotes again when the active market filter changes', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([quote]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    renderWithQueryClient(<MarketBoard />);
+
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN30', expect.any(Object));
+
+    fireEvent.click(screen.getByRole('button', { name: 'HNX' }));
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&marketId=STX', expect.any(Object)),
+    );
+
+    fireEvent.change(screen.getByLabelText('Index market list'), { target: { value: 'VN100' } });
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN100', expect.any(Object)),
+    );
   });
 
   it('keeps the symbol pin column before the stock code column', () => {
