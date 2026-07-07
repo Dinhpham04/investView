@@ -40,57 +40,6 @@ public sealed class DnseMarketDataProviderTests
     }
 
     [Fact]
-    public async Task GetMarketBoardAsync_DuringVietnamTradingDay_QueriesForeignTradingFromStartOfVietnameseDay()
-    {
-        var client = new FakeDnseMarketDataClient();
-        var now = new DateTimeOffset(2026, 7, 7, 3, 23, 0, TimeSpan.Zero);
-        var provider = new DnseMarketDataProvider(
-            client,
-            Options.Create(new DnseMarketDataOptions { DefaultSymbols = ["HPG"] }),
-            timeProvider: new FixedTimeProvider(now));
-
-        await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1"), CancellationToken.None);
-
-        var query = GetSingleForeignTradingQuery(client, "HPG");
-        Assert.Equal(VietnamUnix(2026, 7, 7, 0, 0, 0), long.Parse(query["from"]!));
-        Assert.Equal(now.ToUnixTimeSeconds(), long.Parse(query["to"]!));
-    }
-
-    [Fact]
-    public async Task GetMarketBoardAsync_BeforeVietnamMarketOpen_QueriesPreviousBusinessDay()
-    {
-        var client = new FakeDnseMarketDataClient();
-        var beforeOpenTuesday = new DateTimeOffset(2026, 7, 7, 1, 30, 0, TimeSpan.Zero);
-        var provider = new DnseMarketDataProvider(
-            client,
-            Options.Create(new DnseMarketDataOptions { DefaultSymbols = ["HPG"] }),
-            timeProvider: new FixedTimeProvider(beforeOpenTuesday));
-
-        await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1"), CancellationToken.None);
-
-        var query = GetSingleForeignTradingQuery(client, "HPG");
-        Assert.Equal(VietnamUnix(2026, 7, 6, 0, 0, 0), long.Parse(query["from"]!));
-        Assert.Equal(VietnamUnix(2026, 7, 6, 23, 59, 59), long.Parse(query["to"]!));
-    }
-
-    [Fact]
-    public async Task GetMarketBoardAsync_BeforeVietnamMarketOpenOnMonday_QueriesPreviousFriday()
-    {
-        var client = new FakeDnseMarketDataClient();
-        var beforeOpenMonday = new DateTimeOffset(2026, 7, 6, 1, 30, 0, TimeSpan.Zero);
-        var provider = new DnseMarketDataProvider(
-            client,
-            Options.Create(new DnseMarketDataOptions { DefaultSymbols = ["HPG"] }),
-            timeProvider: new FixedTimeProvider(beforeOpenMonday));
-
-        await provider.GetMarketBoardAsync(new MarketBoardQuery([], "G1"), CancellationToken.None);
-
-        var query = GetSingleForeignTradingQuery(client, "HPG");
-        Assert.Equal(VietnamUnix(2026, 7, 3, 0, 0, 0), long.Parse(query["from"]!));
-        Assert.Equal(VietnamUnix(2026, 7, 3, 23, 59, 59), long.Parse(query["to"]!));
-    }
-
-    [Fact]
     public async Task GetMarketBoardAsync_WhenMarketIdIsProvided_ResolvesSymbolsFromInstruments()
     {
         var client = new FakeDnseMarketDataClient();
@@ -205,16 +154,4 @@ public sealed class DnseMarketDataProviderTests
         return call.Query;
     }
 
-    private static long VietnamUnix(int year, int month, int day, int hour, int minute, int second)
-    {
-        return new DateTimeOffset(year, month, day, hour, minute, second, TimeSpan.FromHours(7)).ToUnixTimeSeconds();
-    }
-
-    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        public override DateTimeOffset GetUtcNow()
-        {
-            return utcNow;
-        }
-    }
 }

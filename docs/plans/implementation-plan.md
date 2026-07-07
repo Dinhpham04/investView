@@ -308,21 +308,23 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 
 ### Task 7: Add SignalR Quote Hub with Mock Stream
 
+**Status:** Done
+
 **Description:** Add backend SignalR `QuoteHub` and a mock quote update service that broadcasts quote changes. This establishes the app-facing realtime contract before DNSE WebSocket is introduced.
 
 **Acceptance criteria:**
 
-- [ ] API exposes `/hubs/quotes`.
-- [ ] Mock stream publishes quote updates for known symbols.
-- [ ] SignalR payload uses internal `MarketQuoteDto` or a dedicated app-owned update DTO.
-- [ ] SignalR contract supports partial quote updates without exposing DNSE message type names.
-- [ ] Stream can be disabled in tests/config.
+- [x] API exposes `/hubs/quotes`.
+- [x] Mock stream publishes quote updates for known symbols.
+- [x] SignalR payload uses internal `MarketQuoteDto` or a dedicated app-owned update DTO.
+- [x] SignalR contract supports partial quote updates without exposing DNSE message type names.
+- [x] Stream can be disabled in tests/config.
 
 **Verification:**
 
-- [ ] Backend tests cover hub/service behavior where practical.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] Backend tests cover hub/service behavior where practical.
+- [x] `dotnet build`
+- [x] `dotnet test`
 - [ ] Manual check with a simple client or frontend connection.
 
 **Dependencies:** Task 3

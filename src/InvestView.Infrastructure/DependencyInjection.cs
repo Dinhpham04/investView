@@ -1,6 +1,7 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Infrastructure.Dnse;
 using InvestView.Infrastructure.MarketData;
+using InvestView.Infrastructure.Realtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,6 +18,7 @@ public static class DependencyInjection
     {
         services.AddLogging();
         services.AddMemoryCache();
+        services.AddSingleton(TimeProvider.System);
 
         if (configureMarketDataCache is null)
         {
@@ -31,6 +33,7 @@ public static class DependencyInjection
         {
             services.AddOptions<MarketDataProviderOptions>();
             services.AddOptions<DnseMarketDataOptions>();
+            services.AddOptions<MarketQuoteStreamOptions>();
         }
         else
         {
@@ -38,6 +41,8 @@ public static class DependencyInjection
                 configuration.GetSection(MarketDataProviderOptions.SectionName));
             services.Configure<DnseMarketDataOptions>(
                 configuration.GetSection(DnseMarketDataOptions.SectionName));
+            services.Configure<MarketQuoteStreamOptions>(
+                configuration.GetSection(MarketQuoteStreamOptions.SectionName));
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>
@@ -50,6 +55,8 @@ public static class DependencyInjection
         services.AddSingleton<DnseRestSigner>();
         services.AddHttpClient<IDnseMarketDataClient, DnseMarketDataClient>();
         services.AddSingleton<DnseMarketDataProvider>();
+        services.AddSingleton<MockQuoteStreamPublisher>();
+        services.AddHostedService<MockQuoteStreamService>();
         services.AddSingleton<IMarketDataProvider>(serviceProvider =>
         {
             var inner = ResolveInnerMarketDataProvider(serviceProvider);
