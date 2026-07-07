@@ -2,6 +2,7 @@ using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Application.Dtos.MarketData;
 using InvestView.Application.Dtos.Realtime;
+using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
 using Microsoft.Extensions.Options;
 
@@ -16,9 +17,11 @@ public sealed class MockQuoteStreamPublisherTests
         var broadcaster = new RecordingQuoteBroadcaster();
         var publisher = new MockQuoteStreamPublisher(
             provider,
+            new MockMarketDataProvider(),
             broadcaster,
             Options.Create(new MarketQuoteStreamOptions
             {
+                SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
                 BoardId = "g1",
                 Symbols = ["ssi,hpg"]
             }),
@@ -42,8 +45,108 @@ public sealed class MockQuoteStreamPublisherTests
         Assert.Equal("Mock", status.Provider);
     }
 
+    [Fact]
+    public async Task PublishOnceAsync_ByDefault_UsesMockSourceInsteadOfConfiguredMarketDataProvider()
+    {
+        var configuredProvider = new RecordingMarketDataProvider();
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var publisher = new MockQuoteStreamPublisher(
+            configuredProvider,
+            new MockMarketDataProvider(),
+            broadcaster,
+            Options.Create(new MarketQuoteStreamOptions
+            {
+                BoardId = "g1",
+                Symbols = ["ssi,hpg"]
+            }),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 7, 3, 30, 0, TimeSpan.Zero)));
+
+        var published = await publisher.PublishOnceAsync(CancellationToken.None);
+
+        Assert.Equal(2, published);
+        Assert.Null(configuredProvider.LastQuery);
+        Assert.Equal(["HPG", "SSI"], broadcaster.Updates.Select(update => update.Symbol));
+    }
+
+    [Fact]
+    public async Task PublishOnceAsync_GeneratesMockPricesAroundReferencePrice()
+    {
+        var provider = new RecordingMarketDataProvider(
+        [
+            RecordingMarketDataProvider.CreateQuote("SSI", 100m, 150m)
+        ]);
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var publisher = new MockQuoteStreamPublisher(
+            provider,
+            new MockMarketDataProvider(),
+            broadcaster,
+            Options.Create(new MarketQuoteStreamOptions
+            {
+                SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
+                BoardId = "g1",
+                Symbols = ["ssi"]
+            }),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 7, 3, 30, 0, TimeSpan.Zero)));
+
+        await publisher.PublishOnceAsync(CancellationToken.None);
+
+        var update = Assert.Single(broadcaster.Updates);
+        Assert.True(update.LastPrice < 100m);
+        Assert.Equal(update.LastPrice - 100m, update.Change);
+        Assert.Equal(Math.Round((update.LastPrice.Value - 100m) / 100m * 100m, 2, MidpointRounding.AwayFromZero), update.ChangePercent);
+        Assert.True(update.Change < 0m);
+        Assert.True(update.ChangePercent < 0m);
+    }
+
+    [Fact]
+    public async Task PublishOnceAsync_GeneratesBidAndAskLevelUpdates()
+    {
+        var quote = RecordingMarketDataProvider.CreateQuote("SSI", 100m, 150m);
+        var provider = new RecordingMarketDataProvider([quote]);
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var publisher = new MockQuoteStreamPublisher(
+            provider,
+            new MockMarketDataProvider(),
+            broadcaster,
+            Options.Create(new MarketQuoteStreamOptions
+            {
+                SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
+                BoardId = "g1",
+                Symbols = ["ssi"]
+            }),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 7, 3, 30, 0, TimeSpan.Zero)));
+
+        await publisher.PublishOnceAsync(CancellationToken.None);
+
+        var update = Assert.Single(broadcaster.Updates);
+        Assert.NotNull(update.BidLevels);
+        Assert.NotNull(update.AskLevels);
+        var bid = Assert.Single(update.BidLevels);
+        var ask = Assert.Single(update.AskLevels);
+        Assert.NotEqual(quote.BidLevels[0].Price, bid.Price);
+        Assert.NotEqual(quote.BidLevels[0].Quantity, bid.Quantity);
+        Assert.NotEqual(quote.AskLevels[0].Price, ask.Price);
+        Assert.NotEqual(quote.AskLevels[0].Quantity, ask.Quantity);
+    }
+
     private sealed class RecordingMarketDataProvider : IMarketDataProvider
     {
+        private readonly IReadOnlyList<MarketQuoteDto> _quotes;
+
+        public RecordingMarketDataProvider()
+            : this(
+            [
+                CreateQuote("HPG", 23.1m, 23.1m),
+                CreateQuote("SSI", 26.75m, 26.7m)
+            ])
+        {
+        }
+
+        public RecordingMarketDataProvider(IReadOnlyList<MarketQuoteDto> quotes)
+        {
+            _quotes = quotes;
+        }
+
         public MarketBoardQuery? LastQuery { get; private set; }
 
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
@@ -51,13 +154,14 @@ public sealed class MockQuoteStreamPublisherTests
             CancellationToken cancellationToken)
         {
             LastQuery = query;
-            IReadOnlyList<MarketQuoteDto> quotes =
-            [
-                CreateQuote("HPG", 23.1m, 23.1m),
-                CreateQuote("SSI", 26.75m, 26.7m)
-            ];
 
-            return Task.FromResult(quotes);
+            var symbolFilter = query.Symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var quotes = _quotes
+                .Where(quote => symbolFilter.Count == 0 || symbolFilter.Contains(quote.Symbol))
+                .OrderBy(quote => quote.Symbol, StringComparer.Ordinal)
+                .ToArray();
+
+            return Task.FromResult<IReadOnlyList<MarketQuoteDto>>(quotes);
         }
 
         public Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, CancellationToken cancellationToken)
@@ -73,7 +177,7 @@ public sealed class MockQuoteStreamPublisherTests
             return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
         }
 
-        private static MarketQuoteDto CreateQuote(string symbol, decimal referencePrice, decimal lastPrice)
+        public static MarketQuoteDto CreateQuote(string symbol, decimal referencePrice, decimal lastPrice)
         {
             var change = lastPrice - referencePrice;
             return new MarketQuoteDto(

@@ -2,25 +2,29 @@ using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Application.Dtos.MarketData;
 using InvestView.Application.Dtos.Realtime;
+using InvestView.Infrastructure.MarketData;
 using Microsoft.Extensions.Options;
 
 namespace InvestView.Infrastructure.Realtime;
 
 public sealed class MockQuoteStreamPublisher
 {
-    private readonly IMarketDataProvider _marketDataProvider;
+    private readonly IMarketDataProvider _configuredMarketDataProvider;
+    private readonly MockMarketDataProvider _mockMarketDataProvider;
     private readonly IMarketQuoteBroadcaster _broadcaster;
     private readonly MarketQuoteStreamOptions _options;
     private readonly TimeProvider _timeProvider;
     private long _sequence;
 
     public MockQuoteStreamPublisher(
-        IMarketDataProvider marketDataProvider,
+        IMarketDataProvider configuredMarketDataProvider,
+        MockMarketDataProvider mockMarketDataProvider,
         IMarketQuoteBroadcaster broadcaster,
         IOptions<MarketQuoteStreamOptions> options,
         TimeProvider timeProvider)
     {
-        _marketDataProvider = marketDataProvider;
+        _configuredMarketDataProvider = configuredMarketDataProvider;
+        _mockMarketDataProvider = mockMarketDataProvider;
         _broadcaster = broadcaster;
         _options = options.Value;
         _timeProvider = timeProvider;
@@ -32,7 +36,7 @@ public sealed class MockQuoteStreamPublisher
         var query = new MarketBoardQuery(
             NormalizeSymbols(_options.Symbols),
             NormalizeToken(_options.BoardId, "G1"));
-        var quotes = await _marketDataProvider.GetMarketBoardAsync(query, cancellationToken);
+        var quotes = await ResolveSourceProvider().GetMarketBoardAsync(query, cancellationToken);
         var now = _timeProvider.GetUtcNow();
         var published = 0;
 
@@ -55,18 +59,30 @@ public sealed class MockQuoteStreamPublisher
         return published;
     }
 
+    private IMarketDataProvider ResolveSourceProvider()
+    {
+        return _options.SourceProvider.Equals(MarketQuoteStreamOptions.ConfiguredSourceProvider, StringComparison.OrdinalIgnoreCase)
+            ? _configuredMarketDataProvider
+            : _mockMarketDataProvider;
+    }
+
     private static MarketQuoteUpdateDto CreateUpdate(
         MarketQuoteDto quote,
         long sequence,
         DateTimeOffset updatedAt)
     {
-        var priceStep = quote.LastPrice >= 1_000m ? 50m : 0.05m;
+        var priceAnchor = quote.ReferencePrice > 0m ? quote.ReferencePrice : quote.LastPrice;
+        var priceStep = priceAnchor >= 1_000m ? 50m : 0.05m;
         var direction = (sequence + StableSymbolOffset(quote.Symbol)) % 3 - 1;
-        var lastPrice = Math.Max(0m, quote.LastPrice + direction * priceStep);
+        var lastPrice = quote.ReferencePrice > 0m
+            ? quote.ReferencePrice + direction * priceStep
+            : quote.LastPrice + direction * priceStep;
+        lastPrice = ClampToTradingBand(lastPrice, quote.FloorPrice, quote.CeilingPrice);
         var change = quote.ReferencePrice > 0m ? lastPrice - quote.ReferencePrice : quote.Change;
         var changePercent = quote.ReferencePrice > 0m
             ? Math.Round(change / quote.ReferencePrice * 100m, 2, MidpointRounding.AwayFromZero)
             : quote.ChangePercent;
+        var levelQuantityDirection = direction == 0 ? 1 : direction;
         var lastQuantity = Math.Max(0, quote.LastQuantity + direction * 10);
         var totalVolume = Math.Max(0, quote.TotalVolume + Math.Abs(direction) * 100);
 
@@ -82,10 +98,57 @@ public sealed class MockQuoteStreamPublisher
             ForeignBuyVolume: quote.ForeignBuyVolume,
             ForeignSellVolume: quote.ForeignSellVolume,
             ForeignRoom: quote.ForeignRoom,
-            BidLevels: quote.BidLevels,
-            AskLevels: quote.AskLevels,
+            BidLevels: CreatePriceLevels(
+                quote.BidLevels,
+                lastPrice,
+                -priceStep,
+                levelQuantityDirection,
+                quote.FloorPrice,
+                quote.CeilingPrice),
+            AskLevels: CreatePriceLevels(
+                quote.AskLevels,
+                lastPrice,
+                priceStep,
+                -levelQuantityDirection,
+                quote.FloorPrice,
+                quote.CeilingPrice),
             TradingStatus: quote.TradingStatus,
             UpdatedAt: updatedAt);
+    }
+
+    private static IReadOnlyList<PriceLevelDto> CreatePriceLevels(
+        IReadOnlyList<PriceLevelDto> currentLevels,
+        decimal lastPrice,
+        decimal priceStep,
+        long quantityDirection,
+        decimal floorPrice,
+        decimal ceilingPrice)
+    {
+        return currentLevels
+            .Take(3)
+            .Select((level, index) => level with
+            {
+                Price = ClampToTradingBand(lastPrice + priceStep * (index + 1), floorPrice, ceilingPrice),
+                Quantity = Math.Max(0, level.Quantity + quantityDirection * (index + 1) * 100)
+            })
+            .ToArray();
+    }
+
+    private static decimal ClampToTradingBand(decimal price, decimal floorPrice, decimal ceilingPrice)
+    {
+        var result = Math.Max(0m, price);
+
+        if (floorPrice > 0m)
+        {
+            result = Math.Max(floorPrice, result);
+        }
+
+        if (ceilingPrice > 0m)
+        {
+            result = Math.Min(ceilingPrice, result);
+        }
+
+        return result;
     }
 
     private static int StableSymbolOffset(string symbol)

@@ -8,6 +8,10 @@ export default defineConfig({
     proxy: {
       '/health': 'http://localhost:5122',
       '/api': 'http://localhost:5122',
+      '/hubs': {
+        target: 'http://localhost:5122',
+        ws: true,
+      },
     },
   },
   test: {

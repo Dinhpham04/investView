@@ -20,14 +20,7 @@ public static class DependencyInjection
         services.AddMemoryCache();
         services.AddSingleton(TimeProvider.System);
 
-        if (configureMarketDataCache is null)
-        {
-            services.AddOptions<MarketDataCacheOptions>();
-        }
-        else
-        {
-            services.Configure(configureMarketDataCache);
-        }
+        services.AddOptions<MarketDataCacheOptions>();
 
         if (configuration is null)
         {
@@ -37,12 +30,19 @@ public static class DependencyInjection
         }
         else
         {
+            services.Configure<MarketDataCacheOptions>(
+                configuration.GetSection(MarketDataCacheOptions.SectionName));
             services.Configure<MarketDataProviderOptions>(
                 configuration.GetSection(MarketDataProviderOptions.SectionName));
             services.Configure<DnseMarketDataOptions>(
                 configuration.GetSection(DnseMarketDataOptions.SectionName));
             services.Configure<MarketQuoteStreamOptions>(
                 configuration.GetSection(MarketQuoteStreamOptions.SectionName));
+        }
+
+        if (configureMarketDataCache is not null)
+        {
+            services.Configure(configureMarketDataCache);
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>

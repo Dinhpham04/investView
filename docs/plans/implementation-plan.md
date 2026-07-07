@@ -340,20 +340,23 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 
 ### Task 8: Connect Frontend to Realtime Quotes
 
+**Status:** Done
+
 **Description:** Add frontend SignalR client and update the market board from live quote messages.
 
 **Acceptance criteria:**
 
-- [ ] SignalR connection is isolated in `shared/realtime`.
-- [ ] Market board updates changed rows through stable row identity and AG Grid transactions instead of replacing unrelated UI state.
-- [ ] Connection state is visible enough for debugging.
-- [ ] UI still works if realtime connection fails.
+- [x] SignalR connection is isolated in `shared/realtime`.
+- [x] Market board updates changed rows through stable row identity and AG Grid transactions instead of replacing unrelated UI state.
+- [x] Connection state is visible enough for debugging.
+- [x] UI still works if realtime connection fails.
 
 **Verification:**
 
-- [ ] Component or hook tests cover quote update handling.
-- [ ] `npm run build`
-- [ ] `npm run test`
+- [x] Component or hook tests cover quote update handling.
+- [x] `npm run build`
+- [x] `npm run test`
+- [x] Manual SignalR smoke test: Node client received quote updates from API mock stream.
 - [ ] Manual browser check: quote rows update.
 
 **Dependencies:** Task 7
@@ -367,10 +370,10 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 
 ### Checkpoint: Realtime Market Board
 
-- [ ] REST initial load works.
-- [ ] SignalR updates work.
-- [ ] App remains usable when realtime is unavailable.
-- [ ] Realtime DTOs are internal app contracts.
+- [x] REST initial load works.
+- [x] SignalR updates work.
+- [x] App remains usable when realtime is unavailable.
+- [x] Realtime DTOs are internal app contracts.
 
 ## Milestone 4: Persistence, Watchlist, Portfolio, and Simulated Orders
 

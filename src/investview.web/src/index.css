@@ -178,25 +178,76 @@ input::placeholder {
 }
 
 .quote-price-ceiling {
-  color: #d946ef;
+  --quote-cell-color: #d946ef;
+  color: var(--quote-cell-color);
 }
 
 .quote-price-floor {
-  color: #22d3ee;
+  --quote-cell-color: #22d3ee;
+  color: var(--quote-cell-color);
 }
 
 .quote-price-reference {
-  color: #facc15;
+  --quote-cell-color: #facc15;
+  color: var(--quote-cell-color);
 }
 
 .quote-price-up {
-  color: #22c55e;
+  --quote-cell-color: #22c55e;
+  color: var(--quote-cell-color);
 }
 
 .quote-price-down {
-  color: #ef4444;
+  --quote-cell-color: #ef4444;
+  color: var(--quote-cell-color);
 }
 
 .quote-price-neutral {
-  color: #cbd5e1;
+  --quote-cell-color: #cbd5e1;
+  color: var(--quote-cell-color);
+}
+
+.quote-cell-flash {
+  animation-duration: 900ms;
+  animation-fill-mode: both;
+  animation-name: quote-cell-flash-fade;
+  animation-timing-function: ease-out;
+  will-change: background-color, color;
+}
+
+.quote-flash-ceiling {
+  --quote-flash-bg: rgba(217, 70, 239, 0.62);
+}
+
+.quote-flash-floor {
+  --quote-flash-bg: rgba(34, 211, 238, 0.58);
+}
+
+.quote-flash-reference {
+  --quote-flash-bg: rgba(250, 204, 21, 0.6);
+}
+
+.quote-flash-up {
+  --quote-flash-bg: rgba(34, 197, 94, 0.58);
+}
+
+.quote-flash-down {
+  --quote-flash-bg: rgba(239, 68, 68, 0.58);
+}
+
+.quote-flash-neutral {
+  --quote-flash-bg: rgba(148, 163, 184, 0.48);
+}
+
+@keyframes quote-cell-flash-fade {
+  0%,
+  45% {
+    background-color: var(--quote-flash-bg);
+    color: #ffffff;
+  }
+
+  100% {
+    background-color: transparent;
+    color: var(--quote-cell-color);
+  }
 }

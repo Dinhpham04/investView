@@ -1,35 +1,71 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MarketBoard } from './MarketBoard';
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
-import type { MarketQuote } from '../../shared/types/market';
+import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHubConnection';
+import type { MarketQuote, MarketQuoteUpdate, QuoteStreamStatus } from '../../shared/types/market';
 
-vi.mock('ag-grid-react', () => ({
-  AgGridReact: ({
-    columnDefs,
-    rowData,
-  }: {
-    columnDefs: { headerName?: string; children?: { headerName?: string }[] }[];
-    rowData: { symbol: string; lastPrice: number | null; totalVolume: number | null }[];
-  }) => (
-    <div role="grid">
-      <div>
-        {columnDefs.map((column) => [
-          <span key={column.headerName}>{column.headerName}</span>,
-          ...(column.children?.map((child) => <span key={`${column.headerName}-${child.headerName}`}>{child.headerName}</span>) ?? []),
-        ])}
-      </div>
-      {rowData.map((row) => (
-        <div key={row.symbol} role="row">
-          <span>{row.symbol}</span>
-          <span>{row.lastPrice}</span>
-          <span>{row.totalVolume}</span>
-        </div>
-      ))}
-    </div>
-  ),
+const testRuntime = vi.hoisted(() => ({
+  applyTransactionAsync: vi.fn(),
+  gridReady: false,
+  realtimeOptions: undefined as
+    | {
+        onQuoteUpdate: (update: MarketQuoteUpdate) => void;
+        onStreamStatus?: (status: QuoteStreamStatus) => void;
+      }
+    | undefined,
+  realtimeState: {
+    status: 'connected' as QuoteHubConnectionStatus,
+    lastError: null as string | null,
+  },
 }));
+
+vi.mock('../../shared/realtime/useQuoteHubConnection', () => ({
+  useQuoteHubConnection: vi.fn((options) => {
+    testRuntime.realtimeOptions = options;
+    return testRuntime.realtimeState;
+  }),
+}));
+
+vi.mock('ag-grid-react', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
+
+  return {
+    AgGridReact: ({
+      columnDefs,
+      rowData,
+      onGridReady,
+    }: {
+      columnDefs: { headerName?: string; children?: { headerName?: string }[] }[];
+      rowData: { symbol: string; lastPrice: number | null; totalVolume: number | null }[];
+      onGridReady?: (event: { api: { applyTransactionAsync: typeof testRuntime.applyTransactionAsync } }) => void;
+    }) => {
+      React.useEffect(() => {
+        onGridReady?.({ api: { applyTransactionAsync: testRuntime.applyTransactionAsync } });
+        testRuntime.gridReady = true;
+      }, [onGridReady]);
+
+      return (
+        <div role="grid">
+          <div>
+            {columnDefs.map((column) => [
+              <span key={column.headerName}>{column.headerName}</span>,
+              ...(column.children?.map((child) => <span key={`${column.headerName}-${child.headerName}`}>{child.headerName}</span>) ?? []),
+            ])}
+          </div>
+          {rowData.map((row) => (
+            <div key={row.symbol} role="row">
+              <span>{row.symbol}</span>
+              <span>{row.lastPrice}</span>
+              <span>{row.totalVolume}</span>
+            </div>
+          ))}
+        </div>
+      );
+    },
+  };
+});
 
 const quote: MarketQuote = {
   symbol: 'HPG',
@@ -68,6 +104,11 @@ const quote: MarketQuote = {
 describe('MarketBoard', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    testRuntime.applyTransactionAsync.mockClear();
+    testRuntime.gridReady = false;
+    testRuntime.realtimeOptions = undefined;
+    testRuntime.realtimeState.status = 'connected';
+    testRuntime.realtimeState.lastError = null;
   });
 
   it('renders loading and then the REST snapshot board', async () => {
@@ -86,6 +127,7 @@ describe('MarketBoard', () => {
     expect(screen.getByText('Loading market board')).toBeInTheDocument();
     expect(await screen.findByRole('grid')).toBeInTheDocument();
     expect(screen.getByText('REST snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Realtime on')).toBeInTheDocument();
     expect(screen.getByText('Bên mua')).toBeInTheDocument();
     expect(screen.getByText('Khớp lệnh')).toBeInTheDocument();
     expect(screen.getByText('Bên bán')).toBeInTheDocument();
@@ -108,6 +150,74 @@ describe('MarketBoard', () => {
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'SSI' } });
     await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
     expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN30', expect.any(Object));
+  });
+
+  it('applies realtime quote updates to the matching grid row', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([quote]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    renderWithQueryClient(<MarketBoard />);
+
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+    await waitFor(() => expect(testRuntime.gridReady).toBe(true));
+
+    const realtimeUpdate: MarketQuoteUpdate = {
+      symbol: 'HPG',
+      boardId: 'G1',
+      lastPrice: 28.35,
+      change: 0.95,
+      changePercent: 3.47,
+      lastQuantity: 20_000,
+      totalVolume: 12_365_678,
+      totalValue: 348_000_000_000,
+      foreignBuyVolume: 800_100,
+      foreignSellVolume: 1_230_649,
+      foreignRoom: 1_742_488_798,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: 'Continuous',
+      updatedAt: '2026-07-03T07:45:03Z',
+    };
+
+    act(() => {
+      testRuntime.realtimeOptions?.onQuoteUpdate(realtimeUpdate);
+    });
+
+    await waitFor(() => expect(screen.getByText('28.35')).toBeInTheDocument());
+    expect(testRuntime.applyTransactionAsync).toHaveBeenCalledWith({
+      update: [expect.objectContaining({
+        id: 'G1:HPG',
+        lastPrice: 28.35,
+        flashClasses: expect.objectContaining({ lastPrice: 'up', lastQuantity: 'up' }),
+      })],
+    });
+  });
+
+  it('keeps the REST snapshot usable when realtime is offline', async () => {
+    testRuntime.realtimeState.status = 'error';
+    testRuntime.realtimeState.lastError = 'Connection failed';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([quote]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    );
+
+    renderWithQueryClient(<MarketBoard />);
+
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+    expect(screen.getByText('Realtime offline')).toBeInTheDocument();
+    expect(screen.getByText('HPG')).toBeInTheDocument();
   });
 
   it('requests market quotes again when the active market filter changes', async () => {

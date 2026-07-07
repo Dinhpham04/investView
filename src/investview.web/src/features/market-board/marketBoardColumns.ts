@@ -1,9 +1,10 @@
-import type { CellClassParams, ColDef, ColGroupDef, ValueFormatterParams } from 'ag-grid-community';
+import type { CellClassParams, CellClassRules, ColDef, ColGroupDef, ValueFormatterParams } from 'ag-grid-community';
 import {
   formatChange,
   formatPercent,
   formatPrice,
   formatQuantity,
+  type MarketBoardFlashField,
   type MarketBoardRow,
   type PriceClass,
 } from './marketBoardFormatters';
@@ -15,6 +16,15 @@ const priceClassNames: Record<PriceClass, string> = {
   up: 'quote-price-up',
   down: 'quote-price-down',
   neutral: 'quote-price-neutral',
+};
+
+const flashClassNames: Record<PriceClass, string> = {
+  ceiling: 'quote-flash-ceiling',
+  floor: 'quote-flash-floor',
+  reference: 'quote-flash-reference',
+  up: 'quote-flash-up',
+  down: 'quote-flash-down',
+  neutral: 'quote-flash-neutral',
 };
 
 export const defaultMarketBoardColumnDef: ColDef<MarketBoardRow> = {
@@ -119,6 +129,7 @@ function priceColumn(
     width,
     valueFormatter: priceValueFormatter,
     cellClass: (params) => classForCell(params, classField),
+    cellClassRules: flashClassRules(field as MarketBoardFlashField),
   };
 }
 
@@ -137,9 +148,8 @@ function quantityColumn(
     valueFormatter: quantityValueFormatter,
   };
 
-  if (classField) {
-    column.cellClass = (params) => classForCell(params, classField);
-  }
+  column.cellClass = (params) => classForCell(params, classField);
+  column.cellClassRules = flashClassRules(field as MarketBoardFlashField);
 
   return column;
 }
@@ -151,6 +161,7 @@ function changeColumn(headerName: string, field: keyof MarketBoardRow): ColDef<M
     width: 76,
     valueFormatter: (params) => formatChange(params.value as number | null | undefined),
     cellClass: (params) => classForCell(params, 'changeClass'),
+    cellClassRules: flashClassRules('change'),
   };
 }
 
@@ -161,6 +172,7 @@ function percentColumn(headerName: string, field: keyof MarketBoardRow): ColDef<
     width: 88,
     valueFormatter: (params) => formatPercent(params.value as number | null | undefined),
     cellClass: (params) => classForCell(params, 'changeClass'),
+    cellClassRules: flashClassRules('changePercent'),
   };
 }
 
@@ -176,7 +188,23 @@ function quantityValueFormatter(params: ValueFormatterParams<MarketBoardRow>) {
   return formatQuantity(params.value as number | null | undefined);
 }
 
-function classForCell(params: CellClassParams<MarketBoardRow>, classField: keyof MarketBoardRow, extraClass?: string) {
-  const priceClass = params.data?.[classField] as PriceClass | undefined;
+function classForCell(
+  params: CellClassParams<MarketBoardRow>,
+  classField?: keyof MarketBoardRow,
+  extraClass?: string,
+) {
+  const priceClass = classField == null ? 'neutral' : (params.data?.[classField] as PriceClass | undefined);
   return ['market-cell', extraClass ?? 'market-cell--number', priceClassNames[priceClass ?? 'neutral']];
+}
+
+function flashClassRules(flashField: MarketBoardFlashField): CellClassRules<MarketBoardRow> {
+  return {
+    'quote-cell-flash': (params) => params.data?.flashClasses[flashField] != null,
+    [flashClassNames.ceiling]: (params) => params.data?.flashClasses[flashField] === 'ceiling',
+    [flashClassNames.floor]: (params) => params.data?.flashClasses[flashField] === 'floor',
+    [flashClassNames.reference]: (params) => params.data?.flashClasses[flashField] === 'reference',
+    [flashClassNames.up]: (params) => params.data?.flashClasses[flashField] === 'up',
+    [flashClassNames.down]: (params) => params.data?.flashClasses[flashField] === 'down',
+    [flashClassNames.neutral]: (params) => params.data?.flashClasses[flashField] === 'neutral',
+  };
 }

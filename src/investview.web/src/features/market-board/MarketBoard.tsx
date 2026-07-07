@@ -1,22 +1,33 @@
-import { useDeferredValue, useMemo, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import type { GridApi, GridReadyEvent } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useMarketQuotesQuery } from './useMarketQuotesQuery';
-import { mapQuoteToMarketBoardRow } from './marketBoardFormatters';
+import { mapQuoteToMarketBoardRow, type MarketBoardFlashClasses, type MarketBoardRow } from './marketBoardFormatters';
 import { defaultMarketBoardColumnDef, defaultMarketBoardColumnGroupDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { marketBoardTheme } from './marketBoardTheme';
 import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './marketLists';
+import { applyQuoteUpdate } from './marketBoardRealtime';
+import { useQuoteHubConnection } from '../../shared/realtime/useQuoteHubConnection';
+import type { MarketQuote, MarketQuoteUpdate, QuoteStreamStatus } from '../../shared/types/market';
 
 type ActiveMarketFilter =
   | { kind: 'exchange'; list: SystemMarketList }
   | { kind: 'index'; list: SystemMarketList };
 
 export function MarketBoard() {
+  const gridApiRef = useRef<GridApi<MarketBoardRow> | null>(null);
+  const quotesRef = useRef<MarketQuote[]>([]);
+  const flashClassesByRowRef = useRef<Record<string, MarketBoardFlashClasses>>({});
+  const flashClearTimersRef = useRef<Record<string, number>>({});
   const [selectedIndexCode, setSelectedIndexCode] = useState('VN30');
   const [activeFilter, setActiveFilter] = useState<ActiveMarketFilter>({
     kind: 'index',
     list: systemIndexLists.find((marketList) => marketList.code === 'VN30') ?? systemIndexLists[0],
   });
   const [symbolSearch, setSymbolSearch] = useState('');
+  const [quotes, setQuotes] = useState<MarketQuote[]>([]);
+  const [flashClassesByRow, setFlashClassesByRow] = useState<Record<string, MarketBoardFlashClasses>>({});
+  const [streamStatus, setStreamStatus] = useState<QuoteStreamStatus | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
   const quotesQueryParams = useMemo(
     () => ({
@@ -27,9 +38,76 @@ export function MarketBoard() {
     [activeFilter],
   );
   const quotesQuery = useMarketQuotesQuery(quotesQueryParams);
+  const scheduleFlashClear = useCallback((rowId: string) => {
+    const existingTimer = flashClearTimersRef.current[rowId];
+    if (existingTimer != null) {
+      window.clearTimeout(existingTimer);
+    }
+
+    flashClearTimersRef.current[rowId] = window.setTimeout(() => {
+      const nextFlashClassesByRow = { ...flashClassesByRowRef.current };
+      delete nextFlashClassesByRow[rowId];
+      delete flashClearTimersRef.current[rowId];
+      flashClassesByRowRef.current = nextFlashClassesByRow;
+      setFlashClassesByRow(nextFlashClassesByRow);
+
+      const quote = quotesRef.current.find((item) => getRowId(item) === rowId);
+      if (quote) {
+        gridApiRef.current?.applyTransactionAsync({
+          update: [mapQuoteToMarketBoardRow(quote)],
+        });
+      }
+    }, 900);
+  }, []);
+  const handleRealtimeQuoteUpdate = useCallback((update: MarketQuoteUpdate) => {
+    const result = applyQuoteUpdate(quotesRef.current, update);
+
+    if (result.updatedQuote == null) {
+      return;
+    }
+
+    quotesRef.current = result.quotes;
+    const rowId = getRowId(result.updatedQuote);
+    const nextFlashClassesByRow = {
+      ...flashClassesByRowRef.current,
+      [rowId]: result.flashClasses,
+    };
+    flashClassesByRowRef.current = nextFlashClassesByRow;
+    setFlashClassesByRow(nextFlashClassesByRow);
+    setQuotes(result.quotes);
+    gridApiRef.current?.applyTransactionAsync({
+      update: [mapQuoteToMarketBoardRow(result.updatedQuote, result.flashClasses)],
+    });
+    scheduleFlashClear(rowId);
+  }, [scheduleFlashClear]);
+  const realtimeConnection = useQuoteHubConnection({
+    onQuoteUpdate: handleRealtimeQuoteUpdate,
+    onStreamStatus: setStreamStatus,
+  });
+  const handleGridReady = useCallback((event: GridReadyEvent<MarketBoardRow>) => {
+    gridApiRef.current = event.api;
+  }, []);
+
+  useEffect(() => {
+    const nextQuotes = quotesQuery.data ?? [];
+    Object.values(flashClearTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+    flashClearTimersRef.current = {};
+    flashClassesByRowRef.current = {};
+    setFlashClassesByRow({});
+    quotesRef.current = nextQuotes;
+    setQuotes(nextQuotes);
+  }, [quotesQuery.data]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(flashClearTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
+      flashClearTimersRef.current = {};
+    };
+  }, []);
+
   const rows = useMemo(() => {
     const normalizedSearch = deferredSymbolSearch.trim().toUpperCase();
-    const mappedRows = quotesQuery.data?.map(mapQuoteToMarketBoardRow) ?? [];
+    const mappedRows = quotes.map((quote) => mapQuoteToMarketBoardRow(quote, flashClassesByRow[getRowId(quote)]));
 
     if (!normalizedSearch) {
       return mappedRows;
@@ -38,7 +116,9 @@ export function MarketBoard() {
     return mappedRows.filter(
       (row) => row.symbol.includes(normalizedSearch) || row.displayName.toUpperCase().includes(normalizedSearch),
     );
-  }, [deferredSymbolSearch, quotesQuery.data]);
+  }, [deferredSymbolSearch, flashClassesByRow, quotes]);
+  const realtimeLabel = getRealtimeLabel(realtimeConnection.status);
+  const realtimeToneClass = getRealtimeToneClass(realtimeConnection.status);
 
   return (
     <section className="flex min-h-[620px] min-w-0 flex-col border border-market-border bg-market-bg">
@@ -51,7 +131,10 @@ export function MarketBoard() {
           <span className="rounded-sm border border-market-border-strong bg-market-surface-2 px-2 py-1 text-state-warning">
             REST snapshot
           </span>
-          <span className="rounded-sm border border-market-border px-2 py-1 text-market-text-muted">Mock data</span>
+          <span className="inline-flex items-center gap-1 rounded-sm border border-market-border px-2 py-1 text-market-text-muted">
+            <span className={`size-2 rounded-full ${realtimeToneClass}`} aria-hidden="true" />
+            {realtimeLabel}
+          </span>
         </div>
       </div>
 
@@ -152,6 +235,7 @@ export function MarketBoard() {
             defaultColGroupDef={defaultMarketBoardColumnGroupDef}
             getRowId={(params) => params.data.id}
             headerHeight={30}
+            onGridReady={handleGridReady}
             rowData={rows}
             suppressCellFocus
             suppressHorizontalScroll
@@ -162,10 +246,14 @@ export function MarketBoard() {
       ) : null}
 
       <div className="border-t border-market-border bg-market-surface px-3 py-2 text-[11px] text-market-text-muted">
-        Dữ liệu hiện tại là snapshot từ REST API. Realtime SignalR sẽ được triển khai ở Task 7.
+        {streamStatus?.message ?? 'REST snapshot loaded; SignalR applies realtime quote updates.'}
       </div>
     </section>
   );
+}
+
+function getRowId(quote: Pick<MarketQuote, 'boardId' | 'symbol'>) {
+  return `${quote.boardId}:${quote.symbol}`;
 }
 
 function BoardState({ label, tone = 'muted' }: { label: string; tone?: 'muted' | 'error' }) {
@@ -179,4 +267,35 @@ function BoardState({ label, tone = 'muted' }: { label: string; tone?: 'muted' |
       {label}
     </div>
   );
+}
+
+function getRealtimeLabel(status: ReturnType<typeof useQuoteHubConnection>['status']) {
+  switch (status) {
+    case 'connected':
+      return 'Realtime on';
+    case 'connecting':
+      return 'Realtime connecting';
+    case 'reconnecting':
+      return 'Realtime reconnecting';
+    case 'error':
+      return 'Realtime offline';
+    case 'disconnected':
+      return 'Realtime disconnected';
+    case 'idle':
+      return 'Realtime idle';
+  }
+}
+
+function getRealtimeToneClass(status: ReturnType<typeof useQuoteHubConnection>['status']) {
+  switch (status) {
+    case 'connected':
+      return 'bg-state-online';
+    case 'connecting':
+    case 'reconnecting':
+      return 'bg-state-warning';
+    case 'disconnected':
+    case 'error':
+    case 'idle':
+      return 'bg-state-error';
+  }
 }

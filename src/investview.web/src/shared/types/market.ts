@@ -28,3 +28,28 @@ export type MarketQuote = {
   tradingStatus: string;
   updatedAt: string;
 };
+
+export type MarketQuoteUpdate = {
+  symbol: string;
+  boardId: string;
+  lastPrice: number | null;
+  change: number | null;
+  changePercent: number | null;
+  lastQuantity: number | null;
+  totalVolume: number | null;
+  totalValue: number | null;
+  foreignBuyVolume: number | null;
+  foreignSellVolume: number | null;
+  foreignRoom: number | null;
+  bidLevels: PriceLevel[] | null;
+  askLevels: PriceLevel[] | null;
+  tradingStatus: string | null;
+  updatedAt: string;
+};
+
+export type QuoteStreamStatus = {
+  provider: string;
+  isEnabled: boolean;
+  updatedAt: string;
+  message: string;
+};

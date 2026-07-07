@@ -2,6 +2,33 @@ import type { MarketQuote, PriceLevel } from '../../shared/types/market';
 
 export type PriceClass = 'ceiling' | 'floor' | 'reference' | 'up' | 'down' | 'neutral';
 
+export type MarketBoardFlashField =
+  | 'symbol'
+  | 'bid3Price'
+  | 'bid3Quantity'
+  | 'bid2Price'
+  | 'bid2Quantity'
+  | 'bid1Price'
+  | 'bid1Quantity'
+  | 'lastPrice'
+  | 'lastQuantity'
+  | 'change'
+  | 'changePercent'
+  | 'ask1Price'
+  | 'ask1Quantity'
+  | 'ask2Price'
+  | 'ask2Quantity'
+  | 'ask3Price'
+  | 'ask3Quantity'
+  | 'totalVolume'
+  | 'foreignBuyVolume'
+  | 'foreignSellVolume'
+  | 'foreignRoom'
+  | 'highPrice'
+  | 'lowPrice';
+
+export type MarketBoardFlashClasses = Partial<Record<MarketBoardFlashField, PriceClass>>;
+
 export type MarketBoardRow = {
   id: string;
   symbol: string;
@@ -56,6 +83,7 @@ export type MarketBoardRow = {
   ask3QuantityClass: PriceClass;
   highPriceClass: PriceClass;
   lowPriceClass: PriceClass;
+  flashClasses: MarketBoardFlashClasses;
 };
 
 const numberFormatter = new Intl.NumberFormat('en-US');
@@ -156,7 +184,7 @@ export function classifyPrice(value: number | null | undefined, quote: MarketQuo
   return 'neutral';
 }
 
-export function mapQuoteToMarketBoardRow(quote: MarketQuote): MarketBoardRow {
+export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: MarketBoardFlashClasses = {}): MarketBoardRow {
   const bid1 = getLevel(quote.bidLevels, 0);
   const bid2 = getLevel(quote.bidLevels, 1);
   const bid3 = getLevel(quote.bidLevels, 2);
@@ -225,6 +253,7 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote): MarketBoardRow {
     ask3QuantityClass: ask3Class,
     highPriceClass: classifyPrice(quote.highPrice, quote),
     lowPriceClass: classifyPrice(quote.lowPrice, quote),
+    flashClasses,
   };
 }
 
