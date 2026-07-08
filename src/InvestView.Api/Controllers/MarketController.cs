@@ -36,4 +36,56 @@ public sealed class MarketController : ControllerBase
 
         return Ok(quotes);
     }
+
+    [HttpGet("symbols/{symbol}")]
+    [ProducesResponseType<SymbolDetailDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<SymbolDetailDto>> GetSymbolDetail(
+        string symbol,
+        [FromQuery] string? boardId,
+        CancellationToken cancellationToken)
+    {
+        var detail = await _marketDataProvider.GetSymbolDetailAsync(
+            symbol,
+            string.IsNullOrWhiteSpace(boardId) ? DefaultBoardId : boardId,
+            cancellationToken);
+
+        return detail is null ? NotFound() : Ok(detail);
+    }
+
+    [HttpGet("symbols/{symbol}/ohlc")]
+    [ProducesResponseType<IReadOnlyList<OhlcBarDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<OhlcBarDto>>> GetOhlc(
+        string symbol,
+        [FromQuery] string? resolution,
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        var bars = await _marketDataProvider.GetOhlcAsync(
+            symbol,
+            string.IsNullOrWhiteSpace(resolution) ? "1" : resolution,
+            from,
+            to,
+            cancellationToken);
+
+        return Ok(bars);
+    }
+
+    [HttpGet("symbols/{symbol}/trades/latest")]
+    [ProducesResponseType<IReadOnlyList<MarketTradeDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<MarketTradeDto>>> GetLatestTrades(
+        string symbol,
+        [FromQuery] string? boardId,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken)
+    {
+        var trades = await _marketDataProvider.GetLatestTradesAsync(
+            symbol,
+            string.IsNullOrWhiteSpace(boardId) ? DefaultBoardId : boardId,
+            Math.Clamp(limit ?? 50, 1, 200),
+            cancellationToken);
+
+        return Ok(trades);
+    }
 }

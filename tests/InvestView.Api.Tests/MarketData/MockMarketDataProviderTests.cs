@@ -69,7 +69,7 @@ public sealed class MockMarketDataProviderTests
     {
         var provider = new MockMarketDataProvider();
 
-        var detail = await provider.GetSymbolDetailAsync("hpg", CancellationToken.None);
+        var detail = await provider.GetSymbolDetailAsync("hpg", "g1", CancellationToken.None);
 
         Assert.NotNull(detail);
         Assert.Equal("HPG", detail.Symbol);
@@ -77,6 +77,10 @@ public sealed class MockMarketDataProviderTests
         Assert.Equal(28600m, detail.ReferencePrice);
         Assert.Equal(30600m, detail.CeilingPrice);
         Assert.Equal(26600m, detail.FloorPrice);
+        Assert.Equal(29150m, detail.LastPrice);
+        Assert.Equal(550m, detail.Change);
+        Assert.Equal(3, detail.BidLevels.Count);
+        Assert.Equal("ST", detail.SecurityGroupId);
     }
 
     [Fact]
@@ -84,7 +88,7 @@ public sealed class MockMarketDataProviderTests
     {
         var provider = new MockMarketDataProvider();
 
-        var bars = await provider.GetOhlcAsync("HPG", "1", CancellationToken.None);
+        var bars = await provider.GetOhlcAsync("HPG", "1", null, null, CancellationToken.None);
 
         Assert.Equal(3, bars.Count);
         Assert.All(bars, bar =>
@@ -93,5 +97,23 @@ public sealed class MockMarketDataProviderTests
             Assert.Equal("1", bar.Resolution);
             Assert.True(bar.Volume > 0);
         });
+    }
+
+    [Fact]
+    public async Task GetLatestTradesAsync_ReturnsNewestTradesForKnownSymbol()
+    {
+        var provider = new MockMarketDataProvider();
+
+        var trades = await provider.GetLatestTradesAsync("hpg", "g1", 2, CancellationToken.None);
+
+        Assert.Equal(2, trades.Count);
+        Assert.All(trades, trade =>
+        {
+            Assert.Equal("HPG", trade.Symbol);
+            Assert.Equal("G1", trade.BoardId);
+            Assert.True(trade.Price > 0);
+            Assert.True(trade.Quantity > 0);
+        });
+        Assert.True(trades[0].Time > trades[1].Time);
     }
 }

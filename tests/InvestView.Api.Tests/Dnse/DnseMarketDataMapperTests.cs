@@ -376,4 +376,219 @@ public sealed class DnseMarketDataMapperTests
         Assert.Equal(550m, result.Change);
         Assert.Equal(1.92m, result.ChangePercent);
     }
+
+    [Fact]
+    public void MapSymbolDetail_CombinesInstrumentSecdefAndSnapshotParts()
+    {
+        using var instrument = JsonDocument.Parse(
+            """
+            {
+              "symbol": "HPG",
+              "marketId": "HOSE",
+              "name": "Hoa Phat Group",
+              "organName": "Hoa Phat Group Joint Stock Company",
+              "securityGroupId": "ST"
+            }
+            """);
+        using var secdef = JsonDocument.Parse(
+            """
+            {
+              "symbol": "HPG",
+              "boardId": "G1",
+              "isin": "VN000000HPG4",
+              "productGrpId": "STOCK",
+              "securityGroupId": "ST",
+              "basicPrice": 28.6,
+              "ceilingPrice": 30.6,
+              "floorPrice": 26.6,
+              "securityStatus": "Continuous",
+              "symbolAdminStatusCode": "NORMAL",
+              "symbolTradingMethodStatusCode": "NORMAL",
+              "symbolTradingSanctionStatusCode": "NORMAL",
+              "listingDate": "2007-11-15",
+              "openInterestQuantity": 0
+            }
+            """);
+        using var trade = JsonDocument.Parse(
+            """
+            {
+              "symbol": "HPG",
+              "boardId": "G1",
+              "matchPrice": 29.15,
+              "changedValue": 0.55,
+              "changedPercent": 1.92,
+              "matchQtty": 2500,
+              "totalVolumeTraded": 12450000,
+              "grossTradeAmount": 362917500000,
+              "openPrice": 28.7,
+              "highestPrice": 29.2,
+              "lowestPrice": 28.45,
+              "time": "2026-07-03T07:45:00+00:00"
+            }
+            """);
+        using var quote = JsonDocument.Parse(
+            """
+            {
+              "bid": [{ "price": 29.1, "qtty": 18300 }],
+              "offer": [{ "price": 29.15, "qtty": 12000 }]
+            }
+            """);
+        using var foreign = JsonDocument.Parse(
+            """
+            {
+              "foreigners": [
+                {
+                  "symbol": "HPG",
+                  "boardId": "G1",
+                  "totalBuyVolume": 434895,
+                  "totalSellVolume": 3106286,
+                  "foreignerBuyPossibleQuantity": 2053706002
+                }
+              ]
+            }
+            """);
+
+        var result = DnseMarketDataMapper.MapSymbolDetail(
+            "HPG",
+            "G1",
+            instrument.RootElement,
+            secdef.RootElement,
+            trade.RootElement,
+            quote.RootElement,
+            foreign.RootElement,
+            new DateTimeOffset(2026, 7, 3, 7, 46, 0, TimeSpan.Zero),
+            quantityScaleFactor: 10);
+
+        Assert.Equal("HPG", result.Symbol);
+        Assert.Equal("VN000000HPG4", result.Isin);
+        Assert.Equal("STOCK", result.ProductGroupId);
+        Assert.Equal("ST", result.SecurityGroupId);
+        Assert.Equal(28600m, result.ReferencePrice);
+        Assert.Equal(30600m, result.CeilingPrice);
+        Assert.Equal(26600m, result.FloorPrice);
+        Assert.Equal(29150m, result.LastPrice);
+        Assert.Equal(550m, result.Change);
+        Assert.Equal(25_000, result.LastQuantity);
+        Assert.Equal(124_500_000, result.TotalVolume);
+        Assert.Equal(434_895, result.ForeignBuyVolume);
+        Assert.Equal(2_053_706_002, result.ForeignRoom);
+        Assert.Equal("NORMAL", result.SymbolAdminStatus);
+        Assert.Equal(new DateTimeOffset(2007, 11, 15, 0, 0, 0, TimeSpan.Zero), result.ListingDate);
+        Assert.Single(result.BidLevels);
+        Assert.Single(result.AskLevels);
+    }
+
+    [Fact]
+    public void MapOhlcBars_NormalizesDnseBarsIntoInternalBars()
+    {
+        using var ohlc = JsonDocument.Parse(
+            """
+            {
+              "data": [
+                { "symbol": "HPG", "resolution": "1", "open": 28.6, "high": 29.2, "low": 28.45, "close": 29.15, "volume": 12450000, "time": 1783079100 },
+                { "symbol": "HPG", "resolution": "1", "open": 29.15, "high": 29.3, "low": 29.05, "close": 29.25, "volume": 5000, "time": 1783079160 }
+              ]
+            }
+            """);
+
+        var result = DnseMarketDataMapper.MapOhlcBars("HPG", "1", ohlc.RootElement, quantityScaleFactor: 10);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("HPG", result[0].Symbol);
+        Assert.Equal("1", result[0].Resolution);
+        Assert.Equal(28600m, result[0].Open);
+        Assert.Equal(29200m, result[0].High);
+        Assert.Equal(28450m, result[0].Low);
+        Assert.Equal(29150m, result[0].Close);
+        Assert.Equal(124_500_000, result[0].Volume);
+        Assert.True(result[0].Time < result[1].Time);
+    }
+
+    [Fact]
+    public void MapLatestTrades_ScalesTradeQuantitiesAndSortsNewestFirst()
+    {
+        using var trades = JsonDocument.Parse(
+            """
+            {
+              "trades": [
+                {
+                  "symbol": "HPG",
+                  "boardId": "G1",
+                  "matchPrice": 29.15,
+                  "changedValue": 0.55,
+                  "changedPercent": 1.92,
+                  "matchQtty": 2500,
+                  "totalVolumeTraded": 12450000,
+                  "grossTradeAmount": 362917500000,
+                  "side": 1,
+                  "time": "2026-07-03T07:45:00+00:00"
+                },
+                {
+                  "symbol": "HPG",
+                  "boardId": "G1",
+                  "matchPrice": 29.10,
+                  "changedValue": 0.50,
+                  "changedPercent": 1.75,
+                  "matchQtty": 1800,
+                  "totalVolumeTraded": 12447500,
+                  "grossTradeAmount": 362844625000,
+                  "side": 2,
+                  "time": "2026-07-03T07:44:30+00:00"
+                },
+                {
+                  "symbol": "SSI",
+                  "boardId": "G1",
+                  "matchPrice": 34.85,
+                  "matchQtty": 100,
+                  "time": "2026-07-03T07:46:00+00:00"
+                }
+              ]
+            }
+            """);
+
+        var result = DnseMarketDataMapper.MapLatestTrades(
+            "HPG",
+            "G1",
+            trades.RootElement,
+            new DateTimeOffset(2026, 7, 3, 7, 46, 0, TimeSpan.Zero),
+            quantityScaleFactor: 10);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(29150m, result[0].Price);
+        Assert.Equal(550m, result[0].Change);
+        Assert.Equal(1.92m, result[0].ChangePercent);
+        Assert.Equal(25_000, result[0].Quantity);
+        Assert.Equal(124_500_000, result[0].TotalVolume);
+        Assert.Equal("1", result[0].Side);
+        Assert.True(result[0].Time > result[1].Time);
+    }
+
+    [Fact]
+    public void MapLatestTrades_DoesNotScaleAlreadyNormalizedPriceDelta()
+    {
+        using var trades = JsonDocument.Parse(
+            """
+            {
+              "trades": [
+                {
+                  "symbol": "HPG",
+                  "boardId": "G1",
+                  "matchPrice": 29150,
+                  "changedValue": 50,
+                  "matchQtty": 2500,
+                  "time": "2026-07-03T07:45:00+00:00"
+                }
+              ]
+            }
+            """);
+
+        var result = DnseMarketDataMapper.MapLatestTrades(
+            "HPG",
+            "G1",
+            trades.RootElement,
+            new DateTimeOffset(2026, 7, 3, 7, 46, 0, TimeSpan.Zero));
+
+        var trade = Assert.Single(result);
+        Assert.Equal(50m, trade.Change);
+    }
 }

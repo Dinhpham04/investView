@@ -9,4 +9,6 @@ public sealed class MarketDataCacheOptions
     public TimeSpan SymbolDetailTtl { get; set; } = TimeSpan.FromMinutes(30);
 
     public TimeSpan OhlcTtl { get; set; } = TimeSpan.FromMinutes(5);
+
+    public TimeSpan LatestTradesTtl { get; set; } = TimeSpan.FromSeconds(2);
 }

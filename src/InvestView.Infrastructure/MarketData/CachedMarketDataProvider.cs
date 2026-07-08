@@ -55,10 +55,12 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
 
     public async Task<SymbolDetailDto?> GetSymbolDetailAsync(
         string symbol,
+        string boardId,
         CancellationToken cancellationToken)
     {
         var normalizedSymbol = NormalizeToken(symbol, string.Empty);
-        var cacheKey = $"symbol-detail:{normalizedSymbol}";
+        var normalizedBoardId = NormalizeToken(boardId, MockMarketDataProvider.DefaultBoardId);
+        var cacheKey = $"symbol-detail:{normalizedSymbol}:{normalizedBoardId}";
 
         if (_cache.TryGetValue(cacheKey, out SymbolDetailDto? cachedDetail) && cachedDetail is not null)
         {
@@ -67,7 +69,7 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         }
 
         _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
-        var detail = await _inner.GetSymbolDetailAsync(normalizedSymbol, cancellationToken);
+        var detail = await _inner.GetSymbolDetailAsync(normalizedSymbol, normalizedBoardId, cancellationToken);
         if (detail is not null)
         {
             _cache.Set(cacheKey, detail, _options.SymbolDetailTtl);
@@ -79,11 +81,13 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
     public async Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
         var normalizedSymbol = NormalizeToken(symbol, string.Empty);
         var normalizedResolution = NormalizeToken(resolution, string.Empty);
-        var cacheKey = $"ohlc:{normalizedSymbol}:{normalizedResolution}";
+        var cacheKey = $"ohlc:{normalizedSymbol}:{normalizedResolution}:{FormatCacheTime(from)}:{FormatCacheTime(to)}";
 
         if (_cache.TryGetValue(cacheKey, out IReadOnlyList<OhlcBarDto>? cachedBars) && cachedBars is not null)
         {
@@ -92,10 +96,38 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         }
 
         _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
-        var bars = await _inner.GetOhlcAsync(normalizedSymbol, normalizedResolution, cancellationToken);
+        var bars = await _inner.GetOhlcAsync(normalizedSymbol, normalizedResolution, from, to, cancellationToken);
         _cache.Set(cacheKey, bars, _options.OhlcTtl);
 
         return bars;
+    }
+
+    public async Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+        string symbol,
+        string boardId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSymbol = NormalizeToken(symbol, string.Empty);
+        var normalizedBoardId = NormalizeToken(boardId, MockMarketDataProvider.DefaultBoardId);
+        var normalizedLimit = Math.Clamp(limit, 1, 200);
+        var cacheKey = $"latest-trades:{normalizedSymbol}:{normalizedBoardId}:{normalizedLimit}";
+
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketTradeDto>? cachedTrades) && cachedTrades is not null)
+        {
+            _logger.LogDebug("Market data cache hit for {CacheKey}.", cacheKey);
+            return cachedTrades;
+        }
+
+        _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
+        var trades = await _inner.GetLatestTradesAsync(
+            normalizedSymbol,
+            normalizedBoardId,
+            normalizedLimit,
+            cancellationToken);
+        _cache.Set(cacheKey, trades, _options.LatestTradesTtl);
+
+        return trades;
     }
 
     private static string NormalizeToken(string value, string fallback)
@@ -112,5 +144,10 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
             .Select(symbol => symbol.Trim().ToUpperInvariant())
             .Order(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static string FormatCacheTime(DateTimeOffset? value)
+    {
+        return value?.ToUnixTimeSeconds().ToString() ?? string.Empty;
     }
 }

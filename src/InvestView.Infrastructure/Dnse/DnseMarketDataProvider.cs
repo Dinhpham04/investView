@@ -45,9 +45,11 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
 
     public async Task<SymbolDetailDto?> GetSymbolDetailAsync(
         string symbol,
+        string boardId,
         CancellationToken cancellationToken)
     {
         var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedBoardId = NormalizeBoardId(boardId);
         if (string.IsNullOrWhiteSpace(normalizedSymbol))
         {
             return null;
@@ -64,25 +66,94 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
             cancellationToken);
         using var securityDefinition = await _client.GetJsonAsync(
             $"/price/{normalizedSymbol}/secdef",
-            new Dictionary<string, string?> { ["boardId"] = DefaultBoardId },
+            new Dictionary<string, string?> { ["boardId"] = normalizedBoardId },
             cancellationToken);
+        using var latestTrade = await _client.GetJsonAsync(
+            $"/price/{normalizedSymbol}/trades/latest",
+            new Dictionary<string, string?> { ["boardId"] = normalizedBoardId },
+            cancellationToken);
+        using var latestQuote = await _client.GetJsonAsync(
+            $"/price/{normalizedSymbol}/quotes/latest",
+            new Dictionary<string, string?> { ["boardId"] = normalizedBoardId },
+            cancellationToken);
+        using var foreignTrading = await GetForeignTradingAsync(normalizedSymbol, normalizedBoardId, cancellationToken);
 
         var instrument = DnseMarketDataMapper.FindObjectBySymbol(instruments.RootElement, normalizedSymbol);
         return DnseMarketDataMapper.MapSymbolDetail(
             normalizedSymbol,
-            DefaultBoardId,
+            normalizedBoardId,
             instrument,
             securityDefinition.RootElement,
-            DateTimeOffset.UtcNow);
+            latestTrade.RootElement,
+            latestQuote.RootElement,
+            foreignTrading.RootElement,
+            DateTimeOffset.UtcNow,
+            _options.QuantityScaleFactor);
     }
 
-    public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
+    public async Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedResolution = NormalizeResolution(resolution);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return [];
+        }
+
+        using var ohlc = await _client.GetJsonAsync(
+            "/price/ohlc",
+            new Dictionary<string, string?>
+            {
+                ["type"] = "STOCK",
+                ["symbol"] = normalizedSymbol,
+                ["resolution"] = normalizedResolution,
+                ["from"] = from?.ToUnixTimeSeconds().ToString(),
+                ["to"] = to?.ToUnixTimeSeconds().ToString()
+            },
+            cancellationToken);
+
+        return DnseMarketDataMapper.MapOhlcBars(
+            normalizedSymbol,
+            normalizedResolution,
+            ohlc.RootElement,
+            _options.QuantityScaleFactor);
+    }
+
+    public async Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+        string symbol,
+        string boardId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedBoardId = NormalizeBoardId(boardId);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return [];
+        }
+
+        var normalizedLimit = Math.Clamp(limit, 1, 200);
+        using var trades = await _client.GetJsonAsync(
+            $"/price/{normalizedSymbol}/trades",
+            new Dictionary<string, string?>
+            {
+                ["boardId"] = normalizedBoardId,
+                ["limit"] = normalizedLimit.ToString(),
+                ["order"] = "DESC"
+            },
+            cancellationToken);
+
+        return DnseMarketDataMapper.MapLatestTrades(
+            normalizedSymbol,
+            normalizedBoardId,
+            trades.RootElement,
+            DateTimeOffset.UtcNow,
+            _options.QuantityScaleFactor);
     }
 
     private async Task<MarketQuoteDto> GetMarketQuoteAsync(
@@ -294,6 +365,13 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
         return string.IsNullOrWhiteSpace(symbol)
             ? string.Empty
             : symbol.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeResolution(string resolution)
+    {
+        return string.IsNullOrWhiteSpace(resolution)
+            ? "1"
+            : resolution.Trim().ToUpperInvariant();
     }
 
     private static string NormalizeToken(string? value)

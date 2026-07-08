@@ -138,11 +138,17 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
         return Task.FromResult<IReadOnlyList<MarketQuoteDto>>(quotes);
     }
 
-    public Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, CancellationToken cancellationToken)
+    public Task<SymbolDetailDto?> GetSymbolDetailAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var quote = Quotes.FirstOrDefault(item => item.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase));
+        var normalizedBoardId = NormalizeBoardId(boardId);
+        var quote = Quotes.FirstOrDefault(item =>
+            item.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase) &&
+            item.BoardId.Equals(normalizedBoardId, StringComparison.OrdinalIgnoreCase));
         if (quote is null)
         {
             return Task.FromResult<SymbolDetailDto?>(null);
@@ -155,10 +161,33 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
             quote.DisplayName,
             quote.DisplayName,
             "Stock",
+            "VN000000" + quote.Symbol,
+            "STOCK",
+            "ST",
             quote.ReferencePrice,
             quote.CeilingPrice,
             quote.FloorPrice,
+            quote.LastPrice,
+            quote.Change,
+            quote.ChangePercent,
+            quote.LastQuantity,
+            quote.TotalVolume,
+            quote.TotalValue,
+            quote.ForeignBuyVolume,
+            quote.ForeignSellVolume,
+            quote.ForeignRoom,
+            quote.OpenPrice,
+            quote.HighPrice,
+            quote.LowPrice,
+            quote.BidLevels,
+            quote.AskLevels,
             quote.TradingStatus,
+            "NORMAL",
+            "NORMAL",
+            "NORMAL",
+            new DateTimeOffset(2007, 11, 15, 0, 0, 0, TimeSpan.Zero),
+            null,
+            0,
             quote.UpdatedAt);
 
         return Task.FromResult<SymbolDetailDto?>(detail);
@@ -167,6 +196,8 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
     public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -177,14 +208,44 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
             return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
         }
 
-        IReadOnlyList<OhlcBarDto> bars =
+        OhlcBarDto[] bars =
         [
             new(normalizedSymbol, resolution, SnapshotTime.AddMinutes(-2), 28600m, 28800m, 28550m, 28750m, 420000),
             new(normalizedSymbol, resolution, SnapshotTime.AddMinutes(-1), 28750m, 29100m, 28700m, 29050m, 530000),
             new(normalizedSymbol, resolution, SnapshotTime, 29050m, 29200m, 29000m, 29150m, 610000)
         ];
 
-        return Task.FromResult(bars);
+        return Task.FromResult<IReadOnlyList<OhlcBarDto>>(bars
+            .Where(bar => from is null || bar.Time >= from)
+            .Where(bar => to is null || bar.Time <= to)
+            .ToArray());
+    }
+
+    public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+        string symbol,
+        string boardId,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedSymbol = symbol.Trim().ToUpperInvariant();
+        var normalizedBoardId = NormalizeBoardId(boardId);
+        if (!Quotes.Any(item => item.Symbol == normalizedSymbol && item.BoardId == normalizedBoardId))
+        {
+            return Task.FromResult<IReadOnlyList<MarketTradeDto>>([]);
+        }
+
+        IReadOnlyList<MarketTradeDto> trades =
+        [
+            new(normalizedSymbol, normalizedBoardId, SnapshotTime, 29150m, 550m, 1.92m, 2500, 12450000, 362917500000m, "B"),
+            new(normalizedSymbol, normalizedBoardId, SnapshotTime.AddSeconds(-20), 29100m, 500m, 1.75m, 1800, 12447500, 362844625000m, "S"),
+            new(normalizedSymbol, normalizedBoardId, SnapshotTime.AddSeconds(-45), 29050m, 450m, 1.57m, 3200, 12445700, 362792245000m, string.Empty)
+        ];
+
+        return Task.FromResult<IReadOnlyList<MarketTradeDto>>(trades
+            .Take(Math.Clamp(limit, 1, 200))
+            .ToArray());
     }
 
     private static string NormalizeBoardId(string boardId)

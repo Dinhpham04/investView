@@ -10,10 +10,19 @@ public interface IMarketDataProvider
 
     Task<SymbolDetailDto?> GetSymbolDetailAsync(
         string symbol,
+        string boardId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+        string symbol,
+        string boardId,
+        int limit,
         CancellationToken cancellationToken);
 }

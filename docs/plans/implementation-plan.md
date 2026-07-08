@@ -547,24 +547,39 @@ Goal: add backend domain depth and the main investor workflow.
 
 Goal: add real provider integration behind stable contracts and package the demo.
 
-### Task 13: Expand DNSE REST Adapter for Symbol Detail and OHLC
+### Task 13: Expand DNSE REST Adapter for Symbol Detail, OHLC, and Latest Trades
 
-**Description:** Expand the DNSE REST integration beyond the market-board snapshot to cover symbol detail and OHLC data needed by later detail/chart screens. Use the local SDK and DNSE docs as the source of truth for endpoint behavior, payload shape, and mapping edge cases.
+**Status:** In Progress
+
+**Description:** Expand the DNSE REST integration beyond the market-board snapshot to cover symbol detail, OHLC chart data, and latest matched trades needed by later detail/chart screens. Use the local SDK and DNSE docs as the source of truth for endpoint behavior, payload shape, and mapping edge cases.
 
 **Acceptance criteria:**
 
-- [ ] Symbol detail maps DNSE instrument and security definition data into `SymbolDetailDto`.
-- [ ] OHLC maps DNSE `/price/ohlc` data into `OhlcBarDto`.
-- [ ] Existing market-board snapshot integration remains unchanged.
-- [ ] DNSE response models remain inside Infrastructure.
+- [x] API exposes symbol detail through `GET /api/market/symbols/{symbol}` with optional `boardId`.
+- [x] Symbol detail maps DNSE instrument and security definition data into `SymbolDetailDto`.
+- [x] Symbol detail includes the same snapshot fields needed by the market-board row: last price, change, change percent, matched quantity, accumulated volume/value, bid/ask levels, foreign buy/sell/room, open/high/low, and trading status.
+- [x] Symbol detail includes extra instrument/security fields: ISIN, product group, security group, admin status, trading method status, trading sanction status, listing date, final trade date, and open interest quantity where DNSE provides them.
+- [x] Symbol detail composes DNSE `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading`.
+- [x] API exposes chart data through `GET /api/market/symbols/{symbol}/ohlc`.
+- [x] OHLC maps DNSE `/price/ohlc` data into `OhlcBarDto`.
+- [x] OHLC query sends `type=STOCK`, `symbol`, `resolution`, and optional Unix `from`/`to`.
+- [x] API exposes latest matched trades table data through `GET /api/market/symbols/{symbol}/trades/latest`.
+- [x] Latest matched trades table uses DNSE `/price/{symbol}/trades` with `boardId`, bounded `limit`, and `order=DESC` so the UI can show multiple newest rows.
+- [x] Latest matched trade rows map price, changed value/percent, matched quantity, accumulated volume/value, side, and time into app-owned `MarketTradeDto`.
+- [x] Trade quantities and OHLC volumes are normalized with the configured quantity scale factor to match market-board display units.
+- [x] Existing market-board snapshot integration remains unchanged.
+- [x] DNSE response models remain inside Infrastructure.
 
 **Verification:**
 
-- [ ] Unit tests cover symbol detail and OHLC mapping using fixture JSON.
-- [ ] Unit tests cover URL/query construction for `/price/ohlc`.
+- [x] Unit tests cover symbol detail, OHLC, and latest matched trade mapping using fixture JSON.
+- [x] Unit tests cover URL/query construction for symbol detail source endpoints.
+- [x] Unit tests cover URL/query construction for `/price/ohlc`.
+- [x] Unit tests cover URL/query construction for `/price/{symbol}/trades`.
+- [x] API tests cover chart and latest matched trade endpoints with mock provider.
 - [ ] Integration path can be manually verified when credentials are available.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] `dotnet build`
+- [x] `dotnet test`
 
 **Dependencies:** Task 6
 
@@ -611,7 +626,40 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 15: Add Docker Compose and Demo Documentation
+### Task 15: Harden Market Board Realtime Merge Rules
+
+**Description:** Harden frontend realtime quote merging so the market board does not regress or display inconsistent values when DNSE WebSocket events arrive out of order, after reconnects, or from different channels with partial payloads. This task should be implemented after the realtime data path has been manually observed with enough live DNSE traffic.
+
+**Acceptance criteria:**
+
+- [ ] `marketBoardRealtime.ts` ignores stale updates that are older than the current row state.
+- [ ] Merge rules are explicit per channel/field group: trade, top price, security definition, and foreign trading.
+- [ ] Partial realtime updates preserve unrelated snapshot or stream fields.
+- [ ] `change` and `changePercent` remain consistent with last price and reference price when DNSE omits either value.
+- [ ] Flash classes are applied only to cells whose displayed values actually changed.
+
+**Verification:**
+
+- [ ] Frontend unit tests cover stale update rejection.
+- [ ] Frontend unit tests cover same-symbol partial updates arriving in mixed channel order.
+- [ ] Frontend unit tests cover reconnect/replay-like older updates.
+- [ ] Frontend unit tests cover bid/ask-only, trade-only, security-definition-only, and foreign-only updates.
+- [ ] `npm run test`
+- [ ] `npm run build`
+- [ ] Manual browser check with realtime enabled during a trading window.
+
+**Dependencies:** Task 9, Task 14, manual observation of live DNSE WebSocket behavior
+
+**Files likely touched:**
+
+- `src/investview.web/src/features/market-board/marketBoardRealtime.ts`
+- `src/investview.web/src/features/market-board/marketBoardRealtime.test.ts`
+- `src/investview.web/src/features/market-board/marketBoardFormatters.ts`
+- `src/investview.web/src/shared/types/market.ts`
+
+**Estimated scope:** Medium
+
+### Task 16: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 

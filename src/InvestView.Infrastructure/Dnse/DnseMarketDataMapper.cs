@@ -112,24 +112,144 @@ public static class DnseMarketDataMapper
         string boardId,
         JsonElement? instrument,
         JsonElement? securityDefinition,
-        DateTimeOffset fallbackUpdatedAt)
+        JsonElement? latestTrade,
+        JsonElement? latestQuote,
+        JsonElement? foreignTrading,
+        DateTimeOffset fallbackUpdatedAt,
+        int quantityScaleFactor = 1)
     {
         var normalizedSymbol = NormalizeSymbol(symbol);
         var instrumentPayload = FirstObjectOrSelf(UnwrapPayload(instrument, "data", "instruments", "instrument"));
         var secdefPayload = FirstObjectOrSelf(UnwrapPayload(securityDefinition, "data", "secdef", "secdefs", "securityDefinition", "securityDefinitions"));
+        var quote = MapMarketQuote(
+            normalizedSymbol,
+            boardId,
+            instrument,
+            securityDefinition,
+            latestTrade,
+            latestQuote,
+            foreignTrading,
+            fallbackUpdatedAt,
+            quantityScaleFactor);
 
         return new SymbolDetailDto(
-            Symbol: normalizedSymbol,
-            BoardId: NormalizeToken(boardId, "G1"),
-            MarketId: GetString(instrumentPayload, "marketId", "exchange", "exchangeId") ?? "UNKNOWN",
-            DisplayName: GetString(instrumentPayload, "displayName", "name", "symbolName", "organShortName") ?? normalizedSymbol,
-            Name: GetString(instrumentPayload, "fullName", "name", "symbolName", "organName") ?? normalizedSymbol,
+            Symbol: quote.Symbol,
+            BoardId: quote.BoardId,
+            MarketId: quote.MarketId,
+            DisplayName: quote.DisplayName,
+            Name: GetString(instrumentPayload, "fullName", "organName", "companyName", "name", "symbolName") ?? quote.DisplayName,
             SecurityType: GetString(instrumentPayload, "securityType", "type", "securityGroupId") ?? "Stock",
-            ReferencePrice: GetDecimal(secdefPayload, "referencePrice", "refPrice", "basicPrice", "priorClosePrice"),
-            CeilingPrice: GetDecimal(secdefPayload, "ceilingPrice", "ceilPrice", "ceiling"),
-            FloorPrice: GetDecimal(secdefPayload, "floorPrice", "floor"),
-            TradingStatus: GetString(secdefPayload, "tradingStatus", "status", "securityStatus") ?? "Unknown",
-            UpdatedAt: GetDateTimeOffset(secdefPayload, "updatedAt", "time", "timestamp") ?? fallbackUpdatedAt);
+            Isin: GetString(secdefPayload, "isin") ?? GetString(instrumentPayload, "isin") ?? string.Empty,
+            ProductGroupId: GetString(secdefPayload, "productGrpId", "productGroupId") ?? GetString(instrumentPayload, "productGrpId", "productGroupId") ?? string.Empty,
+            SecurityGroupId: GetString(secdefPayload, "securityGroupId") ?? GetString(instrumentPayload, "securityGroupId") ?? string.Empty,
+            ReferencePrice: quote.ReferencePrice,
+            CeilingPrice: quote.CeilingPrice,
+            FloorPrice: quote.FloorPrice,
+            LastPrice: quote.LastPrice,
+            Change: quote.Change,
+            ChangePercent: quote.ChangePercent,
+            LastQuantity: quote.LastQuantity,
+            TotalVolume: quote.TotalVolume,
+            TotalValue: quote.TotalValue,
+            ForeignBuyVolume: quote.ForeignBuyVolume,
+            ForeignSellVolume: quote.ForeignSellVolume,
+            ForeignRoom: quote.ForeignRoom,
+            OpenPrice: quote.OpenPrice,
+            HighPrice: quote.HighPrice,
+            LowPrice: quote.LowPrice,
+            BidLevels: quote.BidLevels,
+            AskLevels: quote.AskLevels,
+            TradingStatus: quote.TradingStatus,
+            SymbolAdminStatus: GetString(secdefPayload, "symbolAdminStatusCode", "symbolAdminStatus", "adminStatus") ?? string.Empty,
+            TradingMethodStatus: GetString(secdefPayload, "symbolTradingMethodStatusCode", "symbolTradingMethodStatus", "tradingMethodStatus") ?? string.Empty,
+            TradingSanctionStatus: GetString(secdefPayload, "symbolTradingSanctionStatusCode", "symbolTradingSanctionStatus", "tradingSanctionStatus") ?? string.Empty,
+            ListingDate: GetDateTimeOffset(secdefPayload, "listingDate") ?? GetDateTimeOffset(instrumentPayload, "listingDate", "listedDate"),
+            FinalTradeDate: GetDateTimeOffset(secdefPayload, "finalTradeDate"),
+            OpenInterestQuantity: GetLong(secdefPayload, "openInterestQuantity", "openInterest"),
+            UpdatedAt: quote.UpdatedAt);
+    }
+
+    public static IReadOnlyList<OhlcBarDto> MapOhlcBars(
+        string symbol,
+        string resolution,
+        JsonElement root,
+        int quantityScaleFactor = 1)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedResolution = NormalizeToken(resolution, string.Empty);
+        var payload = UnwrapPayload(root, "data", "ohlc", "ohlcs", "bars", "candles");
+        var normalizedQuantityScaleFactor = Math.Max(quantityScaleFactor, 1);
+
+        return EnumerateObjects(payload)
+            .Select(item =>
+            {
+                var open = NormalizeStockPriceScale(GetDecimal(item, "open", "o"));
+                var high = NormalizeStockPriceScale(GetDecimal(item, "high", "h"));
+                var low = NormalizeStockPriceScale(GetDecimal(item, "low", "l"));
+                var close = NormalizeStockPriceScale(GetDecimal(item, "close", "c"));
+                var time = GetDateTimeOffset(item, "time", "timestamp", "t", "lastUpdated");
+                if (time is null)
+                {
+                    return null;
+                }
+
+                return new OhlcBarDto(
+                    Symbol: NormalizeToken(GetString(item, "symbol") ?? normalizedSymbol, normalizedSymbol),
+                    Resolution: NormalizeToken(GetString(item, "resolution") ?? normalizedResolution, normalizedResolution),
+                    Time: time.Value,
+                    Open: open,
+                    High: high,
+                    Low: low,
+                    Close: close,
+                    Volume: ScaleQuantity(GetLong(item, "volume", "v"), normalizedQuantityScaleFactor));
+            })
+            .Where(bar => bar is not null)
+            .Select(bar => bar!)
+            .OrderBy(bar => bar.Time)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<MarketTradeDto> MapLatestTrades(
+        string symbol,
+        string boardId,
+        JsonElement root,
+        DateTimeOffset fallbackUpdatedAt,
+        int quantityScaleFactor = 1)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedBoardId = NormalizeToken(boardId, "G1");
+        var payload = UnwrapPayload(root, "data", "trade", "trades", "ticks");
+        var normalizedQuantityScaleFactor = Math.Max(quantityScaleFactor, 1);
+
+        return EnumerateObjects(payload)
+            .Select(item =>
+            {
+                var price = NormalizeStockPriceScale(GetDecimal(item, "lastPrice", "matchPrice", "price", "closePrice"));
+                var change = NormalizeStockPriceDeltaScale(GetDecimal(item, "change", "changedValue", "priceChange"));
+                var time = GetDateTimeOffset(item, "updatedAt", "time", "timestamp", "tradingTime", "transactTime")
+                    ?? fallbackUpdatedAt;
+
+                return new MarketTradeDto(
+                    Symbol: NormalizeToken(GetString(item, "symbol") ?? normalizedSymbol, normalizedSymbol),
+                    BoardId: NormalizeToken(GetString(item, "boardId") ?? normalizedBoardId, normalizedBoardId),
+                    Time: time,
+                    Price: price,
+                    Change: change,
+                    ChangePercent: GetDecimal(item, "changePercent", "changedPercent", "priceChangePercent"),
+                    Quantity: ScaleQuantity(
+                        GetLong(item, "lastQuantity", "matchQtty", "matchQuantity", "quantity", "qtty"),
+                        normalizedQuantityScaleFactor),
+                    TotalVolume: ScaleQuantity(
+                        GetLong(item, "totalVolumeTraded", "totalVolume", "accumulatedVolume", "volume"),
+                        normalizedQuantityScaleFactor),
+                    TotalValue: GetDecimal(item, "grossTradeAmount", "totalValue", "accumulatedValue", "value"),
+                    Side: NormalizeTradeSide(GetString(item, "side", "matchSide", "tradeSide", "buySell")));
+            })
+            .Where(trade =>
+                trade.Symbol.Equals(normalizedSymbol, StringComparison.Ordinal) &&
+                trade.BoardId.Equals(normalizedBoardId, StringComparison.Ordinal))
+            .OrderByDescending(trade => trade.Time)
+            .ToArray();
     }
 
     public static JsonElement? FindObjectBySymbol(JsonElement root, string symbol)
@@ -282,6 +402,27 @@ public static class DnseMarketDataMapper
         return current;
     }
 
+    private static IEnumerable<JsonElement> EnumerateObjects(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    yield return item;
+                }
+            }
+
+            yield break;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            yield return element;
+        }
+    }
+
     private static decimal GetPriceScaleAnchor(
         IReadOnlyCollection<decimal> prices,
         IReadOnlyCollection<PriceLevelDto> bidLevels,
@@ -297,22 +438,36 @@ public static class DnseMarketDataMapper
 
     private static decimal NormalizePriceScale(decimal value, decimal anchor)
     {
-        if (value <= 0m || anchor < 1000m || value >= 1000m)
+        if (value <= 0m || value >= 1000m)
         {
             return value;
         }
 
-        return value * 1000m;
+        return anchor > 0m ? value * 1000m : value;
     }
 
     private static decimal NormalizePriceDeltaScale(decimal value, decimal anchor)
     {
-        if (value == 0m || anchor < 1000m || Math.Abs(value) >= 1000m)
+        if (value == 0m || Math.Abs(value) >= 1000m)
         {
             return value;
         }
 
-        return value * 1000m;
+        return anchor > 0m && Math.Abs(value) < 10m ? value * 1000m : value;
+    }
+
+    private static decimal NormalizeStockPriceScale(decimal value)
+    {
+        return value > 0m && value < 1000m
+            ? value * 1000m
+            : value;
+    }
+
+    private static decimal NormalizeStockPriceDeltaScale(decimal value)
+    {
+        return value != 0m && Math.Abs(value) < 10m
+            ? value * 1000m
+            : value;
     }
 
     private static IReadOnlyList<PriceLevelDto> NormalizePriceLevels(
@@ -497,6 +652,12 @@ public static class DnseMarketDataMapper
             }
 
             if (property.ValueKind == JsonValueKind.String &&
+                DateOnly.TryParse(property.GetString(), out var parsedDate))
+            {
+                return new DateTimeOffset(parsedDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            }
+
+            if (property.ValueKind == JsonValueKind.String &&
                 DateTimeOffset.TryParse(property.GetString(), out var parsedDateTime))
             {
                 return parsedDateTime;
@@ -541,5 +702,12 @@ public static class DnseMarketDataMapper
         return string.IsNullOrWhiteSpace(value)
             ? fallback
             : value.Trim().ToUpperInvariant();
+    }
+
+    private static string NormalizeTradeSide(string? side)
+    {
+        return string.IsNullOrWhiteSpace(side)
+            ? string.Empty
+            : side.Trim().ToUpperInvariant();
     }
 }

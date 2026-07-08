@@ -83,8 +83,8 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
 
-        var first = await provider.GetSymbolDetailAsync("hpg", CancellationToken.None);
-        var second = await provider.GetSymbolDetailAsync("HPG", CancellationToken.None);
+        var first = await provider.GetSymbolDetailAsync("hpg", "g1", CancellationToken.None);
+        var second = await provider.GetSymbolDetailAsync("HPG", "G1", CancellationToken.None);
 
         Assert.Equal(1, inner.SymbolDetailCalls);
         Assert.Same(first, second);
@@ -97,10 +97,24 @@ public sealed class CachedMarketDataProviderTests
         var inner = new CountingMarketDataProvider();
         var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
 
-        var first = await provider.GetOhlcAsync("hpg", "1", CancellationToken.None);
-        var second = await provider.GetOhlcAsync("HPG", "1", CancellationToken.None);
+        var first = await provider.GetOhlcAsync("hpg", "1", null, null, CancellationToken.None);
+        var second = await provider.GetOhlcAsync("HPG", "1", null, null, CancellationToken.None);
 
         Assert.Equal(1, inner.OhlcCalls);
+        Assert.Same(first, second);
+    }
+
+    [Fact]
+    public async Task GetLatestTradesAsync_WhenCalledTwiceWithSameKey_UsesCachedTrades()
+    {
+        using var memoryCache = new MemoryCache(new MemoryCacheOptions());
+        var inner = new CountingMarketDataProvider();
+        var provider = CreateProvider(inner, memoryCache, TimeSpan.FromMinutes(1));
+
+        var first = await provider.GetLatestTradesAsync("hpg", "g1", 20, CancellationToken.None);
+        var second = await provider.GetLatestTradesAsync("HPG", "G1", 20, CancellationToken.None);
+
+        Assert.Equal(1, inner.LatestTradesCalls);
         Assert.Same(first, second);
     }
 
@@ -116,7 +130,8 @@ public sealed class CachedMarketDataProviderTests
             {
                 MarketBoardTtl = marketBoardTtl,
                 SymbolDetailTtl = TimeSpan.FromMinutes(1),
-                OhlcTtl = TimeSpan.FromMinutes(1)
+                OhlcTtl = TimeSpan.FromMinutes(1),
+                LatestTradesTtl = TimeSpan.FromMinutes(1)
             }),
             NullLogger<CachedMarketDataProvider>.Instance);
     }
@@ -128,6 +143,8 @@ public sealed class CachedMarketDataProviderTests
         public int SymbolDetailCalls { get; private set; }
 
         public int OhlcCalls { get; private set; }
+
+        public int LatestTradesCalls { get; private set; }
 
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
             MarketBoardQuery query,
@@ -166,27 +183,55 @@ public sealed class CachedMarketDataProviderTests
             return Task.FromResult(quotes);
         }
 
-        public Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, CancellationToken cancellationToken)
+        public Task<SymbolDetailDto?> GetSymbolDetailAsync(
+            string symbol,
+            string boardId,
+            CancellationToken cancellationToken)
         {
             SymbolDetailCalls++;
 
             return Task.FromResult<SymbolDetailDto?>(new SymbolDetailDto(
                 symbol,
-                "G1",
+                boardId,
                 "MOCK",
                 "Mock symbol",
                 "Mock symbol",
                 "Stock",
+                "VN000000MOCK",
+                "STOCK",
+                "ST",
                 100m,
                 107m,
                 93m,
+                100m,
+                0m,
+                0m,
+                100,
+                1000,
+                100000m,
+                100,
+                90,
+                10000,
+                100m,
+                101m,
+                99m,
+                [new PriceLevelDto(100m, 1000)],
+                [new PriceLevelDto(101m, 1000)],
                 "Continuous",
+                "NORMAL",
+                "NORMAL",
+                "NORMAL",
+                new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero),
+                null,
+                0,
                 new DateTimeOffset(2026, 7, 5, 7, 45, 0, TimeSpan.Zero)));
         }
 
         public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
             string symbol,
             string resolution,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
             CancellationToken cancellationToken)
         {
             OhlcCalls++;
@@ -205,6 +250,32 @@ public sealed class CachedMarketDataProviderTests
             ];
 
             return Task.FromResult(bars);
+        }
+
+        public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+            string symbol,
+            string boardId,
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            LatestTradesCalls++;
+
+            IReadOnlyList<MarketTradeDto> trades =
+            [
+                new(
+                    symbol,
+                    boardId,
+                    new DateTimeOffset(2026, 7, 5, 7, 45, 0, TimeSpan.Zero),
+                    100m,
+                    0m,
+                    0m,
+                    100,
+                    1000,
+                    100000m,
+                    string.Empty)
+            ];
+
+            return Task.FromResult(trades);
         }
     }
 }

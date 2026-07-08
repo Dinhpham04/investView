@@ -111,6 +111,83 @@ public sealed class DnseMarketDataProviderTests
         Assert.Contains(client.Calls, call => call.Path == "/instruments" && call.Query?["page"] == "3");
     }
 
+    [Fact]
+    public async Task GetSymbolDetailAsync_LoadsInstrumentSecdefAndSnapshotParts()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+
+        var detail = await provider.GetSymbolDetailAsync("hpg", "g1", CancellationToken.None);
+
+        Assert.NotNull(detail);
+        Assert.Equal("HPG", detail.Symbol);
+        Assert.Equal("G1", detail.BoardId);
+        Assert.Equal("VN000000HPG4", detail.Isin);
+        Assert.Equal("STOCK", detail.ProductGroupId);
+        Assert.Equal("ST", detail.SecurityGroupId);
+        Assert.Equal(29150m, detail.LastPrice);
+        Assert.Equal(550m, detail.Change);
+        Assert.Equal(2053706002, detail.ForeignRoom);
+        Assert.Equal(3, detail.BidLevels.Count);
+        Assert.Equal(3, detail.AskLevels.Count);
+        Assert.Contains(client.Calls, call => call.Path == "/instruments");
+        Assert.Contains(client.Calls, call => call.Path == "/price/HPG/secdef");
+        Assert.Contains(client.Calls, call => call.Path == "/price/HPG/trades/latest");
+        Assert.Contains(client.Calls, call => call.Path == "/price/HPG/quotes/latest");
+        Assert.Contains(client.Calls, call => call.Path == "/price/HPG/foreign-trading");
+    }
+
+    [Fact]
+    public async Task GetOhlcAsync_CallsDnseOhlcEndpointWithStockQuery()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+        var from = DateTimeOffset.FromUnixTimeSeconds(1783079100);
+        var to = DateTimeOffset.FromUnixTimeSeconds(1783079160);
+
+        var bars = await provider.GetOhlcAsync("hpg", "1", from, to, CancellationToken.None);
+
+        var bar = Assert.Single(bars);
+        Assert.Equal("HPG", bar.Symbol);
+        Assert.Equal(29150m, bar.Close);
+        Assert.Equal(124_500_000, bar.Volume);
+
+        var call = Assert.Single(client.Calls, call => call.Path == "/price/ohlc");
+        Assert.NotNull(call.Query);
+        Assert.Equal("STOCK", call.Query["type"]);
+        Assert.Equal("HPG", call.Query["symbol"]);
+        Assert.Equal("1", call.Query["resolution"]);
+        Assert.Equal("1783079100", call.Query["from"]);
+        Assert.Equal("1783079160", call.Query["to"]);
+    }
+
+    [Fact]
+    public async Task GetLatestTradesAsync_CallsDnseTradesHistoryEndpointWithLimitAndDescOrder()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+
+        var trades = await provider.GetLatestTradesAsync("hpg", "g1", 20, CancellationToken.None);
+
+        var trade = Assert.Single(trades);
+        Assert.Equal("HPG", trade.Symbol);
+        Assert.Equal("G1", trade.BoardId);
+        Assert.Equal(29150m, trade.Price);
+        Assert.Equal(25_000, trade.Quantity);
+
+        var call = Assert.Single(client.Calls, call => call.Path == "/price/HPG/trades");
+        Assert.NotNull(call.Query);
+        Assert.Equal("G1", call.Query["boardId"]);
+        Assert.Equal("20", call.Query["limit"]);
+        Assert.Equal("DESC", call.Query["order"]);
+    }
+
     private sealed class FakeDnseMarketDataClient : IDnseMarketDataClient
     {
         public List<(string Path, IReadOnlyDictionary<string, string?>? Query)> Calls { get; } = [];
@@ -128,11 +205,13 @@ public sealed class DnseMarketDataProviderTests
                 "/instruments" when query?["limit"] == "1" && query["page"] == "2" => """{ "data": [{ "symbol": "SSI", "marketId": "HOSE", "name": "SSI Securities" }] }""",
                 "/instruments" when query?["limit"] == "1" && query["page"] == "3" => """{ "data": [] }""",
                 "/instruments" => """{ "data": [{ "symbol": "HPG", "marketId": "HOSE", "name": "Hoa Phat Group" }] }""",
-                "/price/HPG/secdef" => """{ "basicPrice": 28600, "ceilingPrice": 30600, "floorPrice": 26600, "securityStatus": "Continuous" }""",
+                "/price/HPG/secdef" => """{ "isin": "VN000000HPG4", "productGrpId": "STOCK", "securityGroupId": "ST", "basicPrice": 28600, "ceilingPrice": 30600, "floorPrice": 26600, "securityStatus": "Continuous", "symbolAdminStatusCode": "NORMAL", "symbolTradingMethodStatusCode": "NORMAL", "symbolTradingSanctionStatusCode": "NORMAL", "listingDate": "2007-11-15" }""",
                 "/price/HPG/trades/latest" => """{ "matchPrice": 29150, "matchQtty": 2500, "totalVolumeTraded": 12450000, "grossTradeAmount": 362917500000, "openPrice": 28700, "highestPrice": 29200, "lowestPrice": 28450, "time": "2026-07-03T07:45:00+00:00" }""",
                 "/price/HPG/quotes/latest" => """{ "bid": [{ "price": 29100, "qtty": 18300 }, { "price": 29050, "qtty": 22500 }, { "price": 29000, "qtty": 41300 }], "offer": [{ "price": 29150, "qtty": 12000 }, { "price": 29200, "qtty": 17600 }, { "price": 29250, "qtty": 28400 }] }""",
                 "/price/HPG/foreign-trading" when query?.ContainsKey("from") == true && query.ContainsKey("to") => """{ "foreigners": [{ "totalBuyVolume": 786100, "totalSellVolume": 1227649, "foreignerOrderLimitQuantity": 1742502798, "foreignerBuyPossibleQuantity": 2053706002 }] }""",
                 "/price/HPG/foreign-trading" => throw new InvalidOperationException("foreign-trading requires from/to query params."),
+                "/price/ohlc" => """{ "data": [{ "symbol": "HPG", "resolution": "1", "open": 28.6, "high": 29.2, "low": 28.45, "close": 29.15, "volume": 12450000, "time": 1783079100 }] }""",
+                "/price/HPG/trades" => """{ "trades": [{ "symbol": "HPG", "boardId": "G1", "matchPrice": 29.15, "changedValue": 0.55, "changedPercent": 1.92, "matchQtty": 2500, "totalVolumeTraded": 12450000, "grossTradeAmount": 362917500000, "time": "2026-07-03T07:45:00+00:00" }] }""",
                 "/price/SSI/secdef" => """{ "basicPrice": 35200, "ceilingPrice": 37650, "floorPrice": 32750, "securityStatus": "Continuous" }""",
                 "/price/SSI/trades/latest" => """{ "matchPrice": 34850, "matchQtty": 1800, "totalVolumeTraded": 7820000, "grossTradeAmount": 272527000000, "openPrice": 35400, "highestPrice": 35600, "lowestPrice": 34700, "time": "2026-07-03T07:45:00+00:00" }""",
                 "/price/SSI/quotes/latest" => """{ "bid": [{ "price": 34800, "qtty": 15400 }], "offer": [{ "price": 34850, "qtty": 9400 }] }""",

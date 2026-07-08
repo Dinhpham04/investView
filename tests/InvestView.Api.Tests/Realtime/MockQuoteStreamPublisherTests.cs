@@ -164,7 +164,10 @@ public sealed class MockQuoteStreamPublisherTests
             return Task.FromResult<IReadOnlyList<MarketQuoteDto>>(quotes);
         }
 
-        public Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, CancellationToken cancellationToken)
+        public Task<SymbolDetailDto?> GetSymbolDetailAsync(
+            string symbol,
+            string boardId,
+            CancellationToken cancellationToken)
         {
             return Task.FromResult<SymbolDetailDto?>(null);
         }
@@ -172,9 +175,20 @@ public sealed class MockQuoteStreamPublisherTests
         public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
             string symbol,
             string resolution,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
             CancellationToken cancellationToken)
         {
             return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+        }
+
+        public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
+            string symbol,
+            string boardId,
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<MarketTradeDto>>([]);
         }
 
         public static MarketQuoteDto CreateQuote(string symbol, decimal referencePrice, decimal lastPrice)

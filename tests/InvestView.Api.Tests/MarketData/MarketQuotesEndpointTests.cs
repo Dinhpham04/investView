@@ -107,4 +107,56 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(["HPG", "SSI", "VCB"], payload.RootElement.EnumerateArray().Select(quote => quote.GetProperty("symbol").GetString()));
     }
+
+    [Fact]
+    public async Task GetSymbolDetail_ReturnsMockSymbolSnapshotAndMetadata()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/symbols/HPG?boardId=G1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("HPG", payload.RootElement.GetProperty("symbol").GetString());
+        Assert.Equal("G1", payload.RootElement.GetProperty("boardId").GetString());
+        Assert.Equal("VN000000HPG", payload.RootElement.GetProperty("isin").GetString());
+        Assert.Equal("STOCK", payload.RootElement.GetProperty("productGroupId").GetString());
+        Assert.Equal("ST", payload.RootElement.GetProperty("securityGroupId").GetString());
+        Assert.Equal(29150m, payload.RootElement.GetProperty("lastPrice").GetDecimal());
+        Assert.Equal(550m, payload.RootElement.GetProperty("change").GetDecimal());
+        Assert.Equal(786100, payload.RootElement.GetProperty("foreignBuyVolume").GetInt64());
+        Assert.Equal(3, payload.RootElement.GetProperty("bidLevels").GetArrayLength());
+        Assert.Equal("NORMAL", payload.RootElement.GetProperty("symbolAdminStatus").GetString());
+    }
+
+    [Fact]
+    public async Task GetOhlc_ReturnsMockBarsForSymbol()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/symbols/HPG/ohlc?resolution=1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(3, payload.RootElement.GetArrayLength());
+        Assert.Equal("HPG", payload.RootElement[0].GetProperty("symbol").GetString());
+        Assert.Equal("1", payload.RootElement[0].GetProperty("resolution").GetString());
+        Assert.True(payload.RootElement[0].GetProperty("volume").GetInt64() > 0);
+    }
+
+    [Fact]
+    public async Task GetLatestTrades_ReturnsMockTradesForSymbol()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/symbols/HPG/trades/latest?boardId=G1&limit=2");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, payload.RootElement.GetArrayLength());
+        Assert.Equal("HPG", payload.RootElement[0].GetProperty("symbol").GetString());
+        Assert.Equal("G1", payload.RootElement[0].GetProperty("boardId").GetString());
+        Assert.True(payload.RootElement[0].GetProperty("price").GetDecimal() > 0m);
+        Assert.True(payload.RootElement[0].GetProperty("quantity").GetInt64() > 0);
+    }
 }
