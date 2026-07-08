@@ -4,7 +4,7 @@ import { MarketBoard } from './MarketBoard';
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHubConnection';
-import type { MarketQuote, MarketQuoteUpdate, QuoteStreamStatus } from '../../shared/types/market';
+import type { MarketQuote, MarketQuoteUpdate, MarketTrade, OhlcBar, QuoteStreamStatus, SymbolDetail } from '../../shared/types/market';
 
 const testRuntime = vi.hoisted(() => ({
   applyTransactionAsync: vi.fn(),
@@ -40,10 +40,12 @@ vi.mock('ag-grid-react', async () => {
       columnDefs,
       rowData,
       onGridReady,
+      onRowClicked,
     }: {
       columnDefs: { headerName?: string; children?: { headerName?: string }[] }[];
       rowData: { symbol: string; lastPrice: number | null; totalVolume: number | null }[];
       onGridReady?: (event: { api: { applyTransactionAsync: typeof testRuntime.applyTransactionAsync } }) => void;
+      onRowClicked?: (event: { data: { symbol: string; boardId?: string } }) => void;
     }) => {
       React.useEffect(() => {
         onGridReady?.({ api: { applyTransactionAsync: testRuntime.applyTransactionAsync } });
@@ -59,7 +61,7 @@ vi.mock('ag-grid-react', async () => {
             ])}
           </div>
           {rowData.map((row) => (
-            <div key={row.symbol} role="row">
+            <div key={row.symbol} role="row" onClick={() => onRowClicked?.({ data: row })}>
               <span>{row.symbol}</span>
               <span>{row.lastPrice}</span>
               <span>{row.totalVolume}</span>
@@ -104,6 +106,59 @@ const quote: MarketQuote = {
   tradingStatus: 'Continuous',
   updatedAt: '2026-07-03T07:45:00Z',
 };
+
+const symbolDetail: SymbolDetail = {
+  ...quote,
+  finalTradeDate: null,
+  isin: 'VN000000HPG4',
+  listingDate: '2007-11-15T00:00:00Z',
+  name: 'Hoa Phat Group Joint Stock Company',
+  openInterestQuantity: 0,
+  productGroupId: 'STOCK',
+  securityGroupId: 'ST',
+  securityType: 'Stock',
+  symbolAdminStatus: 'NORMAL',
+  tradingMethodStatus: 'NORMAL',
+  tradingSanctionStatus: 'NORMAL',
+};
+
+const ohlcBars: OhlcBar[] = [
+  {
+    close: 27.8,
+    high: 28,
+    low: 27.4,
+    open: 27.5,
+    resolution: '1',
+    symbol: 'HPG',
+    time: '2026-07-03T07:43:00Z',
+    volume: 120_000,
+  },
+  {
+    close: 28.1,
+    high: 28.2,
+    low: 27.7,
+    open: 27.8,
+    resolution: '1',
+    symbol: 'HPG',
+    time: '2026-07-03T07:44:00Z',
+    volume: 140_000,
+  },
+];
+
+const latestTrades: MarketTrade[] = [
+  {
+    boardId: 'G1',
+    change: 0.7,
+    changePercent: 2.55,
+    price: 28.1,
+    quantity: 18_000,
+    side: '1',
+    symbol: 'HPG',
+    time: '2026-07-03T07:45:00Z',
+    totalValue: 347_000_000_000,
+    totalVolume: 12_345_678,
+  },
+];
 
 describe('MarketBoard', () => {
   afterEach(() => {
@@ -261,6 +316,39 @@ describe('MarketBoard', () => {
     );
   });
 
+  it('opens the symbol detail panel from a market board row', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/market/symbols/HPG/trades/latest')) {
+        return Promise.resolve(jsonResponse(latestTrades));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG/ohlc')) {
+        return Promise.resolve(jsonResponse(ohlcBars));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG?')) {
+        return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      return Promise.resolve(jsonResponse([quote]));
+    }));
+
+    renderWithQueryClient(<MarketBoard />);
+
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+
+    expect(await screen.findByTestId('symbol-detail-panel')).toBeInTheDocument();
+    expect(await screen.findByText('Symbol detail')).toBeInTheDocument();
+    expect(await screen.findByText('Latest trades')).toBeInTheDocument();
+    expect(await screen.findByText('Intraday chart')).toBeInTheDocument();
+    expect(await screen.findByText('VN000000HPG4')).toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith('/api/market/symbols/HPG?boardId=G1', expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=1&from=/), expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith('/api/market/symbols/HPG/trades/latest?boardId=G1&limit=30', expect.any(Object));
+  });
+
   it('keeps the symbol pin column before the stock code column', () => {
     expect(marketBoardColumnDefs[0]).toMatchObject({
       colId: 'pinSymbol',
@@ -307,3 +395,10 @@ describe('MarketBoard', () => {
     expect(await screen.findByText('Request failed: 503 Service Unavailable')).toBeInTheDocument();
   });
 });
+
+function jsonResponse(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}

@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import type { GridApi, GridReadyEvent } from 'ag-grid-community';
+import type { GridApi, GridReadyEvent, RowClickedEvent } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useMarketQuotesQuery } from './useMarketQuotesQuery';
 import { mapQuoteToMarketBoardRow, type MarketBoardFlashClasses, type MarketBoardRow } from './marketBoardFormatters';
@@ -7,6 +7,8 @@ import { defaultMarketBoardColumnDef, defaultMarketBoardColumnGroupDef, marketBo
 import { marketBoardTheme } from './marketBoardTheme';
 import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './marketLists';
 import { applyQuoteUpdate } from './marketBoardRealtime';
+import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
+import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketQuote, MarketQuoteUpdate, QuoteStreamStatus } from '../../shared/types/market';
 
@@ -27,6 +29,7 @@ export function MarketBoard() {
   const [symbolSearch, setSymbolSearch] = useState('');
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [flashClassesByRow, setFlashClassesByRow] = useState<Record<string, MarketBoardFlashClasses>>({});
+  const [selectedSymbol, setSelectedSymbol] = useState<SymbolDetailSelection | null>(null);
   const [streamStatus, setStreamStatus] = useState<QuoteStreamStatus | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
   const quotesQueryParams = useMemo(
@@ -95,6 +98,16 @@ export function MarketBoard() {
   const handleGridReady = useCallback((event: GridReadyEvent<MarketBoardRow>) => {
     gridApiRef.current = event.api;
   }, []);
+  const handleRowClicked = useCallback((event: RowClickedEvent<MarketBoardRow>) => {
+    if (event.data == null) {
+      return;
+    }
+
+    setSelectedSymbol({
+      boardId: event.data.boardId,
+      symbol: event.data.symbol,
+    });
+  }, []);
 
   useEffect(() => {
     const nextQuotes = quotesQuery.data ?? [];
@@ -105,6 +118,14 @@ export function MarketBoard() {
     quotesRef.current = nextQuotes;
     setQuotes(nextQuotes);
   }, [quotesQuery.data]);
+
+  useEffect(() => {
+    if (selectedSymbol == null || quotes.some((quote) => getRowId(quote) === `${selectedSymbol.boardId}:${selectedSymbol.symbol}`)) {
+      return;
+    }
+
+    setSelectedSymbol(null);
+  }, [quotes, selectedSymbol]);
 
   useEffect(() => {
     return () => {
@@ -244,6 +265,7 @@ export function MarketBoard() {
             getRowId={(params) => params.data.id}
             headerHeight={30}
             onGridReady={handleGridReady}
+            onRowClicked={handleRowClicked}
             rowData={rows}
             suppressCellFocus
             suppressHorizontalScroll
@@ -252,6 +274,8 @@ export function MarketBoard() {
           />
         </div>
       ) : null}
+
+      <SymbolDetailPanel selection={selectedSymbol} onClose={() => setSelectedSymbol(null)} />
 
       <div className="border-t border-market-border bg-market-surface px-3 py-2 text-[11px] text-market-text-muted">
         {streamStatus?.message ?? 'REST snapshot loaded; SignalR applies realtime quote updates.'}

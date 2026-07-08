@@ -505,6 +505,40 @@ public sealed class DnseMarketDataMapperTests
     }
 
     [Fact]
+    public void MapOhlcBars_NormalizesColumnarDnseBarsIntoInternalBars()
+    {
+        using var ohlc = JsonDocument.Parse(
+            """
+            {
+              "data": {
+                "symbol": "AAM",
+                "resolution": "1",
+                "t": [1783500000, 1783500060],
+                "o": [9.1, 9.2],
+                "h": [9.3, 9.4],
+                "l": [9.0, 9.1],
+                "c": [9.2, 9.3],
+                "v": [1000, 2000]
+              }
+            }
+            """);
+
+        var result = DnseMarketDataMapper.MapOhlcBars("AAM", "1", ohlc.RootElement, quantityScaleFactor: 10);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("AAM", result[0].Symbol);
+        Assert.Equal("1", result[0].Resolution);
+        Assert.Equal(9100m, result[0].Open);
+        Assert.Equal(9300m, result[0].High);
+        Assert.Equal(9000m, result[0].Low);
+        Assert.Equal(9200m, result[0].Close);
+        Assert.Equal(10_000, result[0].Volume);
+        Assert.Equal(9200m, result[1].Open);
+        Assert.Equal(20_000, result[1].Volume);
+        Assert.True(result[0].Time < result[1].Time);
+    }
+
+    [Fact]
     public void MapLatestTrades_ScalesTradeQuantitiesAndSortsNewestFirst()
     {
         using var trades = JsonDocument.Parse(

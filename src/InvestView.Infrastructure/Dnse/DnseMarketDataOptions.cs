@@ -46,6 +46,8 @@ public sealed class DnseMarketDataOptions
 
     public int ForeignTradingLookbackHours { get; set; } = 8;
 
+    public int LatestTradesLookbackHours { get; set; } = 24;
+
     public bool LogResponseBodies { get; set; }
 
     public int MaxLoggedResponseBodyChars { get; set; } = 4000;

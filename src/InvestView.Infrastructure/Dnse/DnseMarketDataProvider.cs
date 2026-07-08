@@ -138,11 +138,16 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
         }
 
         var normalizedLimit = Math.Clamp(limit, 1, 200);
+        var to = DateTimeOffset.UtcNow;
+        var lookbackHours = Math.Max(_options.LatestTradesLookbackHours, 1);
+        var from = to.AddHours(-lookbackHours);
         using var trades = await _client.GetJsonAsync(
             $"/price/{normalizedSymbol}/trades",
             new Dictionary<string, string?>
             {
                 ["boardId"] = normalizedBoardId,
+                ["from"] = from.ToUnixTimeSeconds().ToString(),
+                ["to"] = to.ToUnixTimeSeconds().ToString(),
                 ["limit"] = normalizedLimit.ToString(),
                 ["order"] = "DESC"
             },

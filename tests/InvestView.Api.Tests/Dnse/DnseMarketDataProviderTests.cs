@@ -186,6 +186,9 @@ public sealed class DnseMarketDataProviderTests
         Assert.Equal("G1", call.Query["boardId"]);
         Assert.Equal("20", call.Query["limit"]);
         Assert.Equal("DESC", call.Query["order"]);
+        Assert.True(long.TryParse(call.Query["from"], out var from));
+        Assert.True(long.TryParse(call.Query["to"], out var to));
+        Assert.True(from < to);
     }
 
     private sealed class FakeDnseMarketDataClient : IDnseMarketDataClient
@@ -211,7 +214,8 @@ public sealed class DnseMarketDataProviderTests
                 "/price/HPG/foreign-trading" when query?.ContainsKey("from") == true && query.ContainsKey("to") => """{ "foreigners": [{ "totalBuyVolume": 786100, "totalSellVolume": 1227649, "foreignerOrderLimitQuantity": 1742502798, "foreignerBuyPossibleQuantity": 2053706002 }] }""",
                 "/price/HPG/foreign-trading" => throw new InvalidOperationException("foreign-trading requires from/to query params."),
                 "/price/ohlc" => """{ "data": [{ "symbol": "HPG", "resolution": "1", "open": 28.6, "high": 29.2, "low": 28.45, "close": 29.15, "volume": 12450000, "time": 1783079100 }] }""",
-                "/price/HPG/trades" => """{ "trades": [{ "symbol": "HPG", "boardId": "G1", "matchPrice": 29.15, "changedValue": 0.55, "changedPercent": 1.92, "matchQtty": 2500, "totalVolumeTraded": 12450000, "grossTradeAmount": 362917500000, "time": "2026-07-03T07:45:00+00:00" }] }""",
+                "/price/HPG/trades" when query?.ContainsKey("from") == true && query.ContainsKey("to") => """{ "trades": [{ "symbol": "HPG", "boardId": "G1", "matchPrice": 29.15, "changedValue": 0.55, "changedPercent": 1.92, "matchQtty": 2500, "totalVolumeTraded": 12450000, "grossTradeAmount": 362917500000, "time": "2026-07-03T07:45:00+00:00" }] }""",
+                "/price/HPG/trades" => throw new InvalidOperationException("trades requires from/to query params."),
                 "/price/SSI/secdef" => """{ "basicPrice": 35200, "ceilingPrice": 37650, "floorPrice": 32750, "securityStatus": "Continuous" }""",
                 "/price/SSI/trades/latest" => """{ "matchPrice": 34850, "matchQtty": 1800, "totalVolumeTraded": 7820000, "grossTradeAmount": 272527000000, "openPrice": 35400, "highestPrice": 35600, "lowestPrice": 34700, "time": "2026-07-03T07:45:00+00:00" }""",
                 "/price/SSI/quotes/latest" => """{ "bid": [{ "price": 34800, "qtty": 15400 }], "offer": [{ "price": 34850, "qtty": 9400 }] }""",

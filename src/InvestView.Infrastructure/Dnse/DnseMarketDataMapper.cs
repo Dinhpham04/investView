@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using InvestView.Application.Dtos.MarketData;
 
@@ -180,6 +181,16 @@ public static class DnseMarketDataMapper
         var payload = UnwrapPayload(root, "data", "ohlc", "ohlcs", "bars", "candles");
         var normalizedQuantityScaleFactor = Math.Max(quantityScaleFactor, 1);
 
+        if (TryMapColumnarOhlcBars(
+            normalizedSymbol,
+            normalizedResolution,
+            payload,
+            normalizedQuantityScaleFactor,
+            out var columnarBars))
+        {
+            return columnarBars;
+        }
+
         return EnumerateObjects(payload)
             .Select(item =>
             {
@@ -207,6 +218,64 @@ public static class DnseMarketDataMapper
             .Select(bar => bar!)
             .OrderBy(bar => bar.Time)
             .ToArray();
+    }
+
+    private static bool TryMapColumnarOhlcBars(
+        string normalizedSymbol,
+        string normalizedResolution,
+        JsonElement payload,
+        int quantityScaleFactor,
+        out IReadOnlyList<OhlcBarDto> bars)
+    {
+        bars = [];
+        if (payload.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        if (!TryGetArray(payload, ["time", "timestamp", "t"], out var times) ||
+            !TryGetArray(payload, ["open", "o"], out var opens) ||
+            !TryGetArray(payload, ["high", "h"], out var highs) ||
+            !TryGetArray(payload, ["low", "l"], out var lows) ||
+            !TryGetArray(payload, ["close", "c"], out var closes))
+        {
+            return false;
+        }
+
+        TryGetArray(payload, ["volume", "v"], out var volumes);
+
+        var symbol = NormalizeToken(GetString(payload, "symbol") ?? normalizedSymbol, normalizedSymbol);
+        var resolution = NormalizeToken(GetString(payload, "resolution") ?? normalizedResolution, normalizedResolution);
+        var count = new[] { times.Length, opens.Length, highs.Length, lows.Length, closes.Length }.Min();
+        var mappedBars = new List<OhlcBarDto>(count);
+
+        for (var index = 0; index < count; index++)
+        {
+            var time = GetDateTimeOffsetValue(times[index]);
+            if (time is null)
+            {
+                continue;
+            }
+
+            var volume = index < volumes.Length
+                ? ScaleQuantity(GetLongValue(volumes[index]), quantityScaleFactor)
+                : 0;
+
+            mappedBars.Add(new OhlcBarDto(
+                Symbol: symbol,
+                Resolution: resolution,
+                Time: time.Value,
+                Open: NormalizeStockPriceScale(GetDecimalValue(opens[index])),
+                High: NormalizeStockPriceScale(GetDecimalValue(highs[index])),
+                Low: NormalizeStockPriceScale(GetDecimalValue(lows[index])),
+                Close: NormalizeStockPriceScale(GetDecimalValue(closes[index])),
+                Volume: volume));
+        }
+
+        bars = mappedBars
+            .OrderBy(bar => bar.Time)
+            .ToArray();
+        return true;
     }
 
     public static IReadOnlyList<MarketTradeDto> MapLatestTrades(
@@ -594,16 +663,7 @@ public static class DnseMarketDataMapper
         {
             if (TryGetProperty(element, propertyName, out var property))
             {
-                if (property.ValueKind == JsonValueKind.Number && property.TryGetDecimal(out var number))
-                {
-                    return number;
-                }
-
-                if (property.ValueKind == JsonValueKind.String &&
-                    decimal.TryParse(property.GetString(), out var stringNumber))
-                {
-                    return stringNumber;
-                }
+                return GetDecimalValue(property);
             }
         }
 
@@ -621,16 +681,7 @@ public static class DnseMarketDataMapper
         {
             if (TryGetProperty(element, propertyName, out var property))
             {
-                if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var number))
-                {
-                    return number;
-                }
-
-                if (property.ValueKind == JsonValueKind.String &&
-                    long.TryParse(property.GetString(), out var stringNumber))
-                {
-                    return stringNumber;
-                }
+                return GetLongValue(property);
             }
         }
 
@@ -651,27 +702,90 @@ public static class DnseMarketDataMapper
                 continue;
             }
 
-            if (property.ValueKind == JsonValueKind.String &&
-                DateOnly.TryParse(property.GetString(), out var parsedDate))
-            {
-                return new DateTimeOffset(parsedDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-            }
-
-            if (property.ValueKind == JsonValueKind.String &&
-                DateTimeOffset.TryParse(property.GetString(), out var parsedDateTime))
-            {
-                return parsedDateTime;
-            }
-
-            if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var unixTime))
-            {
-                return unixTime > 10_000_000_000
-                    ? DateTimeOffset.FromUnixTimeMilliseconds(unixTime)
-                    : DateTimeOffset.FromUnixTimeSeconds(unixTime);
-            }
+            return GetDateTimeOffsetValue(property);
         }
 
         return null;
+    }
+
+    private static decimal GetDecimalValue(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetDecimal(out var number))
+        {
+            return number;
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = element.GetString();
+            if (decimal.TryParse(rawValue, NumberStyles.Number, CultureInfo.InvariantCulture, out var invariantNumber) ||
+                decimal.TryParse(rawValue, out invariantNumber))
+            {
+                return invariantNumber;
+            }
+        }
+
+        return 0m;
+    }
+
+    private static long GetLongValue(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var number))
+        {
+            return number;
+        }
+
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            var rawValue = element.GetString();
+            if (long.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var invariantNumber) ||
+                long.TryParse(rawValue, out invariantNumber))
+            {
+                return invariantNumber;
+            }
+        }
+
+        return 0;
+    }
+
+    private static DateTimeOffset? GetDateTimeOffsetValue(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String &&
+            DateOnly.TryParse(element.GetString(), out var parsedDate))
+        {
+            return new DateTimeOffset(parsedDate.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        }
+
+        if (element.ValueKind == JsonValueKind.String &&
+            DateTimeOffset.TryParse(element.GetString(), out var parsedDateTime))
+        {
+            return parsedDateTime;
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var unixTime))
+        {
+            return unixTime > 10_000_000_000
+                ? DateTimeOffset.FromUnixTimeMilliseconds(unixTime)
+                : DateTimeOffset.FromUnixTimeSeconds(unixTime);
+        }
+
+        return null;
+    }
+
+    private static bool TryGetArray(JsonElement element, string[] propertyNames, out JsonElement[] items)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (TryGetProperty(element, propertyName, out var property) &&
+                property.ValueKind == JsonValueKind.Array)
+            {
+                items = property.EnumerateArray().ToArray();
+                return true;
+            }
+        }
+
+        items = [];
+        return false;
     }
 
     private static bool TryGetProperty(JsonElement element, string propertyName, out JsonElement property)
