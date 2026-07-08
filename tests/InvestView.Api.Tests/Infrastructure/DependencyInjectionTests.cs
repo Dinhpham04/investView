@@ -1,5 +1,6 @@
 using InvestView.Infrastructure;
 using InvestView.Infrastructure.MarketData;
+using InvestView.Infrastructure.Realtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -29,5 +30,20 @@ public sealed class DependencyInjectionTests
         Assert.Equal(TimeSpan.FromDays(7), options.MarketBoardTtl);
         Assert.Equal(TimeSpan.FromMinutes(30), options.SymbolDetailTtl);
         Assert.Equal(TimeSpan.FromMinutes(5), options.OhlcTtl);
+    }
+
+    [Theory]
+    [InlineData(MarketQuoteStreamOptions.MockSourceProvider, true, false)]
+    [InlineData(MarketQuoteStreamOptions.ConfiguredSourceProvider, true, false)]
+    [InlineData(MarketQuoteStreamOptions.DnseWebSocketSourceProvider, false, true)]
+    public void MarketQuoteStreamOptions_ClassifiesRealtimeSourceProviders(
+        string sourceProvider,
+        bool usesMock,
+        bool usesDnseWebSocket)
+    {
+        var options = new MarketQuoteStreamOptions { SourceProvider = sourceProvider };
+
+        Assert.Equal(usesMock, options.UsesMockCompatibleSourceProvider());
+        Assert.Equal(usesDnseWebSocket, options.UsesDnseWebSocketSourceProvider());
     }
 }

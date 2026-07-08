@@ -36,6 +36,14 @@ public sealed class MockQuoteStreamService : BackgroundService
             return;
         }
 
+        if (!_options.UsesMockCompatibleSourceProvider())
+        {
+            _logger.LogInformation(
+                "Mock quote stream is skipped because quote stream source provider is {SourceProvider}.",
+                _options.SourceProvider);
+            return;
+        }
+
         await _broadcaster.BroadcastStreamStatusAsync(
             new QuoteStreamStatusDto("Mock", IsEnabled: true, _timeProvider.GetUtcNow(), "Mock quote stream started."),
             stoppingToken);

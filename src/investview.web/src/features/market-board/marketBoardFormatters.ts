@@ -4,6 +4,9 @@ export type PriceClass = 'ceiling' | 'floor' | 'reference' | 'up' | 'down' | 'ne
 
 export type MarketBoardFlashField =
   | 'symbol'
+  | 'ceilingPrice'
+  | 'floorPrice'
+  | 'referencePrice'
   | 'bid3Price'
   | 'bid3Quantity'
   | 'bid2Price'
@@ -121,12 +124,12 @@ export function formatPercent(value: number | null | undefined) {
   return value == null ? '-' : `${percentFormatter.format(value)}%`;
 }
 
-export function formatChange(value: number | null | undefined) {
+export function formatChange(value: number | null | undefined, referencePrice?: number | null) {
   if (value == null) {
     return '-';
   }
 
-  const displayValue = Math.abs(value) >= 100 ? value / 1000 : value;
+  const displayValue = shouldScaleChange(value, referencePrice) ? value / 1000 : value;
   const formattedValue = priceFormatter.format(Math.abs(displayValue));
 
   if (value > 0) {
@@ -138,6 +141,14 @@ export function formatChange(value: number | null | undefined) {
   }
 
   return formattedValue;
+}
+
+function shouldScaleChange(value: number, referencePrice: number | null | undefined) {
+  if (referencePrice != null && Math.abs(referencePrice) >= 1000) {
+    return true;
+  }
+
+  return Math.abs(value) >= 100;
 }
 
 export function classifyChange(value: number | null | undefined): PriceClass {

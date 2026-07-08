@@ -28,21 +28,33 @@ export function applyQuoteUpdate(quotes: MarketQuote[], update: MarketQuoteUpdat
       return quote;
     }
 
-    previousQuote = quote;
+    const sourceQuote = normalizeQuotePriceScaleForUpdate(quote, update);
+    previousQuote = sourceQuote;
+    const nextReferencePrice = keepExistingWhenNullish(update.referencePrice, sourceQuote.referencePrice);
+    const nextLastPrice = keepExistingWhenNullish(update.lastPrice, sourceQuote.lastPrice);
+    const nextChange = resolveChange(update, sourceQuote, nextLastPrice, nextReferencePrice);
+    const nextChangePercent = resolveChangePercent(update, sourceQuote, nextChange, nextReferencePrice);
+
     updatedQuote = {
-      ...quote,
-      lastPrice: keepExistingWhenNullish(update.lastPrice, quote.lastPrice),
-      change: keepExistingWhenNullish(update.change, quote.change),
-      changePercent: keepExistingWhenNullish(update.changePercent, quote.changePercent),
-      lastQuantity: keepExistingWhenNullish(update.lastQuantity, quote.lastQuantity),
-      totalVolume: keepExistingWhenNullish(update.totalVolume, quote.totalVolume),
-      totalValue: keepExistingWhenNullish(update.totalValue, quote.totalValue),
-      foreignBuyVolume: keepExistingWhenNullish(update.foreignBuyVolume, quote.foreignBuyVolume),
-      foreignSellVolume: keepExistingWhenNullish(update.foreignSellVolume, quote.foreignSellVolume),
-      foreignRoom: keepExistingWhenNullish(update.foreignRoom, quote.foreignRoom),
-      bidLevels: keepLevelsWhenNullish(update.bidLevels, quote.bidLevels),
-      askLevels: keepLevelsWhenNullish(update.askLevels, quote.askLevels),
-      tradingStatus: keepExistingWhenNullish(update.tradingStatus, quote.tradingStatus),
+      ...sourceQuote,
+      referencePrice: nextReferencePrice,
+      ceilingPrice: keepExistingWhenNullish(update.ceilingPrice, sourceQuote.ceilingPrice),
+      floorPrice: keepExistingWhenNullish(update.floorPrice, sourceQuote.floorPrice),
+      lastPrice: nextLastPrice,
+      change: nextChange,
+      changePercent: nextChangePercent,
+      lastQuantity: keepExistingWhenNullish(update.lastQuantity, sourceQuote.lastQuantity),
+      totalVolume: keepExistingWhenNullish(update.totalVolume, sourceQuote.totalVolume),
+      totalValue: keepExistingWhenNullish(update.totalValue, sourceQuote.totalValue),
+      foreignBuyVolume: keepExistingWhenNullish(update.foreignBuyVolume, sourceQuote.foreignBuyVolume),
+      foreignSellVolume: keepExistingWhenNullish(update.foreignSellVolume, sourceQuote.foreignSellVolume),
+      foreignRoom: keepExistingWhenNullish(update.foreignRoom, sourceQuote.foreignRoom),
+      openPrice: keepExistingWhenNullish(update.openPrice, sourceQuote.openPrice),
+      highPrice: keepExistingWhenNullish(update.highPrice, sourceQuote.highPrice),
+      lowPrice: keepExistingWhenNullish(update.lowPrice, sourceQuote.lowPrice),
+      bidLevels: keepLevelsWhenNullish(update.bidLevels, sourceQuote.bidLevels),
+      askLevels: keepLevelsWhenNullish(update.askLevels, sourceQuote.askLevels),
+      tradingStatus: keepExistingWhenNullish(update.tradingStatus, sourceQuote.tradingStatus),
       updatedAt: update.updatedAt,
     };
 
@@ -69,6 +81,18 @@ function createFlashClasses(
   const lastPriceClass = classifyPrice(updatedQuote.lastPrice, updatedQuote);
   const changeClass = classifyChange(updatedQuote.change);
 
+  if (hasDisplayedValueChanged(previousQuote.ceilingPrice, updatedQuote.ceilingPrice, update.ceilingPrice, formatPrice)) {
+    setFlash(flashClasses, 'ceilingPrice', 'ceiling');
+  }
+
+  if (hasDisplayedValueChanged(previousQuote.floorPrice, updatedQuote.floorPrice, update.floorPrice, formatPrice)) {
+    setFlash(flashClasses, 'floorPrice', 'floor');
+  }
+
+  if (hasDisplayedValueChanged(previousQuote.referencePrice, updatedQuote.referencePrice, update.referencePrice, formatPrice)) {
+    setFlash(flashClasses, 'referencePrice', 'reference');
+  }
+
   if (hasDisplayedValueChanged(previousQuote.lastPrice, updatedQuote.lastPrice, update.lastPrice, formatPrice)) {
     setFlash(flashClasses, 'lastPrice', lastPriceClass);
   }
@@ -77,11 +101,19 @@ function createFlashClasses(
     setFlash(flashClasses, 'lastQuantity', lastPriceClass);
   }
 
-  if (hasDisplayedValueChanged(previousQuote.change, updatedQuote.change, update.change, formatChange)) {
+  if (hasDerivedDisplayedValueChanged(previousQuote.change, updatedQuote.change, update.change, update.lastPrice, formatChange)) {
     setFlash(flashClasses, 'change', changeClass);
   }
 
-  if (hasDisplayedValueChanged(previousQuote.changePercent, updatedQuote.changePercent, update.changePercent, formatPercent)) {
+  if (
+    hasDerivedDisplayedValueChanged(
+      previousQuote.changePercent,
+      updatedQuote.changePercent,
+      update.changePercent,
+      update.lastPrice,
+      formatPercent,
+    )
+  ) {
     setFlash(flashClasses, 'changePercent', changeClass);
   }
 
@@ -99,6 +131,14 @@ function createFlashClasses(
 
   if (hasDisplayedValueChanged(previousQuote.foreignRoom, updatedQuote.foreignRoom, update.foreignRoom, formatQuantity)) {
     setFlash(flashClasses, 'foreignRoom', 'neutral');
+  }
+
+  if (hasDisplayedValueChanged(previousQuote.highPrice, updatedQuote.highPrice, update.highPrice, formatPrice)) {
+    setFlash(flashClasses, 'highPrice', classifyPrice(updatedQuote.highPrice, updatedQuote));
+  }
+
+  if (hasDisplayedValueChanged(previousQuote.lowPrice, updatedQuote.lowPrice, update.lowPrice, formatPrice)) {
+    setFlash(flashClasses, 'lowPrice', classifyPrice(updatedQuote.lowPrice, updatedQuote));
   }
 
   addLevelFlashClasses(flashClasses, 'bid', previousQuote.bidLevels, updatedQuote.bidLevels, update.bidLevels, updatedQuote);
@@ -152,6 +192,120 @@ function keepLevelsWhenNullish(nextLevels: PriceLevel[] | null | undefined, curr
   return nextLevels == null ? currentLevels : nextLevels;
 }
 
+function normalizeQuotePriceScaleForUpdate(quote: MarketQuote, update: MarketQuoteUpdate): MarketQuote {
+  if (!hasScaledPrice(update) || !hasUnscaledQuotePrice(quote)) {
+    return quote;
+  }
+
+  return {
+    ...quote,
+    referencePrice: scalePrice(quote.referencePrice),
+    ceilingPrice: scalePrice(quote.ceilingPrice),
+    floorPrice: scalePrice(quote.floorPrice),
+    lastPrice: scalePrice(quote.lastPrice),
+    change: scaleChange(quote.change),
+    openPrice: scalePrice(quote.openPrice),
+    highPrice: scalePrice(quote.highPrice),
+    lowPrice: scalePrice(quote.lowPrice),
+    bidLevels: scalePriceLevels(quote.bidLevels),
+    askLevels: scalePriceLevels(quote.askLevels),
+  };
+}
+
+function hasScaledPrice(update: MarketQuoteUpdate) {
+  return [
+    update.referencePrice,
+    update.ceilingPrice,
+    update.floorPrice,
+    update.lastPrice,
+    update.openPrice,
+    update.highPrice,
+    update.lowPrice,
+    ...collectLevelPrices(update.bidLevels),
+    ...collectLevelPrices(update.askLevels),
+  ].some(isScaledPrice);
+}
+
+function hasUnscaledQuotePrice(quote: MarketQuote) {
+  return [
+    quote.referencePrice,
+    quote.ceilingPrice,
+    quote.floorPrice,
+    quote.lastPrice,
+    quote.openPrice,
+    quote.highPrice,
+    quote.lowPrice,
+    ...collectLevelPrices(quote.bidLevels),
+    ...collectLevelPrices(quote.askLevels),
+  ].some(isUnscaledPrice);
+}
+
+function collectLevelPrices(levels: PriceLevel[] | null | undefined) {
+  return levels?.map((level) => level.price) ?? [];
+}
+
+function scalePriceLevels(levels: PriceLevel[]) {
+  return levels.map((level) => ({ ...level, price: scalePrice(level.price) }));
+}
+
+function scalePrice(value: number | null) {
+  return isUnscaledPrice(value) ? roundPriceDelta(value * 1000) : value;
+}
+
+function scaleChange(value: number | null) {
+  return value != null && value !== 0 && Math.abs(value) < 100 ? roundPriceDelta(value * 1000) : value;
+}
+
+function isScaledPrice(value: number | null | undefined): value is number {
+  return value != null && Math.abs(value) >= 1000;
+}
+
+function isUnscaledPrice(value: number | null | undefined): value is number {
+  return value != null && value > 0 && Math.abs(value) < 1000;
+}
+
+function resolveChange(
+  update: MarketQuoteUpdate,
+  quote: MarketQuote,
+  nextLastPrice: number | null,
+  nextReferencePrice: number | null,
+) {
+  if (update.change != null) {
+    return update.change;
+  }
+
+  if (update.lastPrice != null && nextLastPrice != null && nextReferencePrice != null && nextReferencePrice > 0) {
+    return roundPriceDelta(nextLastPrice - nextReferencePrice);
+  }
+
+  return quote.change;
+}
+
+function resolveChangePercent(
+  update: MarketQuoteUpdate,
+  quote: MarketQuote,
+  nextChange: number | null,
+  nextReferencePrice: number | null,
+) {
+  if (update.changePercent != null) {
+    return update.changePercent;
+  }
+
+  if (update.lastPrice != null && nextChange != null && nextReferencePrice != null && nextReferencePrice > 0) {
+    return roundPercent((nextChange / nextReferencePrice) * 100);
+  }
+
+  return quote.changePercent;
+}
+
+function roundPriceDelta(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function roundPercent(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function hasDisplayedValueChanged<T>(
   previousValue: T,
   updatedValue: T,
@@ -159,6 +313,16 @@ function hasDisplayedValueChanged<T>(
   formatter: (value: T) => string,
 ) {
   return updateValue != null && isDisplayedValueDifferent(previousValue, updatedValue, formatter);
+}
+
+function hasDerivedDisplayedValueChanged<T>(
+  previousValue: T,
+  updatedValue: T,
+  updateValue: T | null | undefined,
+  triggerValue: unknown,
+  formatter: (value: T) => string,
+) {
+  return (updateValue != null || triggerValue != null) && isDisplayedValueDifferent(previousValue, updatedValue, formatter);
 }
 
 function isDisplayedValueDifferent<T>(previousValue: T, updatedValue: T, formatter: (value: T) => string) {

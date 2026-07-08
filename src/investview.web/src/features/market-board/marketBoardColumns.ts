@@ -159,7 +159,7 @@ function changeColumn(headerName: string, field: keyof MarketBoardRow): ColDef<M
     headerName,
     field,
     width: 76,
-    valueFormatter: (params) => formatChange(params.value as number | null | undefined),
+    valueFormatter: (params) => formatChange(params.value as number | null | undefined, params.data?.referencePrice),
     cellClass: (params) => classForCell(params, 'changeClass'),
     cellClassRules: flashClassRules('change'),
   };

@@ -4,7 +4,7 @@
 
 Accepted working spec.
 
-Last updated: 2026-07-06.
+Last updated: 2026-07-08.
 
 ## Source References
 
@@ -284,6 +284,7 @@ Initial app-owned market data contracts:
 - `SymbolDetailDto`: symbol metadata, exchange/board data, and daily reference data.
 - `OhlcBarDto`: normalized historical bar data.
 - `MarketDataChannel`: app-owned channel enum such as trade, top price, security definition, OHLC, and session.
+- `MarketQuoteUpdateDto`: app-owned partial realtime update payload. It can carry matched price, bid/ask levels, foreign trading, trading status, high/low/open, and daily reference/ceiling/floor fields without exposing DNSE payload names to the frontend.
 
 ```csharp
 public interface IMarketDataProvider
@@ -408,6 +409,7 @@ MVP WebSocket choices:
   - `tick.G1.json` for trade ticks.
   - `top_price.G1.json` for best bid/ask.
   - `security_definition.G1.json` where daily reference/ceiling/floor status is needed.
+  - `foreign.G1.json` for foreign buy volume, foreign sell volume, and remaining foreign room.
 - Optionally subscribe to `session.{productGroupId}.G1.json` when the UI needs session state.
 - Handle DNSE application-level `ping` and reply with `pong`.
 - Reconnect with backoff and resubscribe after disconnect.
@@ -416,6 +418,7 @@ MVP WebSocket choices:
 - Expose a health signal for DNSE stream status: connected, authenticated, last pong, subscriptions, and last message time.
 
 The backend converts DNSE-specific payloads into InvestView DTOs before sending them to the frontend.
+The first implemented DNSE WebSocket source is `DnseWebSocketQuoteStreamService`, selected with `MarketData:QuoteStream:SourceProvider = "DnseWebSocket"`. Mock realtime remains the safe default.
 
 Known DNSE mapping details from the local SDK:
 

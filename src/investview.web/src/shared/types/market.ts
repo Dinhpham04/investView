@@ -45,6 +45,12 @@ export type MarketQuoteUpdate = {
   askLevels: PriceLevel[] | null;
   tradingStatus: string | null;
   updatedAt: string;
+  referencePrice?: number | null;
+  ceilingPrice?: number | null;
+  floorPrice?: number | null;
+  openPrice?: number | null;
+  highPrice?: number | null;
+  lowPrice?: number | null;
 };
 
 export type QuoteStreamStatus = {

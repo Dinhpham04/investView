@@ -92,7 +92,7 @@ Goal: create a runnable app from frontend to backend before adding real business
 **Verification:**
 
 - [ ] `dotnet restore`
-- [ ] `dotnet build`
+- [x] `dotnet build`
 - [ ] `dotnet test`
 - [ ] Manual check: API starts and Swagger opens.
 
@@ -375,11 +375,60 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 - [x] App remains usable when realtime is unavailable.
 - [x] Realtime DTOs are internal app contracts.
 
+### Task 9: Add DNSE Real WebSocket Market Stream
+
+**Status:** In Progress
+
+**Description:** Replace the mock-only realtime source with an opt-in DNSE WebSocket market stream that subscribes to real DNSE quote channels, normalizes incoming messages into app-owned quote update DTOs, and broadcasts them through the existing SignalR quote hub. REST snapshot remains the initial board load and fallback path; DNSE WebSocket is used for intraday realtime updates.
+
+**Acceptance criteria:**
+
+- [x] DNSE WebSocket stream is selected by config, for example `MarketData:QuoteStream:SourceProvider = "DnseWebSocket"`.
+- [x] Mock realtime remains available and is still the safe default when DNSE stream is not selected.
+- [x] DNSE WebSocket credentials are read from configuration or `DNSE_API_KEY` / `DNSE_API_SECRET`.
+- [x] WebSocket auth is isolated from REST signing and signs `api_key:timestamp:nonce` with HMAC-SHA256 hex.
+- [x] Client connects to `wss://ws-openapi.dnse.com.vn/v1/stream?encoding=json` by default, unless overridden.
+- [x] MVP subscribes to `security_definition.{boardId}.json`, `tick.{boardId}.json`, `top_price.{boardId}.json`, and `foreign.{boardId}.json`.
+- [x] Incoming DNSE message types `sd`, `t`, `q`, and `f` map into `MarketQuoteUpdateDto` without leaking DNSE payload types outside Infrastructure.
+- [x] Security definition updates can refresh reference, ceiling, floor, and trading status fields.
+- [x] Trade updates can refresh last price, change, percent change, last quantity, total volume, total value, open, high, and low.
+- [x] Quote updates can refresh bid/ask levels.
+- [x] Foreign investor updates can refresh NN mua, NN ban, and room.
+- [x] Client handles `ping`, `pong`, subscribe acknowledgements, `auth_success`, and `error` control messages.
+- [x] Client reconnects with backoff, re-authenticates, and re-subscribes after connection loss.
+- [x] Stream status is broadcast through the existing SignalR status DTO.
+
+**Verification:**
+
+- [x] Unit tests cover WebSocket auth signature construction.
+- [x] Unit tests cover channel name construction for security definition, trade, top price, foreign, and session.
+- [x] Fixture tests cover DNSE `sd`, `t`, `q`, and `f` message mapping.
+- [x] Unit tests cover per-symbol aggregation and change/percent calculation from reference price.
+- [x] Unit tests cover DI/provider selection so mock and DNSE stream do not run at the same time.
+- [ ] `dotnet build`
+- [x] `dotnet test`
+- [ ] Manual verification with DNSE credentials: API logs connected/authenticated/subscribed and frontend receives SignalR updates.
+
+**Dependencies:** Task 6, Task 7, Task 8
+
+**Files likely touched:**
+
+- `src/InvestView.Application/Dtos/MarketData/MarketQuoteUpdateDto.cs`
+- `src/InvestView.Infrastructure/Dnse/*`
+- `src/InvestView.Infrastructure/Realtime/*`
+- `src/InvestView.Infrastructure/DependencyInjection.cs`
+- `src/investview.web/src/shared/types/market.ts`
+- `src/investview.web/src/features/market-board/*`
+- `tests/InvestView.Api.Tests/Dnse/*`
+- `tests/InvestView.Api.Tests/Realtime/*`
+
+**Estimated scope:** Large, implemented as small backend-first increments.
+
 ## Milestone 4: Persistence, Watchlist, Portfolio, and Simulated Orders
 
 Goal: add backend domain depth and the main investor workflow.
 
-### Task 9: Add Persistence and Demo Auth Foundation
+### Task 10: Add Persistence and Demo Auth Foundation
 
 **Description:** Add EF Core SQL Server setup, initial entities, migrations, seed data, and demo JWT login.
 
@@ -409,7 +458,7 @@ Goal: add backend domain depth and the main investor workflow.
 
 **Estimated scope:** Medium
 
-### Task 10: Add Watchlist Flow
+### Task 11: Add Watchlist Flow
 
 **Description:** Implement watchlist REST endpoints and frontend watchlist interactions using authenticated demo user state.
 
@@ -429,7 +478,7 @@ Goal: add backend domain depth and the main investor workflow.
 - [ ] `npm run test`
 - [ ] Manual browser check.
 
-**Dependencies:** Task 5, Task 9
+**Dependencies:** Task 5, Task 10
 
 **Files likely touched:**
 
@@ -441,7 +490,7 @@ Goal: add backend domain depth and the main investor workflow.
 
 **Estimated scope:** Medium
 
-### Task 11: Add Simulated Order and Portfolio Flow
+### Task 12: Add Simulated Order and Portfolio Flow
 
 **Description:** Implement order placement/cancellation, cash and holding updates, portfolio summary, and frontend order ticket.
 
@@ -462,7 +511,7 @@ Goal: add backend domain depth and the main investor workflow.
 - [ ] `npm run test`
 - [ ] Manual demo: place order and see portfolio update.
 
-**Dependencies:** Task 9, Task 10
+**Dependencies:** Task 10, Task 11
 
 **Files likely touched:**
 
@@ -491,7 +540,7 @@ Goal: add backend domain depth and the main investor workflow.
 
 Goal: add real provider integration behind stable contracts and package the demo.
 
-### Task 12: Expand DNSE REST Adapter for Symbol Detail and OHLC
+### Task 13: Expand DNSE REST Adapter for Symbol Detail and OHLC
 
 **Description:** Expand the DNSE REST integration beyond the market-board snapshot to cover symbol detail and OHLC data needed by later detail/chart screens. Use the local SDK and DNSE docs as the source of truth for endpoint behavior, payload shape, and mapping edge cases.
 
@@ -521,34 +570,29 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 13: Add DNSE WebSocket Adapter
+### Task 14: Harden DNSE WebSocket Adapter
 
-**Description:** Implement DNSE inbound WebSocket client and forward normalized quote updates through existing SignalR flow. Use the local SDK WebSocket implementation as the reference for auth, channel names, message types, heartbeat, and reconnect behavior.
+**Description:** Extend the DNSE WebSocket stream added in Task 9 with broader production hardening after the core investor workflow is stable. Use the local SDK WebSocket implementation as the reference for auth, channel names, message types, heartbeat, reconnect behavior, and performance tuning.
 
 **Acceptance criteria:**
 
-- [ ] DNSE WebSocket auth/signature logic is isolated in Infrastructure.
-- [ ] Client can subscribe, handle ping/pong, reconnect, and resubscribe.
-- [ ] DNSE messages are mapped to internal quote update DTOs.
-- [ ] Mock realtime remains available without DNSE credentials.
-- [ ] WebSocket auth signs `api_key:timestamp:nonce` with HMAC-SHA256 hex and is not confused with REST HTTP signing.
-- [ ] MVP subscribes to `tick.G1.json`, `top_price.G1.json`, and `security_definition.G1.json`.
-- [ ] Optional session state uses `session.{productGroupId}.G1.json` only when needed by the UI.
-- [ ] Adapter handles control `action` values and market data type `T` values.
-- [ ] Adapter tracks stream health: connected, authenticated, last pong, last message time, and active subscriptions.
-- [ ] Per-symbol update ordering is preserved before broadcasting updates through SignalR.
+- [ ] Optional session state uses `session.{productGroupId}.{boardId}.json` only when needed by the UI.
+- [ ] Adapter tracks stream health: connected, authenticated, last pong, last message time, reconnect count, and active subscriptions.
+- [ ] Stream can subscribe dynamically based on active board symbols instead of only configured symbols.
+- [ ] Per-symbol update ordering is preserved under concurrent message load.
+- [ ] Message parsing supports `msgpack` if realtime traffic requires it.
 
 **Verification:**
 
-- [ ] Unit tests cover signature construction and message mapping.
-- [ ] Unit tests cover ping/pong handling, reconnect re-subscription state, and unknown message tolerance.
-- [ ] Fixture tests cover at least trade `t`, quote `q`, security definition `sd`, and session `s` if session is implemented.
+- [ ] Unit tests cover dynamic subscription changes and unknown message tolerance.
+- [ ] Load-oriented tests cover high-frequency trade/quote messages.
+- [ ] Fixture tests cover session `s` if session is implemented.
 - [ ] Manual verification with credentials if available.
 - [ ] `dotnet build`
 - [ ] `dotnet test`
 - [ ] Manual browser check: frontend receives updates through SignalR.
 
-**Dependencies:** Task 7, Task 12
+**Dependencies:** Task 9, Task 13
 
 **Files likely touched:**
 
@@ -559,7 +603,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 14: Add Docker Compose and Demo Documentation
+### Task 15: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 
@@ -577,7 +621,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [ ] `npm run test`
 - [ ] Manual full demo flow from login to simulated order.
 
-**Dependencies:** Task 11
+**Dependencies:** Task 12
 
 **Files likely touched:**
 

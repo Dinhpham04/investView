@@ -4,10 +4,25 @@ public sealed class DnseMarketDataOptions
 {
     public const string SectionName = "Dnse";
     public const string DefaultBaseUrl = "https://openapi.dnse.com.vn";
+    public const string DefaultWebSocketBaseUrl = "wss://ws-openapi.dnse.com.vn";
     public const string DefaultApiVersion = "2026-05-07";
     public const string DefaultDateHeaderName = "Date";
 
     public string BaseUrl { get; set; } = DefaultBaseUrl;
+
+    public string WebSocketBaseUrl { get; set; } = DefaultWebSocketBaseUrl;
+
+    public string WebSocketEncoding { get; set; } = "json";
+
+    public int WebSocketConnectionTimeoutSeconds { get; set; } = 30;
+
+    public int WebSocketReceiveTimeoutSeconds { get; set; } = 240;
+
+    public int WebSocketReconnectInitialDelaySeconds { get; set; } = 2;
+
+    public int WebSocketReconnectMaxDelaySeconds { get; set; } = 60;
+
+    public int WebSocketKeepAliveSeconds { get; set; } = 120;
 
     public string ApiVersion { get; set; } = DefaultApiVersion;
 

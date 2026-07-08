@@ -53,10 +53,14 @@ public static class DependencyInjection
 
         services.AddSingleton<MockMarketDataProvider>();
         services.AddSingleton<DnseRestSigner>();
+        services.AddSingleton<DnseWebSocketAuthSigner>();
+        services.AddSingleton<DnseWebSocketMessageMapper>();
+        services.AddSingleton<DnseQuoteUpdateAggregator>();
         services.AddHttpClient<IDnseMarketDataClient, DnseMarketDataClient>();
         services.AddSingleton<DnseMarketDataProvider>();
         services.AddSingleton<MockQuoteStreamPublisher>();
         services.AddHostedService<MockQuoteStreamService>();
+        services.AddHostedService<DnseWebSocketQuoteStreamService>();
         services.AddSingleton<IMarketDataProvider>(serviceProvider =>
         {
             var inner = ResolveInnerMarketDataProvider(serviceProvider);

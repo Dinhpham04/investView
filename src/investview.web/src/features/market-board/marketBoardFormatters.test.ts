@@ -52,8 +52,10 @@ describe('market board formatting', () => {
     expect(formatQuantity(12_345_678)).toBe('12,345,678');
     expect(formatQuantity(null)).toBe('-');
     expect(formatChange(500)).toBe('+0.50');
+    expect(formatChange(50, 61_300)).toBe('+0.05');
     expect(formatChange(0.55)).toBe('+0.55');
     expect(formatChange(-350)).toBe('-0.35');
+    expect(formatChange(-50, 61_300)).toBe('-0.05');
     expect(formatChange(-0.35)).toBe('-0.35');
     expect(formatChange(0)).toBe('0.00');
     expect(formatPercent(2.55)).toBe('+2.55%');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyQuoteUpdate } from './marketBoardRealtime';
+import { formatChange, formatPercent } from './marketBoardFormatters';
 import type { MarketQuote, MarketQuoteUpdate } from '../../shared/types/market';
 
 const baseQuote: MarketQuote = {
@@ -105,6 +106,42 @@ describe('applyQuoteUpdate', () => {
     expect(result.updatedQuote?.askLevels).toBe(baseQuote.askLevels);
   });
 
+  it('applies security definition fields from realtime updates', () => {
+    const result = applyQuoteUpdate([baseQuote], {
+      ...update,
+      referencePrice: 27.5,
+      ceilingPrice: 29.4,
+      floorPrice: 25.6,
+      openPrice: null,
+      highPrice: null,
+      lowPrice: null,
+      lastPrice: null,
+      change: null,
+      changePercent: null,
+      lastQuantity: null,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: 'NO_HALT',
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      referencePrice: 27.5,
+      ceilingPrice: 29.4,
+      floorPrice: 25.6,
+      tradingStatus: 'NO_HALT',
+    });
+    expect(result.flashClasses).toMatchObject({
+      referencePrice: 'reference',
+      ceilingPrice: 'ceiling',
+      floorPrice: 'floor',
+    });
+  });
+
   it('uses reference comparison for flash classes instead of old-versus-new direction', () => {
     const result = applyQuoteUpdate([baseQuote], {
       ...update,
@@ -123,6 +160,118 @@ describe('applyQuoteUpdate', () => {
       bid1Quantity: 'floor',
       ask1Price: 'ceiling',
       ask1Quantity: 'ceiling',
+    });
+  });
+
+  it('computes change and percent from snapshot reference when realtime trade omits them', () => {
+    const result = applyQuoteUpdate([baseQuote], {
+      ...update,
+      lastPrice: 28.35,
+      change: null,
+      changePercent: null,
+      lastQuantity: 20_000,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: null,
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      lastPrice: 28.35,
+      change: 0.95,
+      changePercent: 3.47,
+    });
+    expect(result.flashClasses).toMatchObject({
+      lastPrice: 'up',
+      change: 'up',
+      changePercent: 'up',
+    });
+  });
+
+  it('computes scaled realtime change values from snapshot reference', () => {
+    const scaledQuote: MarketQuote = {
+      ...baseQuote,
+      referencePrice: 27_400,
+      lastPrice: 28_100,
+      change: 700,
+      changePercent: 2.55,
+    };
+
+    const result = applyQuoteUpdate([scaledQuote], {
+      ...update,
+      lastPrice: 28_350,
+      change: null,
+      changePercent: null,
+      lastQuantity: null,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: null,
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      lastPrice: 28_350,
+      change: 950,
+      changePercent: 3.47,
+    });
+  });
+
+  it('normalizes mixed snapshot and realtime price units before computing change values', () => {
+    const vcbQuote: MarketQuote = {
+      ...baseQuote,
+      symbol: 'VCB',
+      referencePrice: 61.3,
+      ceilingPrice: 65.5,
+      floorPrice: 57.1,
+      lastPrice: 61.3,
+      change: 0,
+      changePercent: 0,
+      bidLevels: [
+        { price: 61.4, quantity: 83_700 },
+        { price: 61.3, quantity: 87_700 },
+      ],
+      askLevels: [{ price: 61.6, quantity: 34_300 }],
+    };
+
+    const result = applyQuoteUpdate([vcbQuote], {
+      ...update,
+      symbol: 'VCB',
+      lastPrice: 61_500,
+      change: null,
+      changePercent: null,
+      lastQuantity: 200,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: null,
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      referencePrice: 61_300,
+      ceilingPrice: 65_500,
+      floorPrice: 57_100,
+      lastPrice: 61_500,
+      change: 200,
+      changePercent: 0.33,
+    });
+    expect(formatChange(result.updatedQuote?.change)).toBe('+0.20');
+    expect(formatPercent(result.updatedQuote?.changePercent)).toBe('+0.33%');
+    expect(result.flashClasses).toMatchObject({
+      lastPrice: 'up',
+      change: 'up',
+      changePercent: 'up',
     });
   });
 

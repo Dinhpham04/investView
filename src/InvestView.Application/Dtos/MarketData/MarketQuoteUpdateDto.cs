@@ -15,4 +15,10 @@ public sealed record MarketQuoteUpdateDto(
     IReadOnlyList<PriceLevelDto>? BidLevels,
     IReadOnlyList<PriceLevelDto>? AskLevels,
     string? TradingStatus,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    decimal? ReferencePrice = null,
+    decimal? CeilingPrice = null,
+    decimal? FloorPrice = null,
+    decimal? OpenPrice = null,
+    decimal? HighPrice = null,
+    decimal? LowPrice = null);
