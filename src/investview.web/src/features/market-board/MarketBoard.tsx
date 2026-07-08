@@ -38,6 +38,13 @@ export function MarketBoard() {
     [activeFilter],
   );
   const quotesQuery = useMarketQuotesQuery(quotesQueryParams);
+  const marketBoardSubscription = useMemo(
+    () => ({
+      boardId: quotesQueryParams.boardId,
+      symbols: quotes.map((quote) => quote.symbol),
+    }),
+    [quotes, quotesQueryParams.boardId],
+  );
   const scheduleFlashClear = useCallback((rowId: string) => {
     const existingTimer = flashClearTimersRef.current[rowId];
     if (existingTimer != null) {
@@ -81,6 +88,7 @@ export function MarketBoard() {
     scheduleFlashClear(rowId);
   }, [scheduleFlashClear]);
   const realtimeConnection = useQuoteHubConnection({
+    marketBoardSubscription,
     onQuoteUpdate: handleRealtimeQuoteUpdate,
     onStreamStatus: setStreamStatus,
   });

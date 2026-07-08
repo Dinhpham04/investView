@@ -1,4 +1,5 @@
 using InvestView.Application.Abstractions.MarketData;
+using InvestView.Application.Abstractions.Realtime;
 using InvestView.Infrastructure.Dnse;
 using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
@@ -56,6 +57,8 @@ public static class DependencyInjection
         services.AddSingleton<DnseWebSocketAuthSigner>();
         services.AddSingleton<DnseWebSocketMessageMapper>();
         services.AddSingleton<DnseQuoteUpdateAggregator>();
+        services.AddSingleton<MarketQuoteStreamSchedule>();
+        services.AddSingleton<IMarketQuoteSubscriptionRegistry, MarketQuoteSubscriptionRegistry>();
         services.AddHttpClient<IDnseMarketDataClient, DnseMarketDataClient>();
         services.AddSingleton<DnseMarketDataProvider>();
         services.AddSingleton<MockQuoteStreamPublisher>();

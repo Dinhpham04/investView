@@ -17,6 +17,8 @@ public sealed class MarketQuoteStreamOptions
 
     public int IntervalMilliseconds { get; set; } = 1_000;
 
+    public MarketQuoteStreamScheduleOptions Schedule { get; set; } = new();
+
     public bool UsesMockCompatibleSourceProvider()
     {
         return SourceProvider.Equals(MockSourceProvider, StringComparison.OrdinalIgnoreCase)
@@ -27,4 +29,28 @@ public sealed class MarketQuoteStreamOptions
     {
         return SourceProvider.Equals(DnseWebSocketSourceProvider, StringComparison.OrdinalIgnoreCase);
     }
+}
+
+public sealed class MarketQuoteStreamScheduleOptions
+{
+    public bool Enabled { get; set; } = true;
+
+    public bool RequireActiveSubscriptions { get; set; } = true;
+
+    public string TimeZoneId { get; set; } = "Asia/Ho_Chi_Minh";
+
+    public TimeSpan ConnectStartLocalTime { get; set; } = new(7, 50, 0);
+
+    public TimeSpan ConnectEndLocalTime { get; set; } = new(15, 30, 0);
+
+    public string[] ActiveDays { get; set; } =
+    [
+        nameof(DayOfWeek.Monday),
+        nameof(DayOfWeek.Tuesday),
+        nameof(DayOfWeek.Wednesday),
+        nameof(DayOfWeek.Thursday),
+        nameof(DayOfWeek.Friday)
+    ];
+
+    public int RecheckIntervalSeconds { get; set; } = 60;
 }

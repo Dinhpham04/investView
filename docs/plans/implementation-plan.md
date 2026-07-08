@@ -397,6 +397,10 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 - [x] Client handles `ping`, `pong`, subscribe acknowledgements, `auth_success`, and `error` control messages.
 - [x] Client reconnects with backoff, re-authenticates, and re-subscribes after connection loss.
 - [x] Stream status is broadcast through the existing SignalR status DTO.
+- [x] Frontend sends the currently opened market-board symbol list to the quote hub after each REST snapshot/filter change.
+- [x] Backend deduplicates active symbols across SignalR connections and subscribes DNSE once per active symbol.
+- [x] Quote updates are broadcast through symbol-scoped SignalR groups so clients receive updates for rows they currently display.
+- [x] DNSE WebSocket connection is gated by active market-board demand and a configurable local streaming schedule.
 
 **Verification:**
 
@@ -404,8 +408,11 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 - [x] Unit tests cover channel name construction for security definition, trade, top price, foreign, and session.
 - [x] Fixture tests cover DNSE `sd`, `t`, `q`, and `f` message mapping.
 - [x] Unit tests cover per-symbol aggregation and change/percent calculation from reference price.
+- [x] Unit tests cover active market-board subscription dedupe, connection removal, and change notification.
+- [x] Unit tests cover DNSE WebSocket streaming schedule decisions.
+- [x] Frontend tests cover sending snapshot symbols as a SignalR subscription request.
 - [x] Unit tests cover DI/provider selection so mock and DNSE stream do not run at the same time.
-- [ ] `dotnet build`
+- [x] `dotnet build`
 - [x] `dotnet test`
 - [ ] Manual verification with DNSE credentials: API logs connected/authenticated/subscribed and frontend receives SignalR updates.
 
@@ -578,13 +585,14 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 - [ ] Optional session state uses `session.{productGroupId}.{boardId}.json` only when needed by the UI.
 - [ ] Adapter tracks stream health: connected, authenticated, last pong, last message time, reconnect count, and active subscriptions.
-- [ ] Stream can subscribe dynamically based on active board symbols instead of only configured symbols.
+- [x] Stream can subscribe dynamically based on active board symbols instead of only configured symbols.
+- [x] Stream only connects when active subscriptions exist and the configured streaming schedule is open.
 - [ ] Per-symbol update ordering is preserved under concurrent message load.
 - [ ] Message parsing supports `msgpack` if realtime traffic requires it.
 
 **Verification:**
 
-- [ ] Unit tests cover dynamic subscription changes and unknown message tolerance.
+- [x] Unit tests cover dynamic subscription changes and unknown message tolerance.
 - [ ] Load-oriented tests cover high-frequency trade/quote messages.
 - [ ] Fixture tests cover session `s` if session is implemented.
 - [ ] Manual verification with credentials if available.

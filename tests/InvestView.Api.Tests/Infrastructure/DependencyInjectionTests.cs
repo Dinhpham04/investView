@@ -1,3 +1,4 @@
+using InvestView.Application.Abstractions.Realtime;
 using InvestView.Infrastructure;
 using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
@@ -45,5 +46,29 @@ public sealed class DependencyInjectionTests
 
         Assert.Equal(usesMock, options.UsesMockCompatibleSourceProvider());
         Assert.Equal(usesDnseWebSocket, options.UsesDnseWebSocketSourceProvider());
+    }
+
+    [Fact]
+    public void AddInfrastructure_RegistersMarketQuoteSubscriptionRegistry()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure();
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var registry = serviceProvider.GetRequiredService<IMarketQuoteSubscriptionRegistry>();
+        Assert.IsType<MarketQuoteSubscriptionRegistry>(registry);
+    }
+
+    [Fact]
+    public void AddInfrastructure_RegistersMarketQuoteStreamSchedule()
+    {
+        var services = new ServiceCollection();
+
+        services.AddInfrastructure();
+
+        using var serviceProvider = services.BuildServiceProvider();
+        var schedule = serviceProvider.GetRequiredService<MarketQuoteStreamSchedule>();
+        Assert.NotNull(schedule);
     }
 }

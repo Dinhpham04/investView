@@ -11,6 +11,10 @@ const testRuntime = vi.hoisted(() => ({
   gridReady: false,
   realtimeOptions: undefined as
     | {
+        marketBoardSubscription?: {
+          boardId: string;
+          symbols: string[];
+        };
         onQuoteUpdate: (update: MarketQuoteUpdate) => void;
         onStreamStatus?: (status: QuoteStreamStatus) => void;
       }
@@ -147,6 +151,14 @@ describe('MarketBoard', () => {
 
     const row = screen.getByRole('row');
     expect(within(row).getByText('HPG')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(testRuntime.realtimeOptions).toMatchObject({
+        marketBoardSubscription: {
+          boardId: 'G1',
+          symbols: ['HPG'],
+        },
+      }),
+    );
     fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'SSI' } });
     await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
     expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN30', expect.any(Object));

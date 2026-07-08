@@ -26,6 +26,8 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
     private readonly DnseWebSocketAuthSigner _authSigner;
     private readonly DnseWebSocketMessageMapper _messageMapper;
     private readonly DnseQuoteUpdateAggregator _updateAggregator;
+    private readonly IMarketQuoteSubscriptionRegistry _subscriptionRegistry;
+    private readonly MarketQuoteStreamSchedule _streamSchedule;
     private readonly MarketQuoteStreamOptions _streamOptions;
     private readonly DnseMarketDataOptions _dnseOptions;
     private readonly ILogger<DnseWebSocketQuoteStreamService> _logger;
@@ -36,6 +38,8 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         DnseWebSocketAuthSigner authSigner,
         DnseWebSocketMessageMapper messageMapper,
         DnseQuoteUpdateAggregator updateAggregator,
+        IMarketQuoteSubscriptionRegistry subscriptionRegistry,
+        MarketQuoteStreamSchedule streamSchedule,
         IOptions<MarketQuoteStreamOptions> streamOptions,
         IOptions<DnseMarketDataOptions> dnseOptions,
         ILogger<DnseWebSocketQuoteStreamService> logger,
@@ -45,6 +49,8 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         _authSigner = authSigner;
         _messageMapper = messageMapper;
         _updateAggregator = updateAggregator;
+        _subscriptionRegistry = subscriptionRegistry;
+        _streamSchedule = streamSchedule;
         _streamOptions = streamOptions.Value;
         _dnseOptions = dnseOptions.Value;
         _logger = logger;
@@ -68,9 +74,27 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
 
         var reconnectDelay = TimeSpan.FromSeconds(Math.Max(1, _dnseOptions.WebSocketReconnectInitialDelaySeconds));
         var maxReconnectDelay = TimeSpan.FromSeconds(Math.Max(1, _dnseOptions.WebSocketReconnectMaxDelaySeconds));
+        string? lastGateMessage = null;
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            var subscriptionSnapshot = _subscriptionRegistry.GetSnapshot();
+            var gateDecision = _streamSchedule.Evaluate(subscriptionSnapshot, _timeProvider.GetUtcNow());
+            if (!gateDecision.ShouldConnect)
+            {
+                if (!string.Equals(lastGateMessage, gateDecision.Message, StringComparison.Ordinal))
+                {
+                    _logger.LogInformation("{Message} Rechecking in {Delay}.", gateDecision.Message, gateDecision.RecheckAfter);
+                    await BroadcastStatusAsync(false, gateDecision.Message, stoppingToken);
+                    lastGateMessage = gateDecision.Message;
+                }
+
+                await WaitForConnectionGateChangeAsync(subscriptionSnapshot, gateDecision, stoppingToken);
+                continue;
+            }
+
+            lastGateMessage = null;
+
             try
             {
                 await RunConnectionAsync(stoppingToken);
@@ -90,6 +114,23 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         }
     }
 
+    private async Task WaitForConnectionGateChangeAsync(
+        MarketQuoteSubscriptionSnapshot snapshot,
+        MarketQuoteStreamConnectionDecision decision,
+        CancellationToken cancellationToken)
+    {
+        var delayTask = Task.Delay(decision.RecheckAfter, cancellationToken);
+        var subscriptionTask = _subscriptionRegistry
+            .WaitForChangeAsync(snapshot.Version, cancellationToken)
+            .AsTask();
+
+        var completedTask = await Task.WhenAny(delayTask, subscriptionTask);
+        if (completedTask == subscriptionTask)
+        {
+            await subscriptionTask;
+        }
+    }
+
     private async Task RunConnectionAsync(CancellationToken cancellationToken)
     {
         using var webSocket = new ClientWebSocket();
@@ -104,18 +145,64 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         await webSocket.ConnectAsync(uri, connectTimeout.Token);
 
         await AuthenticateAsync(webSocket, cancellationToken);
-        await SubscribeAsync(webSocket, cancellationToken);
-        await BroadcastStatusAsync(true, "DNSE websocket connected and subscribed.", cancellationToken);
+        var activeSubscriptions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var subscriptionSnapshot = _subscriptionRegistry.GetSnapshot();
+        await ApplySubscriptionsAsync(webSocket, subscriptionSnapshot, activeSubscriptions, cancellationToken);
+        await BroadcastStatusAsync(true, "DNSE websocket connected.", cancellationToken);
+
+        var receiveTask = ReceiveTextAsync(webSocket, cancellationToken);
+        var subscriptionTask = _subscriptionRegistry
+            .WaitForChangeAsync(subscriptionSnapshot.Version, cancellationToken)
+            .AsTask();
+        var scheduleTask = Task.Delay(
+            _streamSchedule.Evaluate(subscriptionSnapshot, _timeProvider.GetUtcNow()).RecheckAfter,
+            cancellationToken);
 
         while (webSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
-            var json = await ReceiveTextAsync(webSocket, cancellationToken);
-            if (json is null)
+            var completedTask = await Task.WhenAny(receiveTask, subscriptionTask, scheduleTask);
+
+            if (completedTask == receiveTask)
             {
+                var json = await receiveTask;
+                if (json is null)
+                {
+                    break;
+                }
+
+                await HandleMessageAsync(webSocket, json, cancellationToken);
+                receiveTask = ReceiveTextAsync(webSocket, cancellationToken);
+                continue;
+            }
+
+            if (completedTask == scheduleTask)
+            {
+                var gateDecision = _streamSchedule.Evaluate(subscriptionSnapshot, _timeProvider.GetUtcNow());
+                if (!gateDecision.ShouldConnect)
+                {
+                    _logger.LogInformation("{Message} Closing DNSE websocket connection.", gateDecision.Message);
+                    await BroadcastStatusAsync(false, gateDecision.Message, cancellationToken);
+                    break;
+                }
+
+                scheduleTask = Task.Delay(gateDecision.RecheckAfter, cancellationToken);
+                continue;
+            }
+
+            subscriptionSnapshot = await subscriptionTask;
+            var subscriptionGateDecision = _streamSchedule.Evaluate(subscriptionSnapshot, _timeProvider.GetUtcNow());
+            if (!subscriptionGateDecision.ShouldConnect)
+            {
+                _logger.LogInformation("{Message} Closing DNSE websocket connection.", subscriptionGateDecision.Message);
+                await BroadcastStatusAsync(false, subscriptionGateDecision.Message, cancellationToken);
                 break;
             }
 
-            await HandleMessageAsync(webSocket, json, cancellationToken);
+            await ApplySubscriptionsAsync(webSocket, subscriptionSnapshot, activeSubscriptions, cancellationToken);
+            subscriptionTask = _subscriptionRegistry
+                .WaitForChangeAsync(subscriptionSnapshot.Version, cancellationToken)
+                .AsTask();
+            scheduleTask = Task.Delay(subscriptionGateDecision.RecheckAfter, cancellationToken);
         }
     }
 
@@ -147,19 +234,59 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         }
     }
 
-    private async Task SubscribeAsync(ClientWebSocket webSocket, CancellationToken cancellationToken)
+    private async Task ApplySubscriptionsAsync(
+        ClientWebSocket webSocket,
+        MarketQuoteSubscriptionSnapshot snapshot,
+        Dictionary<string, HashSet<string>> activeSubscriptions,
+        CancellationToken cancellationToken)
     {
-        var subscribePayload = DnseWebSocketSubscriptionBuilder.BuildSubscribePayload(
-            _streamOptions.Symbols,
-            _streamOptions.BoardId,
-            _dnseOptions.WebSocketEncoding,
-            MarketBoardChannels);
+        if (snapshot.Boards.Count == 0)
+        {
+            _logger.LogInformation("DNSE websocket is connected and waiting for active market-board subscriptions.");
+            await BroadcastStatusAsync(true, "DNSE websocket connected; waiting for market-board subscriptions.", cancellationToken);
+            return;
+        }
 
-        await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
-        _logger.LogInformation(
-            "Subscribed DNSE websocket channels {Channels} for symbols {Symbols}.",
-            string.Join(", ", subscribePayload.Channels.Select(channel => channel.Name)),
-            string.Join(", ", subscribePayload.Channels.FirstOrDefault()?.Symbols ?? Array.Empty<string>()));
+        foreach (var boardSubscription in snapshot.Boards)
+        {
+            if (!activeSubscriptions.TryGetValue(boardSubscription.BoardId, out var activeSymbols))
+            {
+                activeSymbols = new HashSet<string>(StringComparer.Ordinal);
+                activeSubscriptions[boardSubscription.BoardId] = activeSymbols;
+            }
+
+            var newSymbols = boardSubscription
+                .Symbols
+                .Where(symbol => !activeSymbols.Contains(symbol))
+                .ToArray();
+
+            if (newSymbols.Length == 0)
+            {
+                continue;
+            }
+
+            var subscribePayload = DnseWebSocketSubscriptionBuilder.BuildSubscribePayload(
+                newSymbols,
+                boardSubscription.BoardId,
+                _dnseOptions.WebSocketEncoding,
+                MarketBoardChannels);
+
+            await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
+            foreach (var symbol in newSymbols)
+            {
+                activeSymbols.Add(symbol);
+            }
+
+            _logger.LogInformation(
+                "Subscribed DNSE websocket channels {Channels} for board {BoardId} symbols {Symbols}.",
+                string.Join(", ", subscribePayload.Channels.Select(channel => channel.Name)),
+                boardSubscription.BoardId,
+                string.Join(", ", newSymbols));
+            await BroadcastStatusAsync(
+                true,
+                $"DNSE websocket subscribed {newSymbols.Length} new symbol(s) for {boardSubscription.BoardId}.",
+                cancellationToken);
+        }
     }
 
     private async Task HandleMessageAsync(ClientWebSocket webSocket, string json, CancellationToken cancellationToken)

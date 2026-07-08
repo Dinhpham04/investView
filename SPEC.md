@@ -410,6 +410,9 @@ MVP WebSocket choices:
   - `top_price.G1.json` for best bid/ask.
   - `security_definition.G1.json` where daily reference/ceiling/floor status is needed.
   - `foreign.G1.json` for foreign buy volume, foreign sell volume, and remaining foreign room.
+- Backend manages active quote subscriptions from app clients. React sends the currently opened market-board symbols through SignalR after each snapshot/filter change; the backend deduplicates those symbols by board and subscribes DNSE once per active symbol instead of relying on a fixed configured symbol list.
+- SignalR quote updates are fanned out by backend-owned symbol groups such as `quote:{boardId}:{symbol}` so clients receive only symbols they currently display.
+- The backend DNSE WebSocket worker must be schedule-gated. It should connect only when realtime streaming is enabled, credentials are present, at least one app client has active market-board symbols, and the configured local streaming window is open. The default schedule is `Asia/Ho_Chi_Minh`, Monday-Friday, `07:50-15:30`, with REST snapshot/cache used outside that window.
 - Optionally subscribe to `session.{productGroupId}.G1.json` when the UI needs session state.
 - Handle DNSE application-level `ping` and reply with `pong`.
 - Reconnect with backoff and resubscribe after disconnect.
@@ -418,7 +421,7 @@ MVP WebSocket choices:
 - Expose a health signal for DNSE stream status: connected, authenticated, last pong, subscriptions, and last message time.
 
 The backend converts DNSE-specific payloads into InvestView DTOs before sending them to the frontend.
-The first implemented DNSE WebSocket source is `DnseWebSocketQuoteStreamService`, selected with `MarketData:QuoteStream:SourceProvider = "DnseWebSocket"`. Mock realtime remains the safe default.
+The first implemented DNSE WebSocket source is `DnseWebSocketQuoteStreamService`, selected with `MarketData:QuoteStream:SourceProvider = "DnseWebSocket"`. Mock realtime remains the safe default. `MarketData:QuoteStream:Symbols` is only a bootstrap/fallback list; active market-board subscriptions should come from SignalR clients.
 
 Known DNSE mapping details from the local SDK:
 

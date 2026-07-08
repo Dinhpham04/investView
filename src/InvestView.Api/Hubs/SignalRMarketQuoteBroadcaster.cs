@@ -16,7 +16,10 @@ public sealed class SignalRMarketQuoteBroadcaster : IMarketQuoteBroadcaster
 
     public Task BroadcastQuoteUpdateAsync(MarketQuoteUpdateDto update, CancellationToken cancellationToken)
     {
-        return _hubContext.Clients.All.ReceiveQuoteUpdate(update);
+        return _hubContext
+            .Clients
+            .Group(QuoteHubGroups.Symbol(update.BoardId, update.Symbol))
+            .ReceiveQuoteUpdate(update);
     }
 
     public Task BroadcastStreamStatusAsync(QuoteStreamStatusDto status, CancellationToken cancellationToken)
