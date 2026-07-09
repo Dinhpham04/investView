@@ -35,16 +35,9 @@ describe('marketBoardColumnDefs', () => {
     const row = mapQuoteToMarketBoardRow(quote, { lastPrice: 'up' });
     const lastPriceColumn = findColumnByField('lastPrice');
 
-    if (typeof lastPriceColumn.cellClass !== 'function') {
-      throw new Error('Expected lastPrice cellClass to be a function');
-    }
-
-    const classNames = lastPriceColumn.cellClass({
-      data: row,
-    } as CellClassParams<MarketBoardRow>);
-
-    expect(classNames).toContain('quote-price-up');
-    expect(classNames).not.toContain('quote-cell-flash');
+    expect(lastPriceColumn.cellClass).toEqual(expect.arrayContaining(['market-cell', 'market-cell--number', 'ag-cell-bg-highlight']));
+    expect(lastPriceColumn.cellClass).not.toContain('quote-cell-flash');
+    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-price-up', row)).toBe(true);
     expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(true);
     expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(true);
   });

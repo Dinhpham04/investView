@@ -13,7 +13,9 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
     public MarketQuotesEndpointTests(WebApplicationFactory<Program> factory)
     {
         _factory = factory.WithWebHostBuilder(builder =>
-            builder.ConfigureAppConfiguration((_, configurationBuilder) =>
+            builder
+            .UseInMemoryMarketStateForTests()
+            .ConfigureAppConfiguration((_, configurationBuilder) =>
                 configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["MarketData:Provider"] = "Mock"

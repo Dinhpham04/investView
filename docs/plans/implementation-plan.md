@@ -19,7 +19,7 @@ Primary strategy:
 - Depend on internal contracts, not DNSE payloads. See `docs/decisions/ADR-001-depend-on-internal-contracts.md`.
 - Use REST snapshot plus WebSocket stream for market data. See `docs/decisions/ADR-002-market-data-snapshot-plus-stream.md`.
 - Use mock market data first, then DNSE behind the same interfaces.
-- Use `IMemoryCache` for MVP caching; Redis is out of scope unless approved later.
+- Use Redis-backed latest market state with local in-memory mirrors for production-grade market data distribution. See `docs/decisions/ADR-004-redis-backed-market-state.md`.
 - Use SignalR for app-facing realtime updates.
 - Use Tailwind CSS and follow `docs/design.md` for frontend UI/UX rules.
 - Use AG Grid Community for the market board UI. See `docs/decisions/ADR-003-use-ag-grid-for-market-board.md`.
@@ -708,7 +708,52 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Large, implemented as backend contract plus frontend rendering increments.
 
-### Task 17: Add Docker Compose and Demo Documentation
+### Task 17: Implement Redis-Backed Realtime Market State Layer
+
+**Status:** Implemented
+
+**Description:** Replace the market-board freshness model from REST refresh/TTL caching to a production-grade latest-state pipeline. DNSE REST creates baseline snapshots only when local and Redis state are missing. DNSE WebSocket updates are written to Redis latest-state and published through Redis Pub/Sub; every API server consumes the same Pub/Sub event path, updates its local in-memory mirror, and broadcasts SignalR updates to its connected clients. EOD persistence is intentionally out of scope for this task.
+
+**Acceptance criteria:**
+
+- [x] Introduce app-owned abstractions for latest market state storage, event publishing, and local mirror reads.
+- [x] DNSE REST snapshot path writes baseline quotes/indexes/trades into latest-state storage when state is missing.
+- [x] DNSE WebSocket update path writes merged latest state to Redis and publishes an internal market event.
+- [x] All SignalR broadcasts are triggered from the internal event subscriber path, including the server that originally received the DNSE update.
+- [x] API snapshot reads use local memory first, Redis second, and DNSE REST only as fallback/backfill.
+- [x] Partial quote/trade/index updates merge without overwriting existing fields with missing/null payload fields.
+- [x] Local mirror can warm from Redis on cache miss or server start.
+- [x] Redis Pub/Sub is used for low-latency fan-out; Redis Streams/EOD persistence are documented as future work and not implemented in this task.
+- [x] Existing frontend contracts remain stable; frontend still receives REST snapshots and SignalR deltas.
+
+**Verification:**
+
+- [x] Unit tests cover partial update merge rules and stale update rejection by timestamp/sequence where available.
+- [x] Unit tests cover local -> shared state -> DNSE fallback order.
+- [x] Unit tests cover event publisher/subscriber path and ensure broadcast is not performed directly from DNSE handler.
+- [x] Integration-style tests cover two simulated app-server mirrors receiving the same published update.
+- [x] `dotnet build`
+- [x] `dotnet test`
+- [ ] `npm run test` - not run; task did not change frontend code.
+- [ ] `npm run build` - not run; task did not change frontend code.
+
+**Dependencies:** Task 7, Task 8, Task 13, Task 16
+
+**Files likely touched:**
+
+- `src/InvestView.Application/Abstractions/MarketData/*`
+- `src/InvestView.Application/Abstractions/Realtime/*`
+- `src/InvestView.Infrastructure/MarketData/*`
+- `src/InvestView.Infrastructure/Realtime/*`
+- `src/InvestView.Infrastructure/Dnse/*`
+- `src/InvestView.Infrastructure/DependencyInjection.cs`
+- `src/InvestView.Api/Hubs/*`
+- `src/InvestView.Api/appsettings.json`
+- `tests/InvestView.Api.Tests/*`
+
+**Implemented notes:** The production runtime path is Redis-only. `MarketData:State:RedisConnectionString` or `REDIS_CONNECTION_STRING` is required; in-memory state remains only as each API server's local hot mirror and test infrastructure. EOD persistence and Redis Streams remain future work.
+
+### Task 18: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 

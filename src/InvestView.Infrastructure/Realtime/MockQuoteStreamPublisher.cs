@@ -12,6 +12,7 @@ public sealed class MockQuoteStreamPublisher
     private readonly IMarketDataProvider _configuredMarketDataProvider;
     private readonly MockMarketDataProvider _mockMarketDataProvider;
     private readonly IMarketQuoteBroadcaster _broadcaster;
+    private readonly IMarketStateEventPublisher _marketStateEventPublisher;
     private readonly MarketQuoteStreamOptions _options;
     private readonly TimeProvider _timeProvider;
     private long _sequence;
@@ -20,12 +21,14 @@ public sealed class MockQuoteStreamPublisher
         IMarketDataProvider configuredMarketDataProvider,
         MockMarketDataProvider mockMarketDataProvider,
         IMarketQuoteBroadcaster broadcaster,
+        IMarketStateEventPublisher marketStateEventPublisher,
         IOptions<MarketQuoteStreamOptions> options,
         TimeProvider timeProvider)
     {
         _configuredMarketDataProvider = configuredMarketDataProvider;
         _mockMarketDataProvider = mockMarketDataProvider;
         _broadcaster = broadcaster;
+        _marketStateEventPublisher = marketStateEventPublisher;
         _options = options.Value;
         _timeProvider = timeProvider;
     }
@@ -44,7 +47,7 @@ public sealed class MockQuoteStreamPublisher
         {
             cancellationToken.ThrowIfCancellationRequested();
             var update = CreateUpdate(quote, sequence, now);
-            await _broadcaster.BroadcastQuoteUpdateAsync(update, cancellationToken);
+            await _marketStateEventPublisher.PublishQuoteUpdateAsync(update, cancellationToken);
             published++;
         }
 

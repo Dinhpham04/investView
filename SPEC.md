@@ -1,4 +1,4 @@
-# Spec: InvestView
+﻿# Spec: InvestView
 
 ## Status
 
@@ -66,7 +66,7 @@ Success means the project tells a clear technical story:
 - Database: SQL Server.
 - Data access: Entity Framework Core.
 - Authentication: JWT-based demo auth.
-- Caching: ASP.NET Core `IMemoryCache` for MVP.
+- Market state cache: Redis-backed latest-state store with local in-memory mirrors on each API server.
 - Testing: xUnit for backend; Vitest and React Testing Library for frontend.
 - API documentation: OpenAPI/Swagger.
 - Local runtime: Docker Compose for API, web, and SQL Server.
@@ -176,7 +176,9 @@ DNSE REST API / DNSE WebSocket
 InvestView.Infrastructure
   DnseMarketDataClient
   DnseWebSocketClient
-  CachedMarketDataProvider
+  Redis-backed latest market state
+  Local in-memory market state mirror
+  CachedMarketDataProvider for REST/static data
   MockMarketDataProvider
         |
         v
@@ -272,7 +274,9 @@ Responsibilities:
 - EF Core and SQL Server persistence.
 - DNSE REST and WebSocket clients.
 - Market data provider implementations.
-- Cache wrappers.
+- Redis-backed realtime market state.
+- Local in-memory market state mirrors.
+- Cache wrappers for REST/static market data.
 - Seed/mock market data.
 
 Provider interfaces:
@@ -360,7 +364,7 @@ Frontend principles:
 Market board UI requirements:
 
 - Render a securities-style grouped header, not a generic table.
-- Include at least: `CK`, `Trần`, `Sàn`, `TC`, 3 bid price/quantity levels, matched price/quantity/change/change percent, 3 ask price/quantity levels, total volume, high, low, status, and updated time.
+- Include at least: `CK`, `Tráº§n`, `SÃ n`, `TC`, 3 bid price/quantity levels, matched price/quantity/change/change percent, 3 ask price/quantity levels, total volume, high, low, status, and updated time.
 - Use Vietnamese market color semantics: ceiling purple, floor cyan/blue, reference yellow, increase green, decrease red, unchanged/reference yellow or neutral according to context.
 - Keep the symbol column pinned/sticky on wide horizontal boards.
 - Support horizontal scroll on narrow screens without breaking row alignment.
@@ -417,7 +421,8 @@ MVP WebSocket choices:
 - Handle DNSE application-level `ping` and reply with `pong`.
 - Reconnect with backoff and resubscribe after disconnect.
 - Treat control messages by known `action` values, and market data messages by payload type such as `T`.
-- Preserve per-symbol update ordering inside the backend stream adapter before broadcasting through SignalR.
+- Preserve per-symbol update ordering inside the backend stream adapter before writing latest state and publishing internal market events.
+- SignalR broadcasts must be triggered from the internal market event subscriber path, including on the API server that originally received the DNSE WebSocket update.
 - Expose a health signal for DNSE stream status: connected, authenticated, last pong, subscriptions, and last message time.
 
 The backend converts DNSE-specific payloads into InvestView DTOs before sending them to the frontend.
@@ -432,33 +437,50 @@ Known DNSE mapping details from the local SDK:
 
 Do not copy unsafe SDK behavior blindly. In particular, production .NET HTTP clients must keep TLS certificate validation enabled.
 
-## Caching Strategy
+## Market State and Caching Strategy
 
-Caching is part of the MVP because the FSS job description calls for REST API and caching understanding.
+Market-board freshness is driven by WebSocket-maintained latest state, not by short REST polling TTLs. DNSE REST is used for baseline/backfill when local and Redis state are missing, after restart, or when realtime is unavailable.
 
-Use `IMemoryCache` first:
+Production-grade market state uses:
 
-- Symbol metadata from `/instruments`: 30-60 minutes.
-- Security definition from `/price/:symbol/secdef`: until the end of the trading day or 30 minutes in demo mode.
-- OHLC history from `/price/ohlc`: 5-15 minutes.
-- Latest quote/trade snapshots: 1-3 seconds.
-- Latest WebSocket snapshot per symbol: in-memory state updated by `DnseMarketDataStream`.
+- Redis as the shared latest-state store for quotes, market depth, latest trades, and market indices.
+- Redis Pub/Sub as the internal fan-out channel between API servers.
+- A local in-memory mirror on each API server for hot snapshot reads.
+- `IMemoryCache` only for REST/static or low-volatility data such as symbol metadata, security definitions, and historical OHLC ranges.
 
-Cache behavior must be visible enough to discuss in interview:
+The runtime state path is always Redis-backed. `MarketData:State:RedisConnectionString` or `REDIS_CONNECTION_STRING` is required. In-memory state exists only as each API server's local hot mirror and as test infrastructure, not as a production fallback.
 
-- Cache keys are named consistently.
-- TTLs are explicit.
-- Logs include cache hit/miss for market data reads in development.
-- Tests cover the caching decorator at the application/infrastructure boundary.
+The accepted realtime distribution path is documented in `docs/decisions/ADR-004-redis-backed-market-state.md`:
 
-Redis is out of MVP unless explicitly approved later.
+```text
+DNSE WebSocket
+  -> normalize and merge latest state
+  -> write Redis latest-state
+  -> publish Redis Pub/Sub event
+  -> every API server subscriber updates local memory mirror
+  -> every API server broadcasts SignalR to connected clients
+```
+
+Snapshot read order:
+
+1. local in-memory mirror,
+2. Redis latest-state,
+3. DNSE REST fallback/backfill only when state is missing.
+
+Rules:
+
+- Do not refresh market-board snapshots from DNSE REST every few seconds during the trading session.
+- Missing fields in partial WebSocket updates must not overwrite existing latest-state fields.
+- Stale updates must be rejected using timestamp and sequence information where available.
+- Redis Pub/Sub is not treated as durable history. Redis Streams or database persistence are future work for replay/EOD needs.
+- Cache/state behavior must be visible enough to discuss in interview: key naming, fallback order, hit/miss logs, and tests for merge/fallback behavior.
 
 ## Realtime Strategy
 
 Realtime has two separate boundaries:
 
 ```text
-DNSE WebSocket -> InvestView backend -> SignalR -> React frontend
+DNSE WebSocket -> InvestView backend -> Redis latest-state/PubSub -> API local mirrors -> SignalR -> React frontend
 ```
 
 The backend owns DNSE connectivity. SignalR is the app-facing realtime contract.
@@ -632,7 +654,7 @@ Always do:
 
 Ask first:
 
-- Adding Redis, background jobs, Kubernetes manifests, or message queues.
+- Adding background jobs, Kubernetes manifests, or additional message queues beyond the accepted Redis market-state layer.
 - Adding paid providers or SDKs.
 - Persisting raw DNSE payloads.
 - Changing away from ASP.NET Core, React, or SQL Server.
@@ -676,7 +698,8 @@ MVP is complete when:
 - Admin/back-office.
 - Margin, derivatives, covered warrants, bonds, or funds.
 - Complex order book matching.
-- Redis, Kubernetes, Docker Swarm production deployment.
+- Kubernetes, Docker Swarm production deployment.
+- EOD market data persistence, Redis Streams replay, and long-term market history storage.
 - Exact clone of any real securities platform UI.
 
 ## Open Questions
@@ -685,3 +708,4 @@ MVP is complete when:
 2. Should demo auth use a seeded local user only, or allow simple registration?
 3. Should the first market scope focus on Vietnamese stock symbols only?
 4. Should the first chart use OHLC candles, a simple line chart, or no chart until core trading flow is complete?
+

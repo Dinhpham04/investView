@@ -1,4 +1,4 @@
-import type { CellClassParams, CellClassRules, ColDef, ColGroupDef, ValueFormatterParams } from 'ag-grid-community';
+import type { CellClassRules, ColDef, ColGroupDef, ValueFormatterParams } from 'ag-grid-community';
 import {
   formatChange,
   formatPercent,

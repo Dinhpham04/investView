@@ -24,6 +24,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
     ];
 
     private readonly IMarketQuoteBroadcaster _broadcaster;
+    private readonly IMarketStateEventPublisher _marketStateEventPublisher;
     private readonly DnseWebSocketAuthSigner _authSigner;
     private readonly DnseWebSocketMessageMapper _messageMapper;
     private readonly DnseQuoteUpdateAggregator _updateAggregator;
@@ -36,6 +37,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
 
     public DnseWebSocketQuoteStreamService(
         IMarketQuoteBroadcaster broadcaster,
+        IMarketStateEventPublisher marketStateEventPublisher,
         DnseWebSocketAuthSigner authSigner,
         DnseWebSocketMessageMapper messageMapper,
         DnseQuoteUpdateAggregator updateAggregator,
@@ -47,6 +49,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         TimeProvider timeProvider)
     {
         _broadcaster = broadcaster;
+        _marketStateEventPublisher = marketStateEventPublisher;
         _authSigner = authSigner;
         _messageMapper = messageMapper;
         _updateAggregator = updateAggregator;
@@ -336,13 +339,13 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 break;
             case DnseWebSocketMessageKind.QuoteUpdate when message.QuoteUpdate is not null:
                 var update = _updateAggregator.Apply(message.QuoteUpdate);
-                await _broadcaster.BroadcastQuoteUpdateAsync(update, cancellationToken);
+                await _marketStateEventPublisher.PublishQuoteUpdateAsync(update, cancellationToken);
                 break;
             case DnseWebSocketMessageKind.TradeUpdate when message.TradeUpdate is not null:
-                await _broadcaster.BroadcastTradeUpdateAsync(message.TradeUpdate, cancellationToken);
+                await _marketStateEventPublisher.PublishTradeUpdateAsync(message.TradeUpdate, cancellationToken);
                 break;
             case DnseWebSocketMessageKind.MarketIndexUpdate when message.MarketIndexUpdate is not null:
-                await _broadcaster.BroadcastMarketIndexUpdateAsync(message.MarketIndexUpdate, cancellationToken);
+                await _marketStateEventPublisher.PublishMarketIndexUpdateAsync(message.MarketIndexUpdate, cancellationToken);
                 break;
             case DnseWebSocketMessageKind.Error:
                 _logger.LogWarning("DNSE websocket error message: {Message}", message.ErrorMessage);

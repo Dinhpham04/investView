@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace InvestView.Infrastructure;
 
@@ -17,11 +18,23 @@ public static class DependencyInjection
         IConfiguration? configuration = null,
         Action<MarketDataCacheOptions>? configureMarketDataCache = null)
     {
+        var marketStateOptions = new MarketStateOptions();
+        configuration?.GetSection(MarketStateOptions.SectionName).Bind(marketStateOptions);
+        marketStateOptions.RedisConnectionString = FirstConfiguredValue(
+            marketStateOptions.RedisConnectionString,
+            Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING"));
+        if (string.IsNullOrWhiteSpace(marketStateOptions.RedisConnectionString))
+        {
+            throw new InvalidOperationException(
+                "MarketData:State:RedisConnectionString is required. Configure MarketData:State:RedisConnectionString or REDIS_CONNECTION_STRING.");
+        }
+
         services.AddLogging();
         services.AddMemoryCache();
         services.AddSingleton(TimeProvider.System);
 
         services.AddOptions<MarketDataCacheOptions>();
+        services.AddOptions<MarketStateOptions>();
 
         if (configuration is null)
         {
@@ -33,6 +46,8 @@ public static class DependencyInjection
         {
             services.Configure<MarketDataCacheOptions>(
                 configuration.GetSection(MarketDataCacheOptions.SectionName));
+            services.Configure<MarketStateOptions>(
+                configuration.GetSection(MarketStateOptions.SectionName));
             services.Configure<MarketDataProviderOptions>(
                 configuration.GetSection(MarketDataProviderOptions.SectionName));
             services.Configure<DnseMarketDataOptions>(
@@ -52,11 +67,26 @@ public static class DependencyInjection
             options.ApiSecret = FirstConfiguredValue(options.ApiSecret, Environment.GetEnvironmentVariable("DNSE_API_SECRET"));
         });
 
+        services.PostConfigure<MarketStateOptions>(options =>
+        {
+            options.RedisConnectionString = FirstConfiguredValue(
+                options.RedisConnectionString,
+                Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING"));
+        });
+
         services.AddSingleton<MockMarketDataProvider>();
         services.AddSingleton<DnseRestSigner>();
         services.AddSingleton<DnseWebSocketAuthSigner>();
         services.AddSingleton<DnseWebSocketMessageMapper>();
         services.AddSingleton<DnseQuoteUpdateAggregator>();
+        services.AddSingleton<IMarketStateMirror>(_ => new InMemoryMarketStateStore());
+        services.AddSingleton<IMarketStateEventHandler, MarketStateEventSubscriber>();
+        services.AddSingleton<IConnectionMultiplexer>(_ =>
+            ConnectionMultiplexer.Connect(marketStateOptions.RedisConnectionString));
+        services.AddSingleton<IMarketStateStore, RedisMarketStateStore>();
+        services.AddSingleton<IMarketStateEventBus, RedisMarketStateEventBus>();
+        services.AddHostedService<RedisMarketStateSubscriberService>();
+        services.AddSingleton<IMarketStateEventPublisher, MarketStateEventPublisher>();
         services.AddSingleton<MarketQuoteStreamSchedule>();
         services.AddSingleton<IMarketQuoteSubscriptionRegistry, MarketQuoteSubscriptionRegistry>();
         services.AddHttpClient<IDnseMarketDataClient, DnseMarketDataClient>();
@@ -64,7 +94,7 @@ public static class DependencyInjection
         services.AddSingleton<MockQuoteStreamPublisher>();
         services.AddHostedService<MockQuoteStreamService>();
         services.AddHostedService<DnseWebSocketQuoteStreamService>();
-        services.AddSingleton<IMarketDataProvider>(serviceProvider =>
+        services.AddSingleton<CachedMarketDataProvider>(serviceProvider =>
         {
             var inner = ResolveInnerMarketDataProvider(serviceProvider);
 
@@ -74,6 +104,12 @@ public static class DependencyInjection
                 serviceProvider.GetRequiredService<IOptions<MarketDataCacheOptions>>(),
                 serviceProvider.GetRequiredService<ILogger<CachedMarketDataProvider>>());
         });
+        services.AddSingleton<IMarketDataProvider>(serviceProvider =>
+            new MarketStateBackedMarketDataProvider(
+                serviceProvider.GetRequiredService<CachedMarketDataProvider>(),
+                serviceProvider.GetRequiredService<IMarketStateMirror>(),
+                serviceProvider.GetRequiredService<IMarketStateStore>(),
+                serviceProvider.GetRequiredService<ILogger<MarketStateBackedMarketDataProvider>>()));
 
         return services;
     }

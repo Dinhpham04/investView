@@ -4,6 +4,7 @@ using InvestView.Application.Dtos.MarketData;
 using InvestView.Application.Dtos.Realtime;
 using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace InvestView.Api.Tests.Realtime;
@@ -19,6 +20,7 @@ public sealed class MockQuoteStreamPublisherTests
             provider,
             new MockMarketDataProvider(),
             broadcaster,
+            CreateMarketStateEventPublisher(broadcaster),
             Options.Create(new MarketQuoteStreamOptions
             {
                 SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
@@ -54,6 +56,7 @@ public sealed class MockQuoteStreamPublisherTests
             configuredProvider,
             new MockMarketDataProvider(),
             broadcaster,
+            CreateMarketStateEventPublisher(broadcaster),
             Options.Create(new MarketQuoteStreamOptions
             {
                 BoardId = "g1",
@@ -80,6 +83,7 @@ public sealed class MockQuoteStreamPublisherTests
             provider,
             new MockMarketDataProvider(),
             broadcaster,
+            CreateMarketStateEventPublisher(broadcaster),
             Options.Create(new MarketQuoteStreamOptions
             {
                 SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
@@ -108,6 +112,7 @@ public sealed class MockQuoteStreamPublisherTests
             provider,
             new MockMarketDataProvider(),
             broadcaster,
+            CreateMarketStateEventPublisher(broadcaster),
             Options.Create(new MarketQuoteStreamOptions
             {
                 SourceProvider = MarketQuoteStreamOptions.ConfiguredSourceProvider,
@@ -127,6 +132,20 @@ public sealed class MockQuoteStreamPublisherTests
         Assert.NotEqual(quote.BidLevels[0].Quantity, bid.Quantity);
         Assert.NotEqual(quote.AskLevels[0].Price, ask.Price);
         Assert.NotEqual(quote.AskLevels[0].Quantity, ask.Quantity);
+    }
+
+    private static IMarketStateEventPublisher CreateMarketStateEventPublisher(IMarketQuoteBroadcaster broadcaster)
+    {
+        var sharedStore = new InMemoryMarketStateStore();
+        var localMirror = new InMemoryMarketStateStore();
+        var subscriber = new MarketStateEventSubscriber(
+            localMirror,
+            sharedStore,
+            broadcaster,
+            NullLogger<MarketStateEventSubscriber>.Instance);
+        var eventBus = new InProcessMarketStateEventBus([subscriber]);
+
+        return new MarketStateEventPublisher(sharedStore, eventBus);
     }
 
     private sealed class RecordingMarketDataProvider : IMarketDataProvider

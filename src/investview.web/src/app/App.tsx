@@ -12,7 +12,6 @@ export function App() {
         <header className="flex min-h-11 flex-wrap items-center justify-between gap-3 border-b border-market-border bg-market-surface px-4 py-2">
           <div>
             <p className="text-[11px] font-bold uppercase text-market-text-muted">InvestView</p>
-            <h1 className="text-base font-bold leading-tight text-market-text">Market workstation</h1>
           </div>
           <div className="flex items-center gap-2 text-[11px] font-semibold">
             <SystemStatusIndicator />
