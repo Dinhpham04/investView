@@ -145,6 +145,37 @@ public sealed class MarketQuotesEndpointTests : IClassFixture<WebApplicationFact
     }
 
     [Fact]
+    public async Task GetMarketIndices_ReturnsMockIndexOverview()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/indices?names=VNINDEX&names=VN30");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, payload.RootElement.GetArrayLength());
+        Assert.Equal(["VN30", "VNINDEX"], payload.RootElement.EnumerateArray().Select(index => index.GetProperty("indexName").GetString()));
+        Assert.True(payload.RootElement[0].GetProperty("value").GetDecimal() > 0m);
+        Assert.True(payload.RootElement[0].GetProperty("totalVolume").GetInt64() > 0);
+        Assert.True(payload.RootElement[0].GetProperty("upCount").GetInt32() >= 0);
+    }
+
+    [Fact]
+    public async Task GetIndexOhlc_ReturnsMockBarsForIndex()
+    {
+        using var client = _factory.CreateClient();
+
+        var response = await client.GetAsync("/api/market/indices/VNINDEX/ohlc?resolution=1");
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(payload.RootElement.GetArrayLength() > 0);
+        Assert.Equal("VNINDEX", payload.RootElement[0].GetProperty("symbol").GetString());
+        Assert.Equal("1", payload.RootElement[0].GetProperty("resolution").GetString());
+        Assert.True(payload.RootElement[0].GetProperty("close").GetDecimal() > 0m);
+    }
+
+    [Fact]
     public async Task GetLatestTrades_ReturnsMockTradesForSymbol()
     {
         using var client = _factory.CreateClient();

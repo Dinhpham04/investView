@@ -174,7 +174,8 @@ public static class DnseMarketDataMapper
         string symbol,
         string resolution,
         JsonElement root,
-        int quantityScaleFactor = 1)
+        int quantityScaleFactor = 1,
+        bool isIndex = false)
     {
         var normalizedSymbol = NormalizeSymbol(symbol);
         var normalizedResolution = NormalizeToken(resolution, string.Empty);
@@ -186,6 +187,7 @@ public static class DnseMarketDataMapper
             normalizedResolution,
             payload,
             normalizedQuantityScaleFactor,
+            isIndex,
             out var columnarBars))
         {
             return columnarBars;
@@ -194,10 +196,10 @@ public static class DnseMarketDataMapper
         return EnumerateObjects(payload)
             .Select(item =>
             {
-                var open = NormalizeStockPriceScale(GetDecimal(item, "open", "o"));
-                var high = NormalizeStockPriceScale(GetDecimal(item, "high", "h"));
-                var low = NormalizeStockPriceScale(GetDecimal(item, "low", "l"));
-                var close = NormalizeStockPriceScale(GetDecimal(item, "close", "c"));
+                var open = isIndex ? GetDecimal(item, "open", "o") : NormalizeStockPriceScale(GetDecimal(item, "open", "o"));
+                var high = isIndex ? GetDecimal(item, "high", "h") : NormalizeStockPriceScale(GetDecimal(item, "high", "h"));
+                var low = isIndex ? GetDecimal(item, "low", "l") : NormalizeStockPriceScale(GetDecimal(item, "low", "l"));
+                var close = isIndex ? GetDecimal(item, "close", "c") : NormalizeStockPriceScale(GetDecimal(item, "close", "c"));
                 var time = GetDateTimeOffset(item, "time", "timestamp", "t", "lastUpdated");
                 if (time is null)
                 {
@@ -225,6 +227,7 @@ public static class DnseMarketDataMapper
         string normalizedResolution,
         JsonElement payload,
         int quantityScaleFactor,
+        bool isIndex,
         out IReadOnlyList<OhlcBarDto> bars)
     {
         bars = [];
@@ -265,10 +268,10 @@ public static class DnseMarketDataMapper
                 Symbol: symbol,
                 Resolution: resolution,
                 Time: time.Value,
-                Open: NormalizeStockPriceScale(GetDecimalValue(opens[index])),
-                High: NormalizeStockPriceScale(GetDecimalValue(highs[index])),
-                Low: NormalizeStockPriceScale(GetDecimalValue(lows[index])),
-                Close: NormalizeStockPriceScale(GetDecimalValue(closes[index])),
+                Open: isIndex ? GetDecimalValue(opens[index]) : NormalizeStockPriceScale(GetDecimalValue(opens[index])),
+                High: isIndex ? GetDecimalValue(highs[index]) : NormalizeStockPriceScale(GetDecimalValue(highs[index])),
+                Low: isIndex ? GetDecimalValue(lows[index]) : NormalizeStockPriceScale(GetDecimalValue(lows[index])),
+                Close: isIndex ? GetDecimalValue(closes[index]) : NormalizeStockPriceScale(GetDecimalValue(closes[index])),
                 Volume: volume));
         }
 

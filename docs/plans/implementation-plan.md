@@ -377,7 +377,7 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 
 ### Task 9: Add DNSE Real WebSocket Market Stream
 
-**Status:** In Progress
+**Status:** Completed
 
 **Description:** Replace the mock-only realtime source with an opt-in DNSE WebSocket market stream that subscribes to real DNSE quote channels, normalizes incoming messages into app-owned quote update DTOs, and broadcasts them through the existing SignalR quote hub. REST snapshot remains the initial board load and fallback path; DNSE WebSocket is used for intraday realtime updates.
 
@@ -659,7 +659,56 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Estimated scope:** Medium
 
-### Task 16: Add Docker Compose and Demo Documentation
+### Task 16: Add Market Index Overview
+
+**Status:** In Progress
+
+**Description:** Add a market index overview section above the market board, using DNSE official index enum names directly. The feature shows compact intraday cards and a summary table for market indices such as `VNINDEX`, `VN30`, `HNX`, `HNX30`, and `UPCOM`. Index chart data uses DNSE OHLC for `type=INDEX`; realtime headline/breadth data uses the DNSE `market_index.{market_index}.json` WebSocket channel when enabled.
+
+**Acceptance criteria:**
+
+- [x] Backend exposes `GET /api/market/indices` for index summary snapshots.
+- [x] Backend exposes `GET /api/market/indices/{indexName}/ohlc` for index OHLC chart data.
+- [x] Index names use DNSE enum values directly, without SSI display-name mapping.
+- [x] DNSE OHLC query for index uses `/price/ohlc` with `type=INDEX`, `symbol`, `resolution`, and optional Unix `from`/`to`.
+- [x] DNSE WebSocket mapper handles `market_index` payloads and maps value, change, percent, breadth, volume, value, high/low, reference, market, session, and timestamp into app-owned DTOs.
+- [x] SignalR broadcasts market index updates to frontend clients.
+- [x] Frontend renders compact index cards with mini line/volume chart, current value, change, percent, volume/value, and breadth.
+- [x] Frontend renders an index summary table with point, change, volume, value, and advance/decline columns.
+- [x] UI uses the existing market-board dark workstation style and does not interfere with board filtering or symbol detail panel.
+
+**Verification:**
+
+- [x] Backend tests cover index snapshot endpoint and index OHLC endpoint with mock provider.
+- [x] DNSE tests cover `type=INDEX` OHLC query construction.
+- [x] DNSE WebSocket mapper fixture test covers market index payload.
+- [x] Frontend tests cover rendering index cards/table and realtime index update merge.
+- [x] `dotnet build`
+- [x] `dotnet test`
+- [x] `npm run test`
+- [x] `npm run build`
+
+**Dependencies:** Task 9, Task 13
+
+**Files likely touched:**
+
+- `src/InvestView.Application/Dtos/MarketData/*`
+- `src/InvestView.Application/Abstractions/MarketData/IMarketDataProvider.cs`
+- `src/InvestView.Api/Controllers/MarketController.cs`
+- `src/InvestView.Api/Hubs/*`
+- `src/InvestView.Infrastructure/Dnse/*`
+- `src/InvestView.Infrastructure/MarketData/*`
+- `src/InvestView.Infrastructure/Realtime/*`
+- `src/investview.web/src/features/market-index/*`
+- `src/investview.web/src/features/market-board/MarketBoard.tsx`
+- `src/investview.web/src/shared/api/marketApi.ts`
+- `src/investview.web/src/shared/realtime/useQuoteHubConnection.ts`
+- `src/investview.web/src/shared/types/market.ts`
+- `tests/InvestView.Api.Tests/*`
+
+**Estimated scope:** Large, implemented as backend contract plus frontend rendering increments.
+
+### Task 17: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 

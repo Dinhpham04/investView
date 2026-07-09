@@ -144,6 +144,10 @@ public sealed class CachedMarketDataProviderTests
 
         public int OhlcCalls { get; private set; }
 
+        public int IndexOhlcCalls { get; private set; }
+
+        public int MarketIndexCalls { get; private set; }
+
         public int LatestTradesCalls { get; private set; }
 
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
@@ -247,6 +251,54 @@ public sealed class CachedMarketDataProviderTests
                     99m,
                     100m,
                     1000)
+            ];
+
+            return Task.FromResult(bars);
+        }
+
+        public Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
+            IReadOnlyCollection<string> indexNames,
+            CancellationToken cancellationToken)
+        {
+            MarketIndexCalls++;
+
+            IReadOnlyList<MarketIndexDto> indices =
+            [
+                new(
+                    IndexName: indexNames.FirstOrDefault() ?? "VNINDEX",
+                    Value: 1000m + MarketIndexCalls,
+                    Change: MarketIndexCalls,
+                    ChangePercent: MarketIndexCalls,
+                    ReferenceValue: 1000m,
+                    HighValue: 1002m,
+                    LowValue: 999m,
+                    TotalVolume: 1000,
+                    TotalValue: 100000m,
+                    UpCount: 10,
+                    DownCount: 5,
+                    NoChangeCount: 3,
+                    CeilingCount: 1,
+                    FloorCount: 0,
+                    MarketId: "STO",
+                    TradingSessionId: "Continuous",
+                    UpdatedAt: new DateTimeOffset(2026, 7, 5, 7, 45, 0, TimeSpan.Zero))
+            ];
+
+            return Task.FromResult(indices);
+        }
+
+        public Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(
+            string indexName,
+            string resolution,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            CancellationToken cancellationToken)
+        {
+            IndexOhlcCalls++;
+
+            IReadOnlyList<OhlcBarDto> bars =
+            [
+                new(indexName, resolution, new DateTimeOffset(2026, 7, 5, 7, 45, 0, TimeSpan.Zero), 1000m, 1001m, 999m, 1000m, 1000)
             ];
 
             return Task.FromResult(bars);

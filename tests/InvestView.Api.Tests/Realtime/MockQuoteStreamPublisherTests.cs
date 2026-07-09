@@ -182,6 +182,23 @@ public sealed class MockQuoteStreamPublisherTests
             return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
         }
 
+        public Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
+            IReadOnlyCollection<string> indexNames,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<MarketIndexDto>>([]);
+        }
+
+        public Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(
+            string indexName,
+            string resolution,
+            DateTimeOffset? from,
+            DateTimeOffset? to,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+        }
+
         public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
             string symbol,
             string boardId,
@@ -234,6 +251,11 @@ public sealed class MockQuoteStreamPublisherTests
         }
 
         public Task BroadcastTradeUpdateAsync(MarketTradeUpdateDto update, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
         }

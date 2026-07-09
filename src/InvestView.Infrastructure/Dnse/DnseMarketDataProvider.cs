@@ -105,23 +105,110 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
             return [];
         }
 
+        return await GetOhlcAsync("STOCK", normalizedSymbol, normalizedResolution, from, to, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
+        IReadOnlyCollection<string> indexNames,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIndexNames = NormalizeSymbols(indexNames.Count > 0 ? indexNames : _options.DefaultMarketIndices);
+        if (normalizedIndexNames.Count == 0)
+        {
+            return [];
+        }
+
+        var indexTasks = normalizedIndexNames.Select(indexName => GetMarketIndexAsync(indexName, cancellationToken));
+        var indices = await Task.WhenAll(indexTasks);
+        return indices
+            .Where(index => index is not null)
+            .Select(index => index!)
+            .OrderBy(index => index.IndexName, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public async Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIndexName = NormalizeSymbol(indexName);
+        var normalizedResolution = NormalizeResolution(resolution);
+        if (string.IsNullOrWhiteSpace(normalizedIndexName))
+        {
+            return [];
+        }
+
+        return await GetOhlcAsync("INDEX", normalizedIndexName, normalizedResolution, from, to, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
+        string type,
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
         using var ohlc = await _client.GetJsonAsync(
             "/price/ohlc",
             new Dictionary<string, string?>
             {
-                ["type"] = "STOCK",
-                ["symbol"] = normalizedSymbol,
-                ["resolution"] = normalizedResolution,
+                ["type"] = type,
+                ["symbol"] = symbol,
+                ["resolution"] = resolution,
                 ["from"] = from?.ToUnixTimeSeconds().ToString(),
                 ["to"] = to?.ToUnixTimeSeconds().ToString()
             },
             cancellationToken);
 
         return DnseMarketDataMapper.MapOhlcBars(
-            normalizedSymbol,
-            normalizedResolution,
+            symbol,
+            resolution,
             ohlc.RootElement,
-            _options.QuantityScaleFactor);
+            _options.QuantityScaleFactor,
+            type.Equals("INDEX", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task<MarketIndexDto?> GetMarketIndexAsync(
+        string indexName,
+        CancellationToken cancellationToken)
+    {
+        var to = DateTimeOffset.UtcNow;
+        var from = to.AddDays(-5);
+        var bars = await GetIndexOhlcAsync(indexName, "1D", from, to, cancellationToken);
+        var orderedBars = bars.OrderBy(bar => bar.Time).ToArray();
+        var latestBar = orderedBars.LastOrDefault();
+        if (latestBar is null)
+        {
+            return null;
+        }
+
+        var previousBar = orderedBars.Length > 1 ? orderedBars[^2] : null;
+        var referenceValue = previousBar?.Close ?? latestBar.Open;
+        var change = latestBar.Close - referenceValue;
+        var changePercent = referenceValue == 0m ? 0m : change / referenceValue * 100m;
+
+        return new MarketIndexDto(
+            IndexName: indexName,
+            Value: latestBar.Close,
+            Change: change,
+            ChangePercent: changePercent,
+            ReferenceValue: referenceValue,
+            HighValue: latestBar.High,
+            LowValue: latestBar.Low,
+            TotalVolume: latestBar.Volume,
+            TotalValue: null,
+            UpCount: null,
+            DownCount: null,
+            NoChangeCount: null,
+            CeilingCount: null,
+            FloorCount: null,
+            MarketId: string.Empty,
+            TradingSessionId: string.Empty,
+            UpdatedAt: latestBar.Time);
     }
 
     public async Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(

@@ -21,6 +21,21 @@ public static class DnseWebSocketSubscriptionBuilder
         return new DnseWebSocketSubscribePayload("subscribe", subscriptions);
     }
 
+    public static DnseWebSocketSubscribePayload BuildMarketIndexSubscribePayload(
+        IReadOnlyCollection<string> indexNames,
+        string encoding)
+    {
+        var normalizedIndexNames = NormalizeSymbols(indexNames);
+        var normalizedEncoding = NormalizeToken(encoding, "json").ToLowerInvariant();
+        var subscriptions = normalizedIndexNames
+            .Select(indexName => new DnseWebSocketChannelSubscription(
+                $"market_index.{indexName}.{normalizedEncoding}",
+                []))
+            .ToArray();
+
+        return new DnseWebSocketSubscribePayload("subscribe", subscriptions);
+    }
+
     public static string BuildChannelName(
         MarketDataChannel channel,
         string boardId,
@@ -37,6 +52,7 @@ public static class DnseWebSocketSubscriptionBuilder
             MarketDataChannel.TradeExtra => $"tick_extra.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.TopPrice => $"top_price.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.Foreign => $"foreign.{normalizedBoardId}.{normalizedEncoding}",
+            MarketDataChannel.MarketIndex => throw new ArgumentException("Use BuildMarketIndexSubscribePayload for market index channels.", nameof(channel)),
             MarketDataChannel.Session => $"session.{NormalizeToken(productGroupId, "STO")}.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.Ohlc => $"ohlc.1.{normalizedEncoding}",
             _ => throw new ArgumentOutOfRangeException(nameof(channel), channel, "Unsupported DNSE websocket channel.")

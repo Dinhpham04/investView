@@ -7,6 +7,7 @@ public enum MarketDataChannel
     TopPrice,
     SecurityDefinition,
     Foreign,
+    MarketIndex,
     Ohlc,
     Session
 }

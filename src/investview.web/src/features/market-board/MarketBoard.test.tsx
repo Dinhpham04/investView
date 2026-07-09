@@ -8,6 +8,7 @@ import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHubConnection';
 import type {
   MarketQuote,
+  MarketIndexUpdate,
   MarketQuoteUpdate,
   MarketTrade,
   MarketTradeUpdate,
@@ -25,6 +26,7 @@ const testRuntime = vi.hoisted(() => ({
           boardId: string;
           symbols: string[];
         };
+        onMarketIndexUpdate?: (update: MarketIndexUpdate) => void;
         onQuoteUpdate: (update: MarketQuoteUpdate) => void;
         onTradeUpdate?: (update: MarketTradeUpdate) => void;
         onStreamStatus?: (status: QuoteStreamStatus) => void;
@@ -223,6 +225,60 @@ const latestTrades: MarketTrade[] = [
   },
 ];
 
+const marketIndices = [
+  {
+    indexName: 'VNINDEX',
+    value: 1840.7,
+    change: -13,
+    changePercent: -0.7,
+    referenceValue: 1853.7,
+    highValue: 1857,
+    lowValue: 1831.25,
+    totalVolume: 585_707_000,
+    totalValue: 14_603_675_000_000,
+    upCount: 92,
+    downCount: 206,
+    noChangeCount: 66,
+    ceilingCount: 1,
+    floorCount: 3,
+    marketId: 'STO',
+    tradingSessionId: 'Continuous',
+    updatedAt: '2026-07-03T07:45:00Z',
+  },
+  {
+    indexName: 'VN30',
+    value: 1987.11,
+    change: -11.33,
+    changePercent: -0.57,
+    referenceValue: 1998.44,
+    highValue: 2001.12,
+    lowValue: 1977.64,
+    totalVolume: 226_301_000,
+    totalValue: 7_232_900_000_000,
+    upCount: 7,
+    downCount: 19,
+    noChangeCount: 4,
+    ceilingCount: 0,
+    floorCount: 0,
+    marketId: 'STO',
+    tradingSessionId: 'Continuous',
+    updatedAt: '2026-07-03T07:45:00Z',
+  },
+];
+
+const indexOhlcBars: OhlcBar[] = [
+  {
+    close: 1840.7,
+    high: 1857,
+    low: 1831.25,
+    open: 1853.7,
+    resolution: '1',
+    symbol: 'VNINDEX',
+    time: '2026-07-03T07:45:00Z',
+    volume: 585_707_000,
+  },
+];
+
 describe('MarketBoard', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -236,15 +292,7 @@ describe('MarketBoard', () => {
   });
 
   it('renders loading and then the REST snapshot board', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify([quote]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
 
     renderWithQueryClient(<MarketBoard />);
 
@@ -252,6 +300,9 @@ describe('MarketBoard', () => {
     expect(await screen.findByRole('grid')).toBeInTheDocument();
     expect(screen.getByText('REST snapshot')).toBeInTheDocument();
     expect(screen.getByText('Realtime on')).toBeInTheDocument();
+    expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('VN30').length).toBeGreaterThan(0);
+    expect(screen.getByText('KLGD (Triệu)')).toBeInTheDocument();
     expect(screen.getByText('Bên mua')).toBeInTheDocument();
     expect(screen.getByText('Khớp lệnh')).toBeInTheDocument();
     expect(screen.getByText('Bên bán')).toBeInTheDocument();
@@ -260,11 +311,8 @@ describe('MarketBoard', () => {
     expect(screen.getByText('NN bán')).toBeInTheDocument();
     expect(screen.getByText('Room')).toBeInTheDocument();
     expect(screen.getByRole('searchbox')).toBeInTheDocument();
-    expect(screen.getByLabelText('User market list')).toBeInTheDocument();
-
-    const indexMarketList = screen.getByLabelText('Index market list') as HTMLSelectElement;
-    expect(indexMarketList.value).toBe('VN30');
-    expect(screen.queryByRole('button', { name: 'VN30' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Danh/ })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'VN30' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'HOSE' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'HNX' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'UPCOM' })).toBeInTheDocument();
@@ -285,15 +333,7 @@ describe('MarketBoard', () => {
   });
 
   it('applies realtime quote updates to the matching grid row', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify([quote]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
 
     renderWithQueryClient(<MarketBoard />);
 
@@ -335,15 +375,7 @@ describe('MarketBoard', () => {
   it('keeps the REST snapshot usable when realtime is offline', async () => {
     testRuntime.realtimeState.status = 'error';
     testRuntime.realtimeState.lastError = 'Connection failed';
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify([quote]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
 
     renderWithQueryClient(<MarketBoard />);
 
@@ -353,15 +385,7 @@ describe('MarketBoard', () => {
   });
 
   it('requests market quotes again when the active market filter changes', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(
-        new Response(JSON.stringify([quote]), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    );
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
 
     renderWithQueryClient(<MarketBoard />);
 
@@ -373,12 +397,40 @@ describe('MarketBoard', () => {
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&marketId=STX', expect.any(Object)),
     );
+  });
 
-    fireEvent.change(screen.getByLabelText('Index market list'), { target: { value: 'VN100' } });
+  it('applies realtime market index updates to the index overview', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
 
-    await waitFor(() =>
-      expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN100', expect.any(Object)),
-    );
+    renderWithQueryClient(<MarketBoard />);
+
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0));
+
+    act(() => {
+      testRuntime.realtimeOptions?.onMarketIndexUpdate?.({
+        indexName: 'VNINDEX',
+        value: 1850,
+        change: 10,
+        changePercent: 0.54,
+        referenceValue: 1840,
+        highValue: 1851,
+        lowValue: 1830,
+        totalVolume: 600_000_000,
+        totalValue: 15_000_000_000_000,
+        upCount: 100,
+        downCount: 150,
+        noChangeCount: 70,
+        ceilingCount: 2,
+        floorCount: 1,
+        marketId: 'STO',
+        tradingSessionId: 'Continuous',
+        updatedAt: '2026-07-03T07:46:00Z',
+      });
+    });
+
+    await waitFor(() => expect(screen.getAllByText('+10.00').length).toBeGreaterThan(0));
+    expect(screen.getByText((_, element) => element?.textContent === '+10.00 (+0.54%)')).toBeInTheDocument();
   });
 
   it('opens the symbol detail panel from a market board row', async () => {
@@ -665,11 +717,11 @@ describe('MarketBoard', () => {
   it('renders an error state when the market quote request fails', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue(
-        new Response('Service unavailable', {
+      vi.fn(() =>
+        Promise.resolve(new Response('Service unavailable', {
           status: 503,
           statusText: 'Service Unavailable',
-        }),
+        })),
       ),
     );
 
@@ -683,5 +735,20 @@ function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function mockMarketBoardFetch(quotes: MarketQuote[] = [quote]) {
+  return vi.fn((input: RequestInfo | URL) => {
+    const url = input.toString();
+    if (url.startsWith('/api/market/indices/') && url.includes('/ohlc')) {
+      return Promise.resolve(jsonResponse(indexOhlcBars));
+    }
+
+    if (url.startsWith('/api/market/indices')) {
+      return Promise.resolve(jsonResponse(marketIndices));
+    }
+
+    return Promise.resolve(jsonResponse(quotes));
   });
 }

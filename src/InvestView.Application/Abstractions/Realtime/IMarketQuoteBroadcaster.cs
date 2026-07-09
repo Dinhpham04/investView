@@ -9,5 +9,7 @@ public interface IMarketQuoteBroadcaster
 
     Task BroadcastTradeUpdateAsync(MarketTradeUpdateDto update, CancellationToken cancellationToken);
 
+    Task BroadcastMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken);
+
     Task BroadcastStreamStatusAsync(QuoteStreamStatusDto status, CancellationToken cancellationToken);
 }

@@ -116,6 +116,15 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
             UpdatedAt: SnapshotTime)
     ];
 
+    private static readonly IReadOnlyList<MarketIndexDto> Indices =
+    [
+        new("VNINDEX", 1840.70m, -13.00m, -0.70m, 1853.70m, 1857.00m, 1831.25m, 585_707_000, 14_603_675_000_000m, 92, 206, 66, 1, 3, "STO", "Continuous", SnapshotTime),
+        new("VN30", 1987.11m, -11.33m, -0.57m, 1998.44m, 2001.12m, 1977.64m, 226_301_000, 7_232_900_000_000m, 7, 19, 4, 0, 0, "STO", "Continuous", SnapshotTime),
+        new("HNX30", 514.73m, -2.25m, -0.44m, 516.98m, 518.41m, 511.82m, 42_094_000, 933_109_000_000m, 9, 14, 7, 0, 0, "STX", "Continuous", SnapshotTime),
+        new("HNX", 306.67m, 6.28m, 2.09m, 300.39m, 307.42m, 299.96m, 56_859_000, 1_096_426_000_000m, 47, 76, 50, 2, 3, "STX", "PLO", SnapshotTime),
+        new("UPCOM", 128.68m, 0.67m, 0.52m, 128.01m, 129.04m, 127.85m, 23_428_000, 281_722_000_000m, 85, 101, 79, 0, 1, "UPX", "Continuous", SnapshotTime)
+    ];
+
     public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
         MarketBoardQuery query,
         CancellationToken cancellationToken)
@@ -193,6 +202,21 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
         return Task.FromResult<SymbolDetailDto?>(detail);
     }
 
+    public Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
+        IReadOnlyCollection<string> indexNames,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedIndexNames = NormalizeSymbols(indexNames);
+        var indices = Indices
+            .Where(index => normalizedIndexNames.Count == 0 || normalizedIndexNames.Contains(index.IndexName))
+            .OrderBy(index => index.IndexName, StringComparer.Ordinal)
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyList<MarketIndexDto>>(indices);
+    }
+
     public Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
@@ -213,6 +237,37 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
             new(normalizedSymbol, resolution, SnapshotTime.AddMinutes(-2), 28600m, 28800m, 28550m, 28750m, 420000),
             new(normalizedSymbol, resolution, SnapshotTime.AddMinutes(-1), 28750m, 29100m, 28700m, 29050m, 530000),
             new(normalizedSymbol, resolution, SnapshotTime, 29050m, 29200m, 29000m, 29150m, 610000)
+        ];
+
+        return Task.FromResult<IReadOnlyList<OhlcBarDto>>(bars
+            .Where(bar => from is null || bar.Time >= from)
+            .Where(bar => to is null || bar.Time <= to)
+            .ToArray());
+    }
+
+    public Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedIndexName = NormalizeToken(indexName);
+        var index = Indices.FirstOrDefault(item => item.IndexName == normalizedIndexName);
+        if (index is null || index.ReferenceValue is null || index.Value is null)
+        {
+            return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+        }
+
+        OhlcBarDto[] bars =
+        [
+            new(normalizedIndexName, resolution, SnapshotTime.AddMinutes(-4), index.ReferenceValue.Value, index.ReferenceValue.Value + 2m, index.ReferenceValue.Value - 3m, index.ReferenceValue.Value - 1m, (index.TotalVolume ?? 0) / 5),
+            new(normalizedIndexName, resolution, SnapshotTime.AddMinutes(-3), index.ReferenceValue.Value - 1m, index.ReferenceValue.Value + 1m, index.ReferenceValue.Value - 8m, index.ReferenceValue.Value - 5m, (index.TotalVolume ?? 0) / 5),
+            new(normalizedIndexName, resolution, SnapshotTime.AddMinutes(-2), index.ReferenceValue.Value - 5m, index.ReferenceValue.Value - 2m, index.ReferenceValue.Value - 10m, index.ReferenceValue.Value - 7m, (index.TotalVolume ?? 0) / 5),
+            new(normalizedIndexName, resolution, SnapshotTime.AddMinutes(-1), index.ReferenceValue.Value - 7m, index.ReferenceValue.Value, index.ReferenceValue.Value - 9m, index.Value.Value - 1m, (index.TotalVolume ?? 0) / 5),
+            new(normalizedIndexName, resolution, SnapshotTime, index.Value.Value - 1m, index.HighValue ?? index.Value.Value, index.LowValue ?? index.Value.Value, index.Value.Value, (index.TotalVolume ?? 0) / 5)
         ];
 
         return Task.FromResult<IReadOnlyList<OhlcBarDto>>(bars

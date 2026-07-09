@@ -1,5 +1,5 @@
 import { getJson } from './httpClient';
-import type { MarketQuote, MarketTrade, OhlcBar, SymbolDetail } from '../types/market';
+import type { MarketIndex, MarketQuote, MarketTrade, OhlcBar, SymbolDetail } from '../types/market';
 
 export type GetMarketQuotesParams = {
   boardId?: string;
@@ -29,6 +29,21 @@ export function getMarketQuotes(params: GetMarketQuotesParams = {}) {
 
   const query = searchParams.toString();
   return getJson<MarketQuote[]>(`/api/market/quotes${query ? `?${query}` : ''}`);
+}
+
+export type GetMarketIndicesParams = {
+  names?: string[];
+};
+
+export function getMarketIndices(params: GetMarketIndicesParams = {}) {
+  const searchParams = new URLSearchParams();
+
+  params.names?.forEach((name) => {
+    searchParams.append('names', name);
+  });
+
+  const query = searchParams.toString();
+  return getJson<MarketIndex[]>(`/api/market/indices${query ? `?${query}` : ''}`);
 }
 
 export type GetSymbolDetailParams = {
@@ -71,6 +86,25 @@ export function getOhlc(params: GetOhlcParams) {
 
   const query = searchParams.toString();
   return getJson<OhlcBar[]>(`/api/market/symbols/${encodeURIComponent(params.symbol)}/ohlc${query ? `?${query}` : ''}`);
+}
+
+export function getIndexOhlc(params: GetOhlcParams) {
+  const searchParams = new URLSearchParams();
+
+  if (params.resolution) {
+    searchParams.set('resolution', params.resolution);
+  }
+
+  if (params.from) {
+    searchParams.set('from', params.from);
+  }
+
+  if (params.to) {
+    searchParams.set('to', params.to);
+  }
+
+  const query = searchParams.toString();
+  return getJson<OhlcBar[]>(`/api/market/indices/${encodeURIComponent(params.symbol)}/ohlc${query ? `?${query}` : ''}`);
 }
 
 export type GetLatestTradesParams = {

@@ -38,6 +38,8 @@ public sealed class DnseMarketDataOptions
 
     public string[] DefaultSymbols { get; set; } = ["HPG", "SSI", "VCB"];
 
+    public string[] DefaultMarketIndices { get; set; } = ["VNINDEX", "VN30", "HNX", "HNX30", "UPCOM"];
+
     public int QuantityScaleFactor { get; set; } = 10;
 
     public int InstrumentPageSize { get; set; } = 100;

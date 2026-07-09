@@ -30,6 +30,14 @@ public sealed class SignalRMarketQuoteBroadcaster : IMarketQuoteBroadcaster
             .ReceiveTradeUpdate(update);
     }
 
+    public Task BroadcastMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken)
+    {
+        return _hubContext
+            .Clients
+            .All
+            .ReceiveMarketIndexUpdate(update);
+    }
+
     public Task BroadcastStreamStatusAsync(QuoteStreamStatusDto status, CancellationToken cancellationToken)
     {
         return _hubContext.Clients.All.ReceiveStreamStatus(status);

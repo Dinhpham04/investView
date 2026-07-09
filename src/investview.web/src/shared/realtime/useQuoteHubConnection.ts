@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createQuoteHubConnection, quoteHubPath } from './quoteHubClient';
-import type { MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../types/market';
+import type { MarketIndexUpdate, MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../types/market';
 
 export type QuoteHubConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
@@ -8,6 +8,7 @@ export type UseQuoteHubConnectionOptions = {
   enabled?: boolean;
   hubUrl?: string;
   marketBoardSubscription?: MarketBoardSubscription | null;
+  onMarketIndexUpdate?: (update: MarketIndexUpdate) => void;
   onQuoteUpdate: (update: MarketQuoteUpdate) => void;
   onTradeUpdate?: (update: MarketTradeUpdate) => void;
   onStreamStatus?: (status: QuoteStreamStatus) => void;
@@ -27,10 +28,12 @@ export function useQuoteHubConnection({
   enabled = true,
   hubUrl = quoteHubPath,
   marketBoardSubscription = null,
+  onMarketIndexUpdate,
   onQuoteUpdate,
   onTradeUpdate,
   onStreamStatus,
 }: UseQuoteHubConnectionOptions): QuoteHubConnectionState {
+  const marketIndexUpdateRef = useRef(onMarketIndexUpdate);
   const quoteUpdateRef = useRef(onQuoteUpdate);
   const tradeUpdateRef = useRef(onTradeUpdate);
   const streamStatusRef = useRef(onStreamStatus);
@@ -44,6 +47,10 @@ export function useQuoteHubConnection({
   useEffect(() => {
     quoteUpdateRef.current = onQuoteUpdate;
   }, [onQuoteUpdate]);
+
+  useEffect(() => {
+    marketIndexUpdateRef.current = onMarketIndexUpdate;
+  }, [onMarketIndexUpdate]);
 
   useEffect(() => {
     tradeUpdateRef.current = onTradeUpdate;
@@ -70,6 +77,10 @@ export function useQuoteHubConnection({
 
     connection.on('ReceiveQuoteUpdate', (update: MarketQuoteUpdate) => {
       quoteUpdateRef.current(update);
+    });
+
+    connection.on('ReceiveMarketIndexUpdate', (update: MarketIndexUpdate) => {
+      marketIndexUpdateRef.current?.(update);
     });
 
     connection.on('ReceiveTradeUpdate', (update: MarketTradeUpdate) => {
@@ -131,6 +142,7 @@ export function useQuoteHubConnection({
       disposed = true;
       window.clearTimeout(startTimer);
       connection.off('ReceiveQuoteUpdate');
+      connection.off('ReceiveMarketIndexUpdate');
       connection.off('ReceiveTradeUpdate');
       connection.off('ReceiveStreamStatus');
       if (connectionRef.current === connection) {

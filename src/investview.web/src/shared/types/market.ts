@@ -69,6 +69,28 @@ export type MarketTrade = {
 
 export type MarketTradeUpdate = MarketTrade;
 
+export type MarketIndex = {
+  indexName: string;
+  value: number | null;
+  change: number | null;
+  changePercent: number | null;
+  referenceValue: number | null;
+  highValue: number | null;
+  lowValue: number | null;
+  totalVolume: number | null;
+  totalValue: number | null;
+  upCount: number | null;
+  downCount: number | null;
+  noChangeCount: number | null;
+  ceilingCount: number | null;
+  floorCount: number | null;
+  marketId: string;
+  tradingSessionId: string;
+  updatedAt: string;
+};
+
+export type MarketIndexUpdate = MarketIndex;
+
 export type MarketQuoteUpdate = {
   symbol: string;
   boardId: string;

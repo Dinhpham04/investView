@@ -6,6 +6,7 @@ public sealed record DnseWebSocketMessage(
     DnseWebSocketMessageKind Kind,
     MarketQuoteUpdateDto? QuoteUpdate = null,
     MarketTradeUpdateDto? TradeUpdate = null,
+    MarketIndexUpdateDto? MarketIndexUpdate = null,
     string? ErrorMessage = null,
     string? Action = null);
 
@@ -18,5 +19,6 @@ public enum DnseWebSocketMessageKind
     Subscribed,
     Error,
     QuoteUpdate,
-    TradeUpdate
+    TradeUpdate,
+    MarketIndexUpdate
 }

@@ -78,6 +78,26 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
         return detail;
     }
 
+    public async Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
+        IReadOnlyCollection<string> indexNames,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIndexNames = NormalizeSymbols(indexNames);
+        var cacheKey = $"market-indices:{string.Join(',', normalizedIndexNames)}";
+
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<MarketIndexDto>? cachedIndices) && cachedIndices is not null)
+        {
+            _logger.LogDebug("Market data cache hit for {CacheKey}.", cacheKey);
+            return cachedIndices;
+        }
+
+        _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
+        var indices = await _inner.GetMarketIndicesAsync(normalizedIndexNames, cancellationToken);
+        _cache.Set(cacheKey, indices, _options.MarketBoardTtl);
+
+        return indices;
+    }
+
     public async Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
         string symbol,
         string resolution,
@@ -97,6 +117,30 @@ public sealed class CachedMarketDataProvider : IMarketDataProvider
 
         _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
         var bars = await _inner.GetOhlcAsync(normalizedSymbol, normalizedResolution, from, to, cancellationToken);
+        _cache.Set(cacheKey, bars, _options.OhlcTtl);
+
+        return bars;
+    }
+
+    public async Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIndexName = NormalizeToken(indexName, string.Empty);
+        var normalizedResolution = NormalizeToken(resolution, string.Empty);
+        var cacheKey = $"index-ohlc:{normalizedIndexName}:{normalizedResolution}:{FormatCacheTime(from)}:{FormatCacheTime(to)}";
+
+        if (_cache.TryGetValue(cacheKey, out IReadOnlyList<OhlcBarDto>? cachedBars) && cachedBars is not null)
+        {
+            _logger.LogDebug("Market data cache hit for {CacheKey}.", cacheKey);
+            return cachedBars;
+        }
+
+        _logger.LogDebug("Market data cache miss for {CacheKey}.", cacheKey);
+        var bars = await _inner.GetIndexOhlcAsync(normalizedIndexName, normalizedResolution, from, to, cancellationToken);
         _cache.Set(cacheKey, bars, _options.OhlcTtl);
 
         return bars;

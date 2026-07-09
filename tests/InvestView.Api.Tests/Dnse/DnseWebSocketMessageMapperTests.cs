@@ -167,6 +167,50 @@ public sealed class DnseWebSocketMessageMapperTests
     }
 
     [Fact]
+    public void Map_WhenMessageIsMarketIndex_ReturnsMarketIndexUpdate()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "mi",
+              "indexName": "VNINDEX",
+              "changedRatio": -0.70,
+              "changedValue": -13.00,
+              "fluctuationSteadinessIssueCount": 66,
+              "fluctuationDownIssueCount": 206,
+              "fluctuationUpIssueCount": 92,
+              "fluctuationLowerLimitIssueCount": 3,
+              "fluctuationUpperLimitIssueCount": 1,
+              "lowestValueIndexes": 1831.25,
+              "highestValueIndexes": 1857.00,
+              "priorValueIndexes": 1853.70,
+              "valueIndexes": 1840.70,
+              "grossTradeAmount": 14603675000000,
+              "totalVolumeTraded": 585707000,
+              "marketId": 1,
+              "tradingSessionId": 99,
+              "transactTime": "2026-07-03T07:45:00+00:00"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.MarketIndexUpdate, message.Kind);
+        Assert.NotNull(message.MarketIndexUpdate);
+        Assert.Equal("VNINDEX", message.MarketIndexUpdate.IndexName);
+        Assert.Equal(1840.70m, message.MarketIndexUpdate.Value);
+        Assert.Equal(-13.00m, message.MarketIndexUpdate.Change);
+        Assert.Equal(-0.70m, message.MarketIndexUpdate.ChangePercent);
+        Assert.Equal(1853.70m, message.MarketIndexUpdate.ReferenceValue);
+        Assert.Equal(92, message.MarketIndexUpdate.UpCount);
+        Assert.Equal(206, message.MarketIndexUpdate.DownCount);
+        Assert.Equal(66, message.MarketIndexUpdate.NoChangeCount);
+        Assert.Equal("1", message.MarketIndexUpdate.MarketId);
+        Assert.Equal("99", message.MarketIndexUpdate.TradingSessionId);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-03T07:45:00+00:00"), message.MarketIndexUpdate.UpdatedAt);
+    }
+
+    [Fact]
     public void Map_WhenWebSocketPriceIsAlreadyInDong_DoesNotScaleAgain()
     {
         var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));

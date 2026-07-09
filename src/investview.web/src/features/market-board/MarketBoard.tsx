@@ -7,10 +7,11 @@ import { defaultMarketBoardColumnDef, defaultMarketBoardColumnGroupDef, marketBo
 import { marketBoardTheme } from './marketBoardTheme';
 import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './marketLists';
 import { applyQuoteUpdate } from './marketBoardRealtime';
+import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection } from '../../shared/realtime/useQuoteHubConnection';
-import type { MarketQuote, MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../../shared/types/market';
+import type { MarketIndexUpdate, MarketQuote, MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../../shared/types/market';
 
 type ActiveMarketFilter =
   | { kind: 'exchange'; list: SystemMarketList }
@@ -30,6 +31,7 @@ export function MarketBoard() {
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [flashClassesByRow, setFlashClassesByRow] = useState<Record<string, MarketBoardFlashClasses>>({});
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolDetailSelection | null>(null);
+  const [latestMarketIndexUpdate, setLatestMarketIndexUpdate] = useState<MarketIndexUpdate | null>(null);
   const [latestTradeUpdate, setLatestTradeUpdate] = useState<MarketTradeUpdate | null>(null);
   const [streamStatus, setStreamStatus] = useState<QuoteStreamStatus | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
@@ -93,6 +95,7 @@ export function MarketBoard() {
   }, [scheduleFlashClear]);
   const realtimeConnection = useQuoteHubConnection({
     marketBoardSubscription,
+    onMarketIndexUpdate: setLatestMarketIndexUpdate,
     onQuoteUpdate: handleRealtimeQuoteUpdate,
     onTradeUpdate: setLatestTradeUpdate,
     onStreamStatus: setStreamStatus,
@@ -160,21 +163,7 @@ export function MarketBoard() {
 
   return (
     <section className="flex min-h-[620px] min-w-0 flex-col border border-market-border bg-market-bg">
-      <div className="flex min-h-11 flex-wrap items-center justify-between gap-3 border-b border-market-border bg-market-surface px-4 py-2">
-        <div>
-          <p className="text-[11px] font-semibold text-market-text-muted">Market board</p>
-          <h2 className="text-base font-bold leading-tight text-market-text">Bảng giá cơ sở</h2>
-        </div>
-        <div className="flex items-center gap-2 text-[11px] font-semibold">
-          <span className="rounded-sm border border-market-border-strong bg-market-surface-2 px-2 py-1 text-state-warning">
-            REST snapshot
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-sm border border-market-border px-2 py-1 text-market-text-muted">
-            <span className={`size-2 rounded-full ${realtimeToneClass}`} aria-hidden="true" />
-            {realtimeLabel}
-          </span>
-        </div>
-      </div>
+      <MarketIndexOverview latestUpdate={latestMarketIndexUpdate} />
 
       <div className="flex min-h-10 flex-wrap items-center gap-2 border-b border-market-border bg-market-surface px-2 py-1">
         <label className="sr-only" htmlFor="symbol-search">
@@ -265,9 +254,20 @@ export function MarketBoard() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-[11px] font-medium text-market-text-muted">
-          {rows.length > 0 ? `${rows.length} mã | Cập nhật ${rows[0].updatedTime}` : 'Chưa có dữ liệu'}
-        </span>
+        <div className="ml-auto flex items-center gap-4 text-[11px]">
+          <span className="font-medium text-market-text-muted">
+            {rows.length > 0 ? `${rows.length} mã | Cập nhật ${rows[0].updatedTime}` : 'Chưa có dữ liệu'}
+          </span>
+          <div className="flex items-center gap-2 font-semibold">
+            <span className="rounded-sm border border-market-border-strong bg-market-surface-2 px-2 py-1 text-state-warning">
+              REST snapshot
+            </span>
+            <span className="inline-flex items-center gap-1 rounded-sm border border-market-border px-2 py-1 text-market-text-muted">
+              <span className={`size-2 rounded-full ${realtimeToneClass}`} aria-hidden="true" />
+              {realtimeLabel}
+            </span>
+          </div>
+        </div>
       </div>
 
       {quotesQuery.isPending ? (

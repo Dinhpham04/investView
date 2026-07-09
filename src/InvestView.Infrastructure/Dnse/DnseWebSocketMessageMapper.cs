@@ -43,6 +43,7 @@ public sealed class DnseWebSocketMessageMapper
             "te" => MapTradeExtra(root),
             "q" => MapTopPrice(root),
             "f" => MapForeign(root),
+            "mi" => MapMarketIndex(root),
             _ => new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown)
         };
     }
@@ -130,6 +131,38 @@ public sealed class DnseWebSocketMessageMapper
             foreignRoom: GetOptionalLong(root, "foreignerBuyPossibleQuantity")
                 ?? GetOptionalLong(root, "currentRoom")
                 ?? GetOptionalLong(root, "foreignBuyRoom"));
+    }
+
+    private DnseWebSocketMessage MapMarketIndex(JsonElement root)
+    {
+        if (!TryGetString(root, "indexName", out var indexName))
+        {
+            return new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown);
+        }
+
+        var updatedAt = GetOptionalTimestamp(root, "transactTime")
+            ?? GetOptionalTimestamp(root, "time")
+            ?? _timeProvider.GetUtcNow();
+        var update = new MarketIndexUpdateDto(
+            IndexName: indexName.Trim().ToUpperInvariant(),
+            Value: GetOptionalDecimal(root, "valueIndexes"),
+            Change: GetOptionalDecimal(root, "changedValue"),
+            ChangePercent: GetOptionalDecimal(root, "changedRatio"),
+            ReferenceValue: GetOptionalDecimal(root, "priorValueIndexes"),
+            HighValue: GetOptionalDecimal(root, "highestValueIndexes"),
+            LowValue: GetOptionalDecimal(root, "lowestValueIndexes"),
+            TotalVolume: GetOptionalLong(root, "totalVolumeTraded"),
+            TotalValue: GetOptionalDecimal(root, "grossTradeAmount"),
+            UpCount: GetOptionalInt(root, "fluctuationUpIssueCount"),
+            DownCount: GetOptionalInt(root, "fluctuationDownIssueCount"),
+            NoChangeCount: GetOptionalInt(root, "fluctuationSteadinessIssueCount"),
+            CeilingCount: GetOptionalInt(root, "fluctuationUpperLimitIssueCount"),
+            FloorCount: GetOptionalInt(root, "fluctuationLowerLimitIssueCount"),
+            MarketId: GetOptionalString(root, "marketId") ?? string.Empty,
+            TradingSessionId: GetOptionalString(root, "tradingSessionId") ?? string.Empty,
+            UpdatedAt: updatedAt);
+
+        return new DnseWebSocketMessage(DnseWebSocketMessageKind.MarketIndexUpdate, MarketIndexUpdate: update);
     }
 
     private DnseWebSocketMessage QuoteUpdate(
@@ -288,6 +321,12 @@ public sealed class DnseWebSocketMessageMapper
         return property.ValueKind == JsonValueKind.String && decimal.TryParse(property.GetString(), out var decimalValue)
             ? decimal.ToInt64(decimalValue)
             : null;
+    }
+
+    private static int? GetOptionalInt(JsonElement element, string propertyName)
+    {
+        var value = GetOptionalLong(element, propertyName);
+        return value is null ? null : checked((int)value.Value);
     }
 
     private static DateTimeOffset? GetOptionalTimestamp(JsonElement element, string propertyName)

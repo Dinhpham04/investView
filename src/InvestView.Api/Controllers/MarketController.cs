@@ -72,6 +72,35 @@ public sealed class MarketController : ControllerBase
         return Ok(bars);
     }
 
+    [HttpGet("indices")]
+    [ProducesResponseType<IReadOnlyList<MarketIndexDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<MarketIndexDto>>> GetMarketIndices(
+        [FromQuery] string[]? names,
+        CancellationToken cancellationToken)
+    {
+        var indices = await _marketDataProvider.GetMarketIndicesAsync(names ?? [], cancellationToken);
+        return Ok(indices);
+    }
+
+    [HttpGet("indices/{indexName}/ohlc")]
+    [ProducesResponseType<IReadOnlyList<OhlcBarDto>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<OhlcBarDto>>> GetIndexOhlc(
+        string indexName,
+        [FromQuery] string? resolution,
+        [FromQuery] DateTimeOffset? from,
+        [FromQuery] DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        var bars = await _marketDataProvider.GetIndexOhlcAsync(
+            indexName,
+            string.IsNullOrWhiteSpace(resolution) ? "1" : resolution,
+            from,
+            to,
+            cancellationToken);
+
+        return Ok(bars);
+    }
+
     [HttpGet("symbols/{symbol}/trades/latest")]
     [ProducesResponseType<IReadOnlyList<MarketTradeDto>>(StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<MarketTradeDto>>> GetLatestTrades(

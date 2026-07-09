@@ -166,6 +166,52 @@ public sealed class DnseMarketDataProviderTests
     }
 
     [Fact]
+    public async Task GetIndexOhlcAsync_CallsDnseOhlcEndpointWithIndexQuery()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+        var from = DateTimeOffset.FromUnixTimeSeconds(1783079100);
+        var to = DateTimeOffset.FromUnixTimeSeconds(1783079160);
+
+        var bars = await provider.GetIndexOhlcAsync("vnindex", "1", from, to, CancellationToken.None);
+
+        var bar = Assert.Single(bars);
+        Assert.Equal("VNINDEX", bar.Symbol);
+        Assert.Equal(1840.70m, bar.Close);
+
+        var call = Assert.Single(client.Calls, call => call.Path == "/price/ohlc");
+        Assert.NotNull(call.Query);
+        Assert.Equal("INDEX", call.Query["type"]);
+        Assert.Equal("VNINDEX", call.Query["symbol"]);
+        Assert.Equal("1", call.Query["resolution"]);
+    }
+
+    [Fact]
+    public async Task GetMarketIndicesAsync_UsesPreviousDailyCloseAsReferenceValue()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+
+        var indices = await provider.GetMarketIndicesAsync(["vnindex"], CancellationToken.None);
+
+        var index = Assert.Single(indices);
+        Assert.Equal("VNINDEX", index.IndexName);
+        Assert.Equal(1840.70m, index.Value);
+        Assert.Equal(1853.70m, index.ReferenceValue);
+        Assert.Equal(-13.00m, index.Change);
+
+        var call = Assert.Single(client.Calls, call => call.Path == "/price/ohlc");
+        Assert.NotNull(call.Query);
+        Assert.Equal("INDEX", call.Query["type"]);
+        Assert.Equal("VNINDEX", call.Query["symbol"]);
+        Assert.Equal("1D", call.Query["resolution"]);
+    }
+
+    [Fact]
     public async Task GetLatestTradesAsync_CallsDnseTradesHistoryEndpointWithLimitAndDescOrder()
     {
         var client = new FakeDnseMarketDataClient();
@@ -213,6 +259,8 @@ public sealed class DnseMarketDataProviderTests
                 "/price/HPG/quotes/latest" => """{ "bid": [{ "price": 29100, "qtty": 18300 }, { "price": 29050, "qtty": 22500 }, { "price": 29000, "qtty": 41300 }], "offer": [{ "price": 29150, "qtty": 12000 }, { "price": 29200, "qtty": 17600 }, { "price": 29250, "qtty": 28400 }] }""",
                 "/price/HPG/foreign-trading" when query?.ContainsKey("from") == true && query.ContainsKey("to") => """{ "foreigners": [{ "totalBuyVolume": 786100, "totalSellVolume": 1227649, "foreignerOrderLimitQuantity": 1742502798, "foreignerBuyPossibleQuantity": 2053706002 }] }""",
                 "/price/HPG/foreign-trading" => throw new InvalidOperationException("foreign-trading requires from/to query params."),
+                "/price/ohlc" when query?["type"] == "INDEX" && query["resolution"] == "1D" => """{ "data": [{ "symbol": "VNINDEX", "resolution": "1D", "open": 1840.00, "high": 1857.00, "low": 1835.00, "close": 1853.70, "volume": 450000000, "time": 1782950400 }, { "symbol": "VNINDEX", "resolution": "1D", "open": 1848.00, "high": 1857.00, "low": 1831.25, "close": 1840.70, "volume": 585707000, "time": 1783036800 }] }""",
+                "/price/ohlc" when query?["type"] == "INDEX" => """{ "data": [{ "symbol": "VNINDEX", "resolution": "1", "open": 1853.70, "high": 1857.00, "low": 1831.25, "close": 1840.70, "volume": 585707000, "time": 1783079100 }] }""",
                 "/price/ohlc" => """{ "data": [{ "symbol": "HPG", "resolution": "1", "open": 28.6, "high": 29.2, "low": 28.45, "close": 29.15, "volume": 12450000, "time": 1783079100 }] }""",
                 "/price/HPG/trades" when query?.ContainsKey("from") == true && query.ContainsKey("to") => """{ "trades": [{ "symbol": "HPG", "boardId": "G1", "matchPrice": 29.15, "changedValue": 0.55, "changedPercent": 1.92, "matchQtty": 2500, "totalVolumeTraded": 12450000, "grossTradeAmount": 362917500000, "time": "2026-07-03T07:45:00+00:00" }] }""",
                 "/price/HPG/trades" => throw new InvalidOperationException("trades requires from/to query params."),
