@@ -72,6 +72,39 @@ public sealed class DnseWebSocketMessageMapperTests
     }
 
     [Fact]
+    public void Map_WhenMessageIsTradeExtra_ReturnsTradeUpdateWithSide()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "te",
+              "marketId": "STO",
+              "boardId": "G1",
+              "symbol": "HPG",
+              "matchPrice": 24.35,
+              "matchQtty": 40,
+              "side": "SELL",
+              "totalVolumeTraded": 1184240,
+              "grossTradeAmount": 287.17458,
+              "time": { "Seconds": 1783479700, "Nanos": 100000000 }
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.TradeUpdate, message.Kind);
+        Assert.NotNull(message.TradeUpdate);
+        Assert.Equal("HPG", message.TradeUpdate.Symbol);
+        Assert.Equal("G1", message.TradeUpdate.BoardId);
+        Assert.Equal(24_350m, message.TradeUpdate.Price);
+        Assert.Equal(400, message.TradeUpdate.Quantity);
+        Assert.Equal(11_842_400, message.TradeUpdate.TotalVolume);
+        Assert.Equal(287.17458m, message.TradeUpdate.TotalValue);
+        Assert.Equal("S", message.TradeUpdate.Side);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_783_479_700).AddTicks(1_000_000), message.TradeUpdate.Time);
+    }
+
+    [Fact]
     public void Map_WhenMessageIsTopPrice_ReturnsBidAndAskLevels()
     {
         var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));

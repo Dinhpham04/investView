@@ -8,6 +8,7 @@ public sealed class DnseWebSocketSubscriptionBuilderTests
     [Theory]
     [InlineData(MarketDataChannel.SecurityDefinition, "security_definition.G1.json")]
     [InlineData(MarketDataChannel.Trade, "tick.G1.json")]
+    [InlineData(MarketDataChannel.TradeExtra, "tick_extra.G1.json")]
     [InlineData(MarketDataChannel.TopPrice, "top_price.G1.json")]
     [InlineData(MarketDataChannel.Foreign, "foreign.G1.json")]
     public void BuildChannelName_UsesDnseMarketDataChannelNames(MarketDataChannel channel, string expected)

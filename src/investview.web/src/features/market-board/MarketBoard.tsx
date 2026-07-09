@@ -10,7 +10,7 @@ import { applyQuoteUpdate } from './marketBoardRealtime';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection } from '../../shared/realtime/useQuoteHubConnection';
-import type { MarketQuote, MarketQuoteUpdate, QuoteStreamStatus } from '../../shared/types/market';
+import type { MarketQuote, MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../../shared/types/market';
 
 type ActiveMarketFilter =
   | { kind: 'exchange'; list: SystemMarketList }
@@ -30,6 +30,7 @@ export function MarketBoard() {
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [flashClassesByRow, setFlashClassesByRow] = useState<Record<string, MarketBoardFlashClasses>>({});
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolDetailSelection | null>(null);
+  const [latestTradeUpdate, setLatestTradeUpdate] = useState<MarketTradeUpdate | null>(null);
   const [streamStatus, setStreamStatus] = useState<QuoteStreamStatus | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
   const quotesQueryParams = useMemo(
@@ -93,6 +94,7 @@ export function MarketBoard() {
   const realtimeConnection = useQuoteHubConnection({
     marketBoardSubscription,
     onQuoteUpdate: handleRealtimeQuoteUpdate,
+    onTradeUpdate: setLatestTradeUpdate,
     onStreamStatus: setStreamStatus,
   });
   const handleGridReady = useCallback((event: GridReadyEvent<MarketBoardRow>) => {
@@ -146,6 +148,13 @@ export function MarketBoard() {
       (row) => row.symbol.includes(normalizedSearch) || row.displayName.toUpperCase().includes(normalizedSearch),
     );
   }, [deferredSymbolSearch, flashClassesByRow, quotes]);
+  const selectedLiveQuote = useMemo(() => {
+    if (selectedSymbol == null) {
+      return null;
+    }
+
+    return quotes.find((quote) => getRowId(quote) === `${selectedSymbol.boardId}:${selectedSymbol.symbol}`) ?? null;
+  }, [quotes, selectedSymbol]);
   const realtimeLabel = getRealtimeLabel(realtimeConnection.status);
   const realtimeToneClass = getRealtimeToneClass(realtimeConnection.status);
 
@@ -171,61 +180,88 @@ export function MarketBoard() {
         <label className="sr-only" htmlFor="symbol-search">
           Search symbol
         </label>
-        <input
-          className="h-8 w-56 border border-market-border bg-market-surface-2 px-3 text-xs font-medium text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
-          id="symbol-search"
-          onChange={(event) => setSymbolSearch(event.target.value)}
-          placeholder="Tìm mã CK"
-          type="search"
-          value={symbolSearch}
-        />
-        <label className="sr-only" htmlFor="user-market-list">
-          User market list
-        </label>
-        <select
-          className="h-8 border border-transparent bg-market-surface px-3 text-xs font-semibold text-market-text-muted outline-none hover:bg-market-surface-2 focus:border-focus-ring"
-          id="user-market-list"
-          value="watchlist"
-          onChange={() => undefined}
-        >
-          <option value="watchlist">Danh m&#7909;c c&#7911;a t&#244;i</option>
-        </select>
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-market-text-subtle">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <input
+            className="h-8 w-56 rounded border border-market-border bg-market-surface-2 pl-9 pr-3 text-[12px] font-medium text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
+            id="symbol-search"
+            onChange={(event) => setSymbolSearch(event.target.value)}
+            placeholder="Tìm kiếm CK"
+            type="search"
+            value={symbolSearch}
+          />
+        </div>
 
-        <label className="sr-only" htmlFor="index-market-list">
-          Index market list
-        </label>
-        <select
-          className="h-8 border border-transparent bg-market-surface px-3 text-xs font-semibold text-market-text outline-none hover:bg-market-surface-2 focus:border-focus-ring"
-          id="index-market-list"
-          value={selectedIndexCode}
-          onChange={(event) => {
-            const selectedMarketList = systemIndexLists.find((marketList) => marketList.code === event.target.value);
-            if (selectedMarketList) {
-              setSelectedIndexCode(selectedMarketList.code);
-              setActiveFilter({ kind: 'index', list: selectedMarketList });
-            }
-          }}
-        >
-          {systemIndexLists.map((marketList) => (
-            <option key={marketList.id} value={marketList.code}>
-              {marketList.label}
-            </option>
-          ))}
-        </select>
+        <div className="group relative z-[100]">
+          <button
+            className="flex h-8 items-center gap-1.5 border border-transparent px-3 text-[12px] font-medium text-[#c8c6d4] hover:bg-market-surface-2 hover:text-market-text"
+            type="button"
+          >
+            Danh mục của tôi
+            <svg className="shrink-0" width="9" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="group relative z-[100]">
+          <button
+            className={`flex h-8 items-center justify-between gap-1.5 border px-3 text-[12px] font-medium ${activeFilter.kind === 'index'
+              ? 'border-state-online border-x-0 border-b-0 border-t-2 text-market-text'
+              : 'border-transparent text-[#c8c6d4] hover:bg-market-surface-2'
+              }`}
+            type="button"
+          >
+            <span className="truncate">
+              {systemIndexLists.find((list) => list.code === selectedIndexCode)?.label || 'VN30'}
+            </span>
+            <svg className="shrink-0 text-[#c8c6d4]" width="9" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          <div className="absolute left-0 top-full hidden min-w-[280px] bg-[#312b40] shadow-xl group-hover:block">
+            <div className="columns-2 gap-0 py-2">
+              {systemIndexLists.map((marketList) => (
+                <button
+                  key={marketList.id}
+                  type="button"
+                  className={`block w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-[#555162] ${selectedIndexCode === marketList.code ? 'bg-[#555162] text-white' : 'text-[#c8c6d4]'
+                    }`}
+                  onClick={() => {
+                    setSelectedIndexCode(marketList.code);
+                    setActiveFilter({ kind: 'index', list: marketList });
+                  }}
+                >
+                  {marketList.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-1" aria-label="Exchange filters">
           {systemExchangeLists.map((marketList) => (
             <button
-              className={`h-8 border px-3 text-xs font-semibold ${
-                activeFilter.kind === 'exchange' && marketList.code === activeFilter.list.code
-                  ? 'border-state-online bg-market-surface-2 text-market-text'
-                  : 'border-transparent text-market-text-muted hover:bg-market-surface-2 hover:text-market-text'
-              }`}
+              className={`flex h-8 items-center justify-between gap-1.5 border px-3 text-[12px] font-medium ${activeFilter.kind === 'exchange' && marketList.code === activeFilter.list.code
+                ? 'border-state-online border-x-0 border-b-0 border-t-2 text-market-text'
+                : 'border-transparent text-[#c8c6d4] hover:bg-market-surface-2 hover:text-market-text'
+                }`}
               key={marketList.id}
               type="button"
               onClick={() => setActiveFilter({ kind: 'exchange', list: marketList })}
             >
-              {marketList.label}
+              <span className="truncate">{marketList.label}</span>
+              {marketList.code !== 'UPCOM' && (
+                <svg className="shrink-0 text-[#c8c6d4]" width="9" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
             </button>
           ))}
         </div>
@@ -275,7 +311,12 @@ export function MarketBoard() {
         </div>
       ) : null}
 
-      <SymbolDetailPanel selection={selectedSymbol} onClose={() => setSelectedSymbol(null)} />
+      <SymbolDetailPanel
+        liveQuote={selectedLiveQuote}
+        liveTrade={latestTradeUpdate}
+        selection={selectedSymbol}
+        onClose={() => setSelectedSymbol(null)}
+      />
 
       <div className="border-t border-market-border bg-market-surface px-3 py-2 text-[11px] text-market-text-muted">
         {streamStatus?.message ?? 'REST snapshot loaded; SignalR applies realtime quote updates.'}
@@ -292,9 +333,8 @@ function BoardState({ label, tone = 'muted' }: { label: string; tone?: 'muted' |
   return (
     <div
       aria-busy={label === 'Loading market board'}
-      className={`grid flex-1 place-items-center px-4 py-10 text-sm font-semibold ${
-        tone === 'error' ? 'text-state-error' : 'text-market-text-muted'
-      }`}
+      className={`grid flex-1 place-items-center px-4 py-10 text-sm font-semibold ${tone === 'error' ? 'text-state-error' : 'text-market-text-muted'
+        }`}
     >
       {label}
     </div>

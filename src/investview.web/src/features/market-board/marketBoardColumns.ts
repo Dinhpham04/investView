@@ -63,12 +63,13 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     lockPinned: true,
     sortable: true,
     comparator: symbolComparator,
-    cellClass: (params) => classForCell(params, 'symbolClass', 'market-cell--symbol'),
+    cellClass: staticClasses('market-cell--symbol'),
+    cellClassRules: priceClassRules('symbolClass'),
     tooltipField: 'displayName',
   },
-      priceColumn('Trần', 'ceilingPrice', 'ceilingPriceClass'),
-      priceColumn('Sàn', 'floorPrice', 'floorPriceClass'),
-      priceColumn('TC', 'referencePrice', 'referencePriceClass'),
+      priceColumn('Trần', 'ceilingPrice', 'ceilingPriceClass', undefined, true),
+      priceColumn('Sàn', 'floorPrice', 'floorPriceClass', undefined, true),
+      priceColumn('TC', 'referencePrice', 'referencePriceClass', undefined, true),
   {
     headerName: 'Bên mua',
     marryChildren: true,
@@ -85,10 +86,10 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     headerName: 'Khớp lệnh',
     marryChildren: true,
     children: [
-      priceColumn('Giá', 'lastPrice', 'lastPriceClass'),
-      quantityColumn('KL', 'lastQuantity', 'lastQuantityClass'),
-      changeColumn('+/-', 'change'),
-      percentColumn('+/- (%)', 'changePercent'),
+      priceColumn('Giá', 'lastPrice', 'lastPriceClass', undefined, true),
+      quantityColumn('KL', 'lastQuantity', 'lastQuantityClass', undefined, true),
+      changeColumn('+/-', 'change', true),
+      percentColumn('+/- (%)', 'changePercent', true),
     ],
   },
   {
@@ -103,9 +104,9 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
       quantityColumn('KL 3', 'ask3Quantity', 'ask3QuantityClass'),
     ],
   },
-  quantityColumn('Tổng KL', 'totalVolume', 104),
-  priceColumn('Cao', 'highPrice', 'highPriceClass'),
-  priceColumn('Thấp', 'lowPrice', 'lowPriceClass'),
+  quantityColumn('Tổng KL', 'totalVolume', 104, undefined, true),
+  priceColumn('Cao', 'highPrice', 'highPriceClass', undefined, true),
+  priceColumn('Thấp', 'lowPrice', 'lowPriceClass', undefined, true),
   {
     headerName: 'ĐTNN',
     marryChildren: true,
@@ -122,14 +123,18 @@ function priceColumn(
   field: keyof MarketBoardRow,
   classField: keyof MarketBoardRow,
   width = 76,
+  highlight = false
 ): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width,
     valueFormatter: priceValueFormatter,
-    cellClass: (params) => classForCell(params, classField),
-    cellClassRules: flashClassRules(field as MarketBoardFlashField),
+    cellClass: staticClasses(undefined, highlight),
+    cellClassRules: {
+      ...priceClassRules(classField),
+      ...flashClassRules(field as MarketBoardFlashField),
+    },
   };
 }
 
@@ -138,41 +143,48 @@ function quantityColumn(
   field: keyof MarketBoardRow,
   classFieldOrWidth?: keyof MarketBoardRow | number,
   width = 84,
+  highlight = false
 ): ColDef<MarketBoardRow> {
   const classField = typeof classFieldOrWidth === 'string' ? classFieldOrWidth : undefined;
   const columnWidth = typeof classFieldOrWidth === 'number' ? classFieldOrWidth : width;
-  const column: ColDef<MarketBoardRow> = {
+  return {
     headerName,
     field,
     width: columnWidth,
     valueFormatter: quantityValueFormatter,
+    cellClass: staticClasses(undefined, highlight),
+    cellClassRules: {
+      ...priceClassRules(classField),
+      ...flashClassRules(field as MarketBoardFlashField),
+    },
   };
-
-  column.cellClass = (params) => classForCell(params, classField);
-  column.cellClassRules = flashClassRules(field as MarketBoardFlashField);
-
-  return column;
 }
 
-function changeColumn(headerName: string, field: keyof MarketBoardRow): ColDef<MarketBoardRow> {
+function changeColumn(headerName: string, field: keyof MarketBoardRow, highlight = false): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width: 76,
     valueFormatter: (params) => formatChange(params.value as number | null | undefined, params.data?.referencePrice),
-    cellClass: (params) => classForCell(params, 'changeClass'),
-    cellClassRules: flashClassRules('change'),
+    cellClass: staticClasses(undefined, highlight),
+    cellClassRules: {
+      ...priceClassRules('changeClass'),
+      ...flashClassRules('change'),
+    },
   };
 }
 
-function percentColumn(headerName: string, field: keyof MarketBoardRow): ColDef<MarketBoardRow> {
+function percentColumn(headerName: string, field: keyof MarketBoardRow, highlight = false): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width: 88,
     valueFormatter: (params) => formatPercent(params.value as number | null | undefined),
-    cellClass: (params) => classForCell(params, 'changeClass'),
-    cellClassRules: flashClassRules('changePercent'),
+    cellClass: staticClasses(undefined, highlight),
+    cellClassRules: {
+      ...priceClassRules('changeClass'),
+      ...flashClassRules('changePercent'),
+    },
   };
 }
 
@@ -188,13 +200,26 @@ function quantityValueFormatter(params: ValueFormatterParams<MarketBoardRow>) {
   return formatQuantity(params.value as number | null | undefined);
 }
 
-function classForCell(
-  params: CellClassParams<MarketBoardRow>,
-  classField?: keyof MarketBoardRow,
-  extraClass?: string,
-) {
-  const priceClass = classField == null ? 'neutral' : (params.data?.[classField] as PriceClass | undefined);
-  return ['market-cell', extraClass ?? 'market-cell--number', priceClassNames[priceClass ?? 'neutral']];
+function staticClasses(extraClass?: string, highlight = false) {
+  return [
+    'market-cell',
+    extraClass ?? 'market-cell--number',
+    highlight ? 'ag-cell-bg-highlight' : ''
+  ];
+}
+
+function priceClassRules(classField?: keyof MarketBoardRow): CellClassRules<MarketBoardRow> {
+  if (!classField) {
+    return { [priceClassNames.neutral]: () => true };
+  }
+  return {
+    [priceClassNames.ceiling]: (params) => params.data?.[classField] === 'ceiling',
+    [priceClassNames.floor]: (params) => params.data?.[classField] === 'floor',
+    [priceClassNames.reference]: (params) => params.data?.[classField] === 'reference',
+    [priceClassNames.up]: (params) => params.data?.[classField] === 'up',
+    [priceClassNames.down]: (params) => params.data?.[classField] === 'down',
+    [priceClassNames.neutral]: (params) => params.data?.[classField] === 'neutral' || params.data?.[classField] == null,
+  };
 }
 
 function flashClassRules(flashField: MarketBoardFlashField): CellClassRules<MarketBoardRow> {

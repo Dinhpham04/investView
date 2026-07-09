@@ -67,6 +67,8 @@ export type MarketTrade = {
   side: string;
 };
 
+export type MarketTradeUpdate = MarketTrade;
+
 export type MarketQuoteUpdate = {
   symbol: string;
   boardId: string;

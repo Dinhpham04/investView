@@ -233,6 +233,11 @@ public sealed class MockQuoteStreamPublisherTests
             return Task.CompletedTask;
         }
 
+        public Task BroadcastTradeUpdateAsync(MarketTradeUpdateDto update, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task BroadcastStreamStatusAsync(QuoteStreamStatusDto status, CancellationToken cancellationToken)
         {
             Statuses.Add(status);

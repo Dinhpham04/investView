@@ -40,6 +40,7 @@ public sealed class DnseWebSocketMessageMapper
         {
             "sd" => MapSecurityDefinition(root),
             "t" => MapTrade(root),
+            "te" => MapTradeExtra(root),
             "q" => MapTopPrice(root),
             "f" => MapForeign(root),
             _ => new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown)
@@ -84,6 +85,32 @@ public sealed class DnseWebSocketMessageMapper
             highPrice: NormalizePrice(GetOptionalDecimal(root, "highestPrice")),
             lowPrice: NormalizePrice(GetOptionalDecimal(root, "lowestPrice")),
             tradingStatus: GetOptionalString(root, "tradingSessionId"));
+    }
+
+    private DnseWebSocketMessage MapTradeExtra(JsonElement root)
+    {
+        if (!TryGetString(root, "symbol", out var symbol))
+        {
+            return new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown);
+        }
+
+        var boardId = GetOptionalString(root, "boardId") ?? "G1";
+        var updatedAt = GetOptionalTimestamp(root, "time")
+            ?? GetOptionalTimestamp(root, "transactTime")
+            ?? _timeProvider.GetUtcNow();
+        var update = new MarketTradeUpdateDto(
+            Symbol: symbol.Trim().ToUpperInvariant(),
+            BoardId: boardId.Trim().ToUpperInvariant(),
+            Time: updatedAt,
+            Price: NormalizePrice(GetOptionalDecimal(root, "matchPrice")),
+            Change: null,
+            ChangePercent: null,
+            Quantity: ScaleQuantity(GetOptionalLong(root, "matchQtty")),
+            TotalVolume: ScaleQuantity(GetOptionalLong(root, "totalVolumeTraded")),
+            TotalValue: GetOptionalDecimal(root, "grossTradeAmount"),
+            Side: NormalizeTradeSide(GetOptionalString(root, "side")));
+
+        return new DnseWebSocketMessage(DnseWebSocketMessageKind.TradeUpdate, TradeUpdate: update);
     }
 
     private DnseWebSocketMessage MapTopPrice(JsonElement root)
@@ -288,5 +315,21 @@ public sealed class DnseWebSocketMessageMapper
         return property.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(property.GetString(), out var timestamp)
             ? timestamp
             : null;
+    }
+
+    private static string NormalizeTradeSide(string? side)
+    {
+        if (string.IsNullOrWhiteSpace(side))
+        {
+            return string.Empty;
+        }
+
+        var normalized = side.Trim().ToUpperInvariant();
+        return normalized switch
+        {
+            "BUY" or "B" or "1" => "B",
+            "SELL" or "S" or "2" => "S",
+            _ => normalized
+        };
     }
 }

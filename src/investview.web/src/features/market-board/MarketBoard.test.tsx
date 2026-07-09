@@ -2,9 +2,19 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MarketBoard } from './MarketBoard';
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
+import { formatChartPrice, formatCompactQuantity } from '../symbol-detail/symbolChartFormatters';
+import { aggregateOhlcBarsForTimeframe, chartTimeframes } from '../symbol-detail/useSymbolDetailQueries';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHubConnection';
-import type { MarketQuote, MarketQuoteUpdate, MarketTrade, OhlcBar, QuoteStreamStatus, SymbolDetail } from '../../shared/types/market';
+import type {
+  MarketQuote,
+  MarketQuoteUpdate,
+  MarketTrade,
+  MarketTradeUpdate,
+  OhlcBar,
+  QuoteStreamStatus,
+  SymbolDetail,
+} from '../../shared/types/market';
 
 const testRuntime = vi.hoisted(() => ({
   applyTransactionAsync: vi.fn(),
@@ -16,6 +26,7 @@ const testRuntime = vi.hoisted(() => ({
           symbols: string[];
         };
         onQuoteUpdate: (update: MarketQuoteUpdate) => void;
+        onTradeUpdate?: (update: MarketTradeUpdate) => void;
         onStreamStatus?: (status: QuoteStreamStatus) => void;
       }
     | undefined,
@@ -23,6 +34,8 @@ const testRuntime = vi.hoisted(() => ({
     status: 'connected' as QuoteHubConnectionStatus,
     lastError: null as string | null,
   },
+  setVisibleLogicalRange: vi.fn(),
+  visibleLogicalRangeHandler: undefined as ((range: { from: number; to: number } | null) => void) | undefined,
 }));
 
 vi.mock('../../shared/realtime/useQuoteHubConnection', () => ({
@@ -34,19 +47,43 @@ vi.mock('../../shared/realtime/useQuoteHubConnection', () => ({
 
 vi.mock('ag-grid-react', async () => {
   const React = await vi.importActual<typeof import('react')>('react');
+  type MockColumn = {
+    cellRenderer?: (params: { data: Record<string, unknown>; value: unknown }) => React.ReactNode;
+    children?: MockColumn[];
+    field?: string;
+    headerName?: string;
+    valueFormatter?: (params: { data: Record<string, unknown>; value: unknown }) => string;
+  };
+  const flattenColumns = (columns: MockColumn[]): MockColumn[] => columns.flatMap((column) => column.children ?? [column]);
+  const renderCellValue = (column: MockColumn, row: Record<string, unknown>) => {
+    const value = column.field == null ? undefined : row[column.field];
+    if (column.cellRenderer) {
+      return column.cellRenderer({ data: row, value });
+    }
+
+    if (column.valueFormatter) {
+      return column.valueFormatter({ data: row, value });
+    }
+
+    return value == null ? '' : String(value);
+  };
 
   return {
     AgGridReact: ({
       columnDefs,
+      getRowId,
       rowData,
       onGridReady,
       onRowClicked,
     }: {
-      columnDefs: { headerName?: string; children?: { headerName?: string }[] }[];
-      rowData: { symbol: string; lastPrice: number | null; totalVolume: number | null }[];
+      columnDefs: MockColumn[];
+      getRowId?: (params: { data: Record<string, unknown> }) => string;
+      rowData: Record<string, unknown>[];
       onGridReady?: (event: { api: { applyTransactionAsync: typeof testRuntime.applyTransactionAsync } }) => void;
-      onRowClicked?: (event: { data: { symbol: string; boardId?: string } }) => void;
+      onRowClicked?: (event: { data: Record<string, unknown> }) => void;
     }) => {
+      const leafColumns = flattenColumns(columnDefs);
+
       React.useEffect(() => {
         onGridReady?.({ api: { applyTransactionAsync: testRuntime.applyTransactionAsync } });
         testRuntime.gridReady = true;
@@ -61,10 +98,10 @@ vi.mock('ag-grid-react', async () => {
             ])}
           </div>
           {rowData.map((row) => (
-            <div key={row.symbol} role="row" onClick={() => onRowClicked?.({ data: row })}>
-              <span>{row.symbol}</span>
-              <span>{row.lastPrice}</span>
-              <span>{row.totalVolume}</span>
+            <div key={getRowId?.({ data: row }) ?? String(row.symbol ?? row.id)} role="row" onClick={() => onRowClicked?.({ data: row })}>
+              {leafColumns.map((column, index) => (
+                <span key={`${column.field ?? column.headerName}-${index}`}>{renderCellValue(column, row)}</span>
+              ))}
             </div>
           ))}
         </div>
@@ -72,6 +109,32 @@ vi.mock('ag-grid-react', async () => {
     },
   };
 });
+
+vi.mock('lightweight-charts', () => ({
+  CandlestickSeries: 'CandlestickSeries',
+  ColorType: {
+    Solid: 'solid',
+  },
+  HistogramSeries: 'HistogramSeries',
+  createChart: vi.fn(() => ({
+    addSeries: vi.fn(() => ({
+      priceScale: vi.fn(() => ({
+        applyOptions: vi.fn(),
+      })),
+      setData: vi.fn(),
+    })),
+    remove: vi.fn(),
+    timeScale: vi.fn(() => ({
+      fitContent: vi.fn(),
+      getVisibleLogicalRange: vi.fn(() => ({ from: 12, to: 24 })),
+      setVisibleLogicalRange: testRuntime.setVisibleLogicalRange,
+      subscribeVisibleLogicalRangeChange: vi.fn((handler: (range: { from: number; to: number } | null) => void) => {
+        testRuntime.visibleLogicalRangeHandler = handler;
+      }),
+      unsubscribeVisibleLogicalRangeChange: vi.fn(),
+    })),
+  })),
+}));
 
 const quote: MarketQuote = {
   symbol: 'HPG',
@@ -168,6 +231,8 @@ describe('MarketBoard', () => {
     testRuntime.realtimeOptions = undefined;
     testRuntime.realtimeState.status = 'connected';
     testRuntime.realtimeState.lastError = null;
+    testRuntime.setVisibleLogicalRange.mockClear();
+    testRuntime.visibleLogicalRangeHandler = undefined;
   });
 
   it('renders loading and then the REST snapshot board', async () => {
@@ -340,13 +405,231 @@ describe('MarketBoard', () => {
     fireEvent.click(row);
 
     expect(await screen.findByTestId('symbol-detail-panel')).toBeInTheDocument();
-    expect(await screen.findByText('Symbol detail')).toBeInTheDocument();
-    expect(await screen.findByText('Latest trades')).toBeInTheDocument();
-    expect(await screen.findByText('Intraday chart')).toBeInTheDocument();
-    expect(await screen.findByText('VN000000HPG4')).toBeInTheDocument();
+    expect(await screen.findByText('Giao dịch')).toBeInTheDocument();
+    expect(await screen.findByText('Độ sâu thị trường')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByText('Khớp lệnh').length).toBeGreaterThan(1));
+    expect(await screen.findByText('Phân tích cơ bản')).toBeInTheDocument();
+    expect(await screen.findByText('Đặt lệnh')).toBeInTheDocument();
+    expect(await screen.findByTestId('symbol-price-chart')).toBeInTheDocument();
+    const panel = await screen.findByTestId('symbol-detail-panel');
+    await waitFor(() => expect(within(panel).getByText('14:45:00')).toBeInTheDocument());
+    expect(within(panel).getByText('18,000')).toBeInTheDocument();
+    expect(within(panel).getAllByText('+0.70').length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText('+2.55%').length).toBeGreaterThan(0);
     expect(fetch).toHaveBeenCalledWith('/api/market/symbols/HPG?boardId=G1', expect.any(Object));
-    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=1&from=/), expect.any(Object));
+    expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=1D&from=/), expect.any(Object));
     expect(fetch).toHaveBeenCalledWith('/api/market/symbols/HPG/trades/latest?boardId=G1&limit=30', expect.any(Object));
+
+    fireEvent.click(screen.getByRole('button', { name: '30m' }));
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=30&from=/), expect.any(Object)),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: '4H' }));
+
+    await waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=1H&from=/), expect.any(Object)),
+    );
+    expect(fetch).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/market\/symbols\/HPG\/ohlc\?resolution=4H&from=/), expect.any(Object));
+  });
+
+  it('updates the symbol detail panel from realtime quote updates', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/market/symbols/HPG/trades/latest')) {
+        return Promise.resolve(jsonResponse(latestTrades));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG/ohlc')) {
+        return Promise.resolve(jsonResponse(ohlcBars));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG?')) {
+        return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      return Promise.resolve(jsonResponse([quote]));
+    }));
+
+    renderWithQueryClient(<MarketBoard />);
+
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+    const panel = await screen.findByTestId('symbol-detail-panel');
+    await waitFor(() => expect(within(panel).getAllByText('28.10').length).toBeGreaterThan(0));
+
+    const realtimeUpdate: MarketQuoteUpdate = {
+      symbol: 'HPG',
+      boardId: 'G1',
+      lastPrice: 28.35,
+      change: 0.95,
+      changePercent: 3.47,
+      lastQuantity: 20_000,
+      totalVolume: 12_365_678,
+      totalValue: 348_000_000_000,
+      foreignBuyVolume: 800_100,
+      foreignSellVolume: 1_230_649,
+      foreignRoom: 1_742_488_798,
+      bidLevels: [{ price: 28.2, quantity: 55_000 }],
+      askLevels: [{ price: 28.4, quantity: 29_000 }],
+      tradingStatus: 'Continuous',
+      updatedAt: '2026-07-03T07:45:03Z',
+    };
+
+    act(() => {
+      testRuntime.realtimeOptions?.onQuoteUpdate(realtimeUpdate);
+    });
+
+    await waitFor(() => expect(within(panel).getAllByText('28.35').length).toBeGreaterThan(0));
+    expect(within(panel).getAllByText('55,000').length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText('28.20').length).toBeGreaterThan(0);
+    expect(within(panel).getByText('C28.35')).toBeInTheDocument();
+
+    const realtimeTradeUpdate: MarketTradeUpdate = {
+      symbol: 'HPG',
+      boardId: 'G1',
+      time: '2026-07-03T07:45:04Z',
+      price: 28_350,
+      change: null,
+      changePercent: null,
+      quantity: 20_000,
+      totalVolume: 12_365_678,
+      totalValue: 348_000_000_000,
+      side: 'S',
+    };
+
+    act(() => {
+      testRuntime.realtimeOptions?.onTradeUpdate?.(realtimeTradeUpdate);
+    });
+
+    await waitFor(() => expect(within(panel).getAllByText('20,000').length).toBeGreaterThan(0));
+    expect(within(panel).getByText('S')).toBeInTheDocument();
+    expect(within(panel).getAllByText('+0.95').length).toBeGreaterThan(0);
+    expect(within(panel).getAllByText('+3.47%').length).toBeGreaterThan(0);
+  });
+
+  it('loads older OHLC bars when the chart is panned near the oldest loaded bar', async () => {
+    const olderBars: OhlcBar[] = [
+      {
+        close: 26.9,
+        high: 27.1,
+        low: 26.5,
+        open: 26.7,
+        resolution: '1',
+        symbol: 'HPG',
+        time: '2026-07-02T07:44:00Z',
+        volume: 90_000,
+      },
+    ];
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.startsWith('/api/market/symbols/HPG/trades/latest')) {
+        return Promise.resolve(jsonResponse(latestTrades));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG/ohlc')) {
+        const requestUrl = new URL(url, 'http://localhost');
+        const requestedTo = requestUrl.searchParams.get('to');
+        const oldestInitialBarTime = new Date(ohlcBars[0].time).getTime();
+        if (requestedTo != null && new Date(requestedTo).getTime() < oldestInitialBarTime) {
+          return Promise.resolve(jsonResponse(olderBars));
+        }
+
+        return Promise.resolve(jsonResponse(ohlcBars));
+      }
+
+      if (url.startsWith('/api/market/symbols/HPG?')) {
+        return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      return Promise.resolve(jsonResponse([quote]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<MarketBoard />);
+
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+    expect(await screen.findByTestId('symbol-price-chart')).toBeInTheDocument();
+
+    await waitFor(() => expect(testRuntime.visibleLogicalRangeHandler).toBeDefined());
+    act(() => {
+      testRuntime.visibleLogicalRangeHandler?.({ from: 8, to: 24 });
+    });
+
+    await waitFor(() => {
+      const ohlcCalls = fetchMock.mock.calls
+        .map(([input]) => input.toString())
+        .filter((url) => url.startsWith('/api/market/symbols/HPG/ohlc'));
+      expect(ohlcCalls.length).toBeGreaterThan(1);
+      const previousPageUrl = new URL(ohlcCalls[1], 'http://localhost');
+      expect(new Date(previousPageUrl.searchParams.get('to') ?? '').getTime()).toBeLessThan(new Date(ohlcBars[0].time).getTime());
+    });
+  });
+
+  it('aggregates hourly OHLC bars for the 4H chart timeframe', () => {
+    const fourHourTimeframe = chartTimeframes.find((timeframe) => timeframe.id === '4h');
+
+    expect(fourHourTimeframe).toBeDefined();
+    const result = aggregateOhlcBarsForTimeframe([
+      {
+        close: 10.5,
+        high: 11,
+        low: 9.8,
+        open: 10,
+        resolution: '1H',
+        symbol: 'SSI',
+        time: '2026-07-08T00:00:00Z',
+        volume: 100,
+      },
+      {
+        close: 11.5,
+        high: 12,
+        low: 10.3,
+        open: 10.5,
+        resolution: '1H',
+        symbol: 'SSI',
+        time: '2026-07-08T01:00:00Z',
+        volume: 200,
+      },
+      {
+        close: 12.5,
+        high: 13,
+        low: 11.2,
+        open: 11.5,
+        resolution: '1H',
+        symbol: 'SSI',
+        time: '2026-07-08T04:00:00Z',
+        volume: 300,
+      },
+    ], fourHourTimeframe!);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      close: 11.5,
+      high: 12,
+      low: 9.8,
+      open: 10,
+      resolution: '4H',
+      volume: 300,
+    });
+    expect(result[1]).toMatchObject({
+      close: 12.5,
+      high: 13,
+      low: 11.2,
+      open: 11.5,
+      resolution: '4H',
+      volume: 300,
+    });
+  });
+
+  it('formats symbol chart prices and volumes like the trading board', () => {
+    expect(formatChartPrice(35_000)).toBe('35.00');
+    expect(formatChartPrice(35.5)).toBe('35.50');
+    expect(formatCompactQuantity(3_345_000)).toBe('3.345M');
+    expect(formatCompactQuantity(800_123)).toBe('800.123K');
+    expect(formatCompactQuantity(900)).toBe('900');
   });
 
   it('keeps the symbol pin column before the stock code column', () => {

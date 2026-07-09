@@ -18,6 +18,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
     [
         MarketDataChannel.SecurityDefinition,
         MarketDataChannel.Trade,
+        MarketDataChannel.TradeExtra,
         MarketDataChannel.TopPrice,
         MarketDataChannel.Foreign
     ];
@@ -300,6 +301,9 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             case DnseWebSocketMessageKind.QuoteUpdate when message.QuoteUpdate is not null:
                 var update = _updateAggregator.Apply(message.QuoteUpdate);
                 await _broadcaster.BroadcastQuoteUpdateAsync(update, cancellationToken);
+                break;
+            case DnseWebSocketMessageKind.TradeUpdate when message.TradeUpdate is not null:
+                await _broadcaster.BroadcastTradeUpdateAsync(message.TradeUpdate, cancellationToken);
                 break;
             case DnseWebSocketMessageKind.Error:
                 _logger.LogWarning("DNSE websocket error message: {Message}", message.ErrorMessage);

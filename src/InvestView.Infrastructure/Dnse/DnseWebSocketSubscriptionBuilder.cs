@@ -34,6 +34,7 @@ public static class DnseWebSocketSubscriptionBuilder
         {
             MarketDataChannel.SecurityDefinition => $"security_definition.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.Trade => $"tick.{normalizedBoardId}.{normalizedEncoding}",
+            MarketDataChannel.TradeExtra => $"tick_extra.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.TopPrice => $"top_price.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.Foreign => $"foreign.{normalizedBoardId}.{normalizedEncoding}",
             MarketDataChannel.Session => $"session.{NormalizeToken(productGroupId, "STO")}.{normalizedBoardId}.{normalizedEncoding}",

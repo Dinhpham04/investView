@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createQuoteHubConnection, quoteHubPath } from './quoteHubClient';
-import type { MarketQuoteUpdate, QuoteStreamStatus } from '../types/market';
+import type { MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../types/market';
 
 export type QuoteHubConnectionStatus = 'idle' | 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
 
@@ -9,6 +9,7 @@ export type UseQuoteHubConnectionOptions = {
   hubUrl?: string;
   marketBoardSubscription?: MarketBoardSubscription | null;
   onQuoteUpdate: (update: MarketQuoteUpdate) => void;
+  onTradeUpdate?: (update: MarketTradeUpdate) => void;
   onStreamStatus?: (status: QuoteStreamStatus) => void;
 };
 
@@ -27,9 +28,11 @@ export function useQuoteHubConnection({
   hubUrl = quoteHubPath,
   marketBoardSubscription = null,
   onQuoteUpdate,
+  onTradeUpdate,
   onStreamStatus,
 }: UseQuoteHubConnectionOptions): QuoteHubConnectionState {
   const quoteUpdateRef = useRef(onQuoteUpdate);
+  const tradeUpdateRef = useRef(onTradeUpdate);
   const streamStatusRef = useRef(onStreamStatus);
   const connectionRef = useRef<ReturnType<typeof createQuoteHubConnection> | null>(null);
   const marketBoardSubscriptionRef = useRef(marketBoardSubscription);
@@ -41,6 +44,10 @@ export function useQuoteHubConnection({
   useEffect(() => {
     quoteUpdateRef.current = onQuoteUpdate;
   }, [onQuoteUpdate]);
+
+  useEffect(() => {
+    tradeUpdateRef.current = onTradeUpdate;
+  }, [onTradeUpdate]);
 
   useEffect(() => {
     streamStatusRef.current = onStreamStatus;
@@ -63,6 +70,10 @@ export function useQuoteHubConnection({
 
     connection.on('ReceiveQuoteUpdate', (update: MarketQuoteUpdate) => {
       quoteUpdateRef.current(update);
+    });
+
+    connection.on('ReceiveTradeUpdate', (update: MarketTradeUpdate) => {
+      tradeUpdateRef.current?.(update);
     });
 
     connection.on('ReceiveStreamStatus', (status: QuoteStreamStatus) => {
@@ -120,6 +131,7 @@ export function useQuoteHubConnection({
       disposed = true;
       window.clearTimeout(startTimer);
       connection.off('ReceiveQuoteUpdate');
+      connection.off('ReceiveTradeUpdate');
       connection.off('ReceiveStreamStatus');
       if (connectionRef.current === connection) {
         connectionRef.current = null;

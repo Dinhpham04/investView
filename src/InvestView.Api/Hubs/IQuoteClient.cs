@@ -7,5 +7,7 @@ public interface IQuoteClient
 {
     Task ReceiveQuoteUpdate(MarketQuoteUpdateDto update);
 
+    Task ReceiveTradeUpdate(MarketTradeUpdateDto update);
+
     Task ReceiveStreamStatus(QuoteStreamStatusDto status);
 }

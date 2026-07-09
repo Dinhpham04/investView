@@ -5,6 +5,7 @@ namespace InvestView.Infrastructure.Dnse;
 public sealed record DnseWebSocketMessage(
     DnseWebSocketMessageKind Kind,
     MarketQuoteUpdateDto? QuoteUpdate = null,
+    MarketTradeUpdateDto? TradeUpdate = null,
     string? ErrorMessage = null,
     string? Action = null);
 
@@ -16,5 +17,6 @@ public enum DnseWebSocketMessageKind
     AuthSuccess,
     Subscribed,
     Error,
-    QuoteUpdate
+    QuoteUpdate,
+    TradeUpdate
 }
