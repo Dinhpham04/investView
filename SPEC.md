@@ -4,7 +4,7 @@
 
 Accepted working spec.
 
-Last updated: 2026-07-08.
+Last updated: 2026-07-10.
 
 ## Source References
 
@@ -413,6 +413,10 @@ MVP WebSocket choices:
   - `top_price.G1.json` for best bid/ask.
   - `security_definition.G1.json` where daily reference/ceiling/floor status is needed.
   - `foreign.G1.json` for foreign buy volume, foreign sell volume, and remaining foreign room.
+  - `expected_price.G1.json` for auction expected price and expected quantity.
+  - `ohlc.{resolution}.json` and `ohlc_closed.{resolution}.json` for realtime and closed OHLC bars.
+  - `market_index.{indexName}.json` and `estimated_market_index.{indexName}.json` for actual and estimated index updates.
+  - `session.{productGroupId}.G1.json` for board/session state.
 - Backend manages active quote subscriptions from app clients. React sends the currently opened market-board symbols through SignalR after each snapshot/filter change; the backend deduplicates those symbols by board and subscribes DNSE once per active symbol instead of relying on a fixed configured symbol list.
 - SignalR quote updates are fanned out by backend-owned symbol groups such as `quote:{boardId}:{symbol}` so clients receive only symbols they currently display.
 - The backend DNSE WebSocket worker must be schedule-gated. It should connect only when realtime streaming is enabled, credentials are present, at least one app client has active market-board symbols, and the configured local streaming window is open. The default schedule is `Asia/Ho_Chi_Minh`, Monday-Friday, `07:50-15:30`, with REST snapshot/cache used outside that window.
@@ -427,9 +431,9 @@ MVP WebSocket choices:
 The backend converts DNSE-specific payloads into InvestView DTOs before sending them to the frontend.
 The first implemented DNSE WebSocket source is `DnseWebSocketQuoteStreamService`, selected with `MarketData:QuoteStream:SourceProvider = "DnseWebSocket"`. Mock realtime remains the safe default. `MarketData:QuoteStream:Symbols` is only a bootstrap/fallback list; active market-board subscriptions should come from SignalR clients.
 
-Known DNSE mapping details from the local SDK:
+Known DNSE mapping details from the local SDK and DNSE market-data guide:
 
-- WebSocket message types include `t` for trade, `te` for trade extra, `sd` for security definition, `q` for top price, `b` for OHLC, `bc` for closed OHLC, and `s` for trading session.
+- WebSocket message types include `t` for trade, `te` for trade extra, `sd` for security definition, `q` for top price, `f` for foreign trading, `e` for expected auction price, `mi` for market index, `emi` for estimated market index, `b` for OHLC, `bc` for closed OHLC, and `s` for trading session.
 - REST quote price levels use `quantity`; WebSocket quote models use `qtty`. Internal DTOs must normalize both to one field name.
 - DNSE timestamps may arrive as ISO strings, Unix timestamps, or protobuf-style objects with seconds/nanos. Internal DTOs should use a single timestamp type.
 - `G1` is the first MVP board scope for normal stock market-board data unless a later spec update expands the market scope.
@@ -483,14 +487,21 @@ Redis data is organized by canonical market-data subject, not by UI screen:
 {prefix}:{env}:md:{version}:ohlc:{symbol}:{resolution}        # ZSET, stock OHLC bars by timestamp
 {prefix}:{env}:md:{version}:index:{indexName}:state           # HASH, latest index aggregate
 {prefix}:{env}:md:{version}:index:{indexName}:ohlc:{resolution} # ZSET, index OHLC bars by timestamp
+{prefix}:{env}:md:{version}:session:{productGroupId:boardId}:state # HASH, latest board/session state
 {prefix}:{env}:md:{version}:board:{boardId}:symbols           # SET, board membership
 {prefix}:{env}:md:{version}:market:{marketId}:symbols         # SET, market membership
 {prefix}:{env}:md:{version}:category:{indexName}:symbols      # SET, category/index membership
 ```
 
-Quote state is a Redis Hash with a canonical `payload` field plus materialized scalar fields such as `lastPrice`, `referencePrice`, `totalVolume`, `foreignRoom`, and group timestamps (`priceUpdatedAt`, `depthUpdatedAt`, `foreignUpdatedAt`, `statusUpdatedAt`). The hash shape keeps the app DTO stable while still allowing operational inspection and future field-level update optimization.
+Quote state is a Redis Hash with a canonical `payload` field plus materialized scalar fields such as `lastPrice`, `referencePrice`, `totalVolume`, `foreignRoom`, `expectedPrice`, `expectedQuantity`, and group timestamps (`priceUpdatedAt`, `depthUpdatedAt`, `foreignUpdatedAt`, `expectedUpdatedAt`, `statusUpdatedAt`). The hash shape keeps the app DTO stable while still allowing operational inspection and future field-level update optimization.
+
+Market index state stores both actual index fields and estimated auction/index fields in the same canonical index subject. Estimated updates enrich `estimatedValue`, `estimatedChange`, `estimatedChangePercent`, `estimatedTotalVolume`, and `estimatedTotalValue` without overwriting the latest actual index value.
 
 OHLC data uses sorted sets and a range coverage key. A chart request is served from Redis only when the requested range has been backfilled before; otherwise DNSE REST backfills Redis and the local mirror before returning.
+
+Realtime OHLC messages upsert the relevant sorted set immediately. They do not mark an arbitrary historical range as fully covered; range coverage is still created by REST backfill so chart APIs do not accidentally treat a partial realtime timeline as a complete historical cache hit.
+
+Symbol detail screens must build their initial price/depth/foreign snapshot from the same quote state used by the market board when Redis/local state already has a usable quote. REST detail backfill is reserved for missing symbol/security metadata or for symbols that have neither cached detail nor quote state; it must not call DNSE just to re-fetch prices already present in `quote:{boardId:symbol}:state`. Metadata-only backfill uses instrument/security definition sources such as `/instruments` and `/price/{symbol}/secdef`; it must not call `/trades/latest`, `/quotes/latest`, or `/foreign-trading` when quote state is already available. OHLC and latest-trade history remain separate cacheable subjects with their own Redis-first, REST-backfill behavior.
 
 Rules:
 

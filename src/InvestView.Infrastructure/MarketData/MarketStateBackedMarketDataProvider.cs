@@ -10,17 +10,20 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
     private readonly IMarketStateMirror _localMirror;
     private readonly IMarketStateStore _sharedStateStore;
     private readonly ILogger<MarketStateBackedMarketDataProvider> _logger;
+    private readonly ISymbolMetadataProvider? _metadataProvider;
 
     public MarketStateBackedMarketDataProvider(
         IMarketDataProvider fallbackProvider,
         IMarketStateMirror localMirror,
         IMarketStateStore sharedStateStore,
-        ILogger<MarketStateBackedMarketDataProvider> logger)
+        ILogger<MarketStateBackedMarketDataProvider> logger,
+        ISymbolMetadataProvider? metadataProvider = null)
     {
         _fallbackProvider = fallbackProvider;
         _localMirror = localMirror;
         _sharedStateStore = sharedStateStore;
         _logger = logger;
+        _metadataProvider = metadataProvider;
     }
 
     public async Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
@@ -87,17 +90,37 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
         var normalizedBoardId = NormalizeToken(boardId, MockMarketDataProvider.DefaultBoardId);
 
         var localDetail = await _localMirror.GetSymbolDetailAsync(normalizedSymbol, normalizedBoardId, cancellationToken);
-        if (localDetail is not null)
-        {
-            return localDetail;
-        }
-
         var sharedDetail = await _sharedStateStore.GetSymbolDetailAsync(normalizedSymbol, normalizedBoardId, cancellationToken);
-        if (sharedDetail is not null)
+        if (localDetail is null && sharedDetail is not null)
         {
             await _localMirror.UpsertSymbolDetailAsync(sharedDetail, cancellationToken);
-            await _localMirror.UpsertQuotesAsync([CreateQuoteFromDetail(sharedDetail)], cancellationToken);
-            return sharedDetail;
+            if (IsUsableDetail(sharedDetail))
+            {
+                await _localMirror.UpsertQuotesAsync([CreateQuoteFromDetail(sharedDetail)], cancellationToken);
+            }
+        }
+
+        var metadataDetail = localDetail ?? sharedDetail;
+        var localQuotes = await _localMirror.GetQuotesAsync(normalizedBoardId, [normalizedSymbol], cancellationToken);
+        var localQuote = localQuotes.FirstOrDefault(IsUsableQuote);
+        if (localQuote is not null)
+        {
+            metadataDetail ??= await BackfillSymbolMetadataAsync(localQuote, cancellationToken);
+            return CreateDetailFromQuote(localQuote, metadataDetail);
+        }
+
+        var sharedQuotes = await _sharedStateStore.GetQuotesAsync(normalizedBoardId, [normalizedSymbol], cancellationToken);
+        var sharedQuote = sharedQuotes.FirstOrDefault(IsUsableQuote);
+        if (sharedQuote is not null)
+        {
+            await _localMirror.UpsertQuotesAsync([sharedQuote], cancellationToken);
+            metadataDetail ??= await BackfillSymbolMetadataAsync(sharedQuote, cancellationToken);
+            return CreateDetailFromQuote(sharedQuote, metadataDetail);
+        }
+
+        if (metadataDetail is not null && IsUsableDetail(metadataDetail))
+        {
+            return metadataDetail;
         }
 
         var fallbackDetail = await _fallbackProvider.GetSymbolDetailAsync(normalizedSymbol, normalizedBoardId, cancellationToken);
@@ -349,6 +372,108 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
             detail.UpdatedAt);
     }
 
+    private async Task<SymbolDetailDto?> BackfillSymbolMetadataAsync(
+        MarketQuoteDto quote,
+        CancellationToken cancellationToken)
+    {
+        if (_metadataProvider is null)
+        {
+            return null;
+        }
+
+        var metadata = await _metadataProvider.GetSymbolMetadataAsync(
+            quote.Symbol,
+            quote.BoardId,
+            cancellationToken);
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        var metadataDetail = CreateDetailFromMetadata(metadata, quote);
+        await _sharedStateStore.UpsertSymbolDetailAsync(metadataDetail, cancellationToken);
+        await _localMirror.UpsertSymbolDetailAsync(metadataDetail, cancellationToken);
+        return metadataDetail;
+    }
+
+    private static SymbolDetailDto CreateDetailFromMetadata(SymbolMetadataDto metadata, MarketQuoteDto quote)
+    {
+        return new SymbolDetailDto(
+            metadata.Symbol,
+            metadata.BoardId,
+            metadata.MarketId,
+            metadata.DisplayName,
+            metadata.Name,
+            metadata.SecurityType,
+            metadata.Isin,
+            metadata.ProductGroupId,
+            metadata.SecurityGroupId,
+            quote.ReferencePrice,
+            quote.CeilingPrice,
+            quote.FloorPrice,
+            quote.LastPrice,
+            quote.Change,
+            quote.ChangePercent,
+            quote.LastQuantity,
+            quote.TotalVolume,
+            quote.TotalValue,
+            quote.ForeignBuyVolume,
+            quote.ForeignSellVolume,
+            quote.ForeignRoom,
+            quote.OpenPrice,
+            quote.HighPrice,
+            quote.LowPrice,
+            quote.BidLevels,
+            quote.AskLevels,
+            string.IsNullOrWhiteSpace(quote.TradingStatus) ? metadata.TradingStatus : quote.TradingStatus,
+            metadata.SymbolAdminStatus,
+            metadata.TradingMethodStatus,
+            metadata.TradingSanctionStatus,
+            metadata.ListingDate,
+            metadata.FinalTradeDate,
+            metadata.OpenInterestQuantity,
+            MaxUpdatedAt(quote.UpdatedAt, metadata.UpdatedAt));
+    }
+
+    private static SymbolDetailDto CreateDetailFromQuote(MarketQuoteDto quote, SymbolDetailDto? metadata = null)
+    {
+        return new SymbolDetailDto(
+            quote.Symbol,
+            quote.BoardId,
+            FirstNonEmpty(metadata?.MarketId, quote.MarketId),
+            FirstNonEmpty(metadata?.DisplayName, quote.DisplayName),
+            FirstNonEmpty(metadata?.Name, quote.DisplayName),
+            FirstNonEmpty(metadata?.SecurityType, string.Empty),
+            FirstNonEmpty(metadata?.Isin, string.Empty),
+            FirstNonEmpty(metadata?.ProductGroupId, string.Empty),
+            FirstNonEmpty(metadata?.SecurityGroupId, string.Empty),
+            quote.ReferencePrice,
+            quote.CeilingPrice,
+            quote.FloorPrice,
+            quote.LastPrice,
+            quote.Change,
+            quote.ChangePercent,
+            quote.LastQuantity,
+            quote.TotalVolume,
+            quote.TotalValue,
+            quote.ForeignBuyVolume,
+            quote.ForeignSellVolume,
+            quote.ForeignRoom,
+            quote.OpenPrice,
+            quote.HighPrice,
+            quote.LowPrice,
+            quote.BidLevels,
+            quote.AskLevels,
+            FirstNonEmpty(quote.TradingStatus, metadata?.TradingStatus ?? string.Empty),
+            FirstNonEmpty(metadata?.SymbolAdminStatus, string.Empty),
+            FirstNonEmpty(metadata?.TradingMethodStatus, string.Empty),
+            FirstNonEmpty(metadata?.TradingSanctionStatus, string.Empty),
+            metadata?.ListingDate,
+            metadata?.FinalTradeDate,
+            metadata?.OpenInterestQuantity ?? 0,
+            metadata is null ? quote.UpdatedAt : MaxUpdatedAt(quote.UpdatedAt, metadata.UpdatedAt));
+    }
+
     private async Task<IReadOnlyCollection<string>> ResolveRequestedSymbolsAsync(
         MarketBoardQuery query,
         CancellationToken cancellationToken)
@@ -398,6 +523,21 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
     private static bool IsUsableQuote(MarketQuoteDto quote)
     {
         return quote.ReferencePrice > 0m && quote.CeilingPrice > 0m && quote.FloorPrice > 0m;
+    }
+
+    private static bool IsUsableDetail(SymbolDetailDto detail)
+    {
+        return detail.ReferencePrice > 0m && detail.CeilingPrice > 0m && detail.FloorPrice > 0m;
+    }
+
+    private static string FirstNonEmpty(string? primary, string fallback)
+    {
+        return string.IsNullOrWhiteSpace(primary) ? fallback : primary;
+    }
+
+    private static DateTimeOffset MaxUpdatedAt(DateTimeOffset left, DateTimeOffset right)
+    {
+        return left >= right ? left : right;
     }
 
     private static bool HasAllIndices(IReadOnlyCollection<MarketIndexDto> indices, IReadOnlyCollection<string> indexNames)

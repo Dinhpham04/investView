@@ -85,11 +85,15 @@ public static class DependencyInjection
         services.AddHostedService<MockQuoteStreamService>();
         services.AddHostedService<DnseWebSocketQuoteStreamService>();
         services.AddSingleton<IMarketDataProvider>(serviceProvider =>
-            new MarketStateBackedMarketDataProvider(
-                ResolveInnerMarketDataProvider(serviceProvider),
+        {
+            var innerProvider = ResolveInnerMarketDataProvider(serviceProvider);
+            return new MarketStateBackedMarketDataProvider(
+                innerProvider,
                 serviceProvider.GetRequiredService<IMarketStateMirror>(),
                 serviceProvider.GetRequiredService<IMarketStateStore>(),
-                serviceProvider.GetRequiredService<ILogger<MarketStateBackedMarketDataProvider>>()));
+                serviceProvider.GetRequiredService<ILogger<MarketStateBackedMarketDataProvider>>(),
+                innerProvider as ISymbolMetadataProvider);
+        });
 
         return services;
     }

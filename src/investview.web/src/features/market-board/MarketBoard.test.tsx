@@ -302,7 +302,7 @@ describe('MarketBoard', () => {
     expect(screen.getByText('Realtime on')).toBeInTheDocument();
     expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0);
     expect(screen.getAllByText('VN30').length).toBeGreaterThan(0);
-    expect(screen.getByText('KLGD (Triệu)')).toBeInTheDocument();
+    expect(screen.getByText('KLGD (Tr)')).toBeInTheDocument();
     expect(screen.getByText('Bên mua')).toBeInTheDocument();
     expect(screen.getByText('Khớp lệnh')).toBeInTheDocument();
     expect(screen.getByText('Bên bán')).toBeInTheDocument();

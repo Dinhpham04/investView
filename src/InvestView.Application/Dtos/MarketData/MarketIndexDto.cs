@@ -17,4 +17,10 @@ public sealed record MarketIndexDto(
     int? FloorCount,
     string MarketId,
     string TradingSessionId,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    decimal? EstimatedValue = null,
+    decimal? EstimatedChange = null,
+    decimal? EstimatedChangePercent = null,
+    long? EstimatedTotalVolume = null,
+    decimal? EstimatedTotalValue = null,
+    DateTimeOffset? EstimatedUpdatedAt = null);

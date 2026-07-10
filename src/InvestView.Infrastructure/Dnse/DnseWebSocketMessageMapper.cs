@@ -42,8 +42,13 @@ public sealed class DnseWebSocketMessageMapper
             "t" => MapTrade(root),
             "te" => MapTradeExtra(root),
             "q" => MapTopPrice(root),
+            "b" => MapOhlc(root, isClosed: false),
+            "bc" => MapOhlc(root, isClosed: true),
+            "e" => MapExpectedPrice(root),
             "f" => MapForeign(root),
             "mi" => MapMarketIndex(root),
+            "emi" => MapEstimatedMarketIndex(root),
+            "s" => MapSession(root),
             _ => new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown)
         };
     }
@@ -122,6 +127,40 @@ public sealed class DnseWebSocketMessageMapper
             askLevels: ReadPriceLevels(root, "offer"));
     }
 
+    private DnseWebSocketMessage MapOhlc(JsonElement root, bool isClosed)
+    {
+        if (!TryGetString(root, "symbol", out var symbol))
+        {
+            return new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown);
+        }
+
+        var resolution = GetOptionalString(root, "resolution") ?? "1";
+        var barTime = GetOptionalTimestamp(root, "time") ?? _timeProvider.GetUtcNow();
+        var updatedAt = GetOptionalTimestamp(root, "lastUpdated") ?? barTime;
+        var update = new MarketOhlcUpdateDto(
+            Symbol: symbol.Trim().ToUpperInvariant(),
+            Resolution: resolution.Trim().ToUpperInvariant(),
+            Time: barTime,
+            Open: NormalizePrice(GetOptionalDecimal(root, "open")) ?? 0m,
+            High: NormalizePrice(GetOptionalDecimal(root, "high")) ?? 0m,
+            Low: NormalizePrice(GetOptionalDecimal(root, "low")) ?? 0m,
+            Close: NormalizePrice(GetOptionalDecimal(root, "close")) ?? 0m,
+            Volume: ScaleQuantity(GetOptionalLong(root, "volume")) ?? 0,
+            Type: GetOptionalString(root, "type") ?? "STOCK",
+            IsClosed: isClosed,
+            UpdatedAt: updatedAt);
+
+        return new DnseWebSocketMessage(DnseWebSocketMessageKind.OhlcUpdate, OhlcUpdate: update);
+    }
+
+    private DnseWebSocketMessage MapExpectedPrice(JsonElement root)
+    {
+        return QuoteUpdate(
+            root,
+            expectedPrice: NormalizePrice(GetOptionalDecimal(root, "expectedTradePrice")),
+            expectedQuantity: ScaleQuantity(GetOptionalLong(root, "expectedTradeQuantity")));
+    }
+
     private DnseWebSocketMessage MapForeign(JsonElement root)
     {
         return QuoteUpdate(
@@ -165,6 +204,60 @@ public sealed class DnseWebSocketMessageMapper
         return new DnseWebSocketMessage(DnseWebSocketMessageKind.MarketIndexUpdate, MarketIndexUpdate: update);
     }
 
+    private DnseWebSocketMessage MapEstimatedMarketIndex(JsonElement root)
+    {
+        if (!TryGetString(root, "indexName", out var indexName))
+        {
+            return new DnseWebSocketMessage(DnseWebSocketMessageKind.Unknown);
+        }
+
+        var updatedAt = GetOptionalTimestamp(root, "time")
+            ?? GetOptionalTimestamp(root, "transactTime")
+            ?? _timeProvider.GetUtcNow();
+        var update = new MarketIndexUpdateDto(
+            IndexName: indexName.Trim().ToUpperInvariant(),
+            Value: null,
+            Change: null,
+            ChangePercent: null,
+            ReferenceValue: null,
+            HighValue: null,
+            LowValue: null,
+            TotalVolume: null,
+            TotalValue: null,
+            UpCount: null,
+            DownCount: null,
+            NoChangeCount: null,
+            CeilingCount: null,
+            FloorCount: null,
+            MarketId: string.Empty,
+            TradingSessionId: string.Empty,
+            UpdatedAt: updatedAt,
+            EstimatedValue: GetOptionalDecimal(root, "valueIndexes"),
+            EstimatedChange: GetOptionalDecimal(root, "changedValue"),
+            EstimatedChangePercent: GetOptionalDecimal(root, "changedRatio"),
+            EstimatedTotalVolume: GetOptionalLong(root, "totalVolumeTraded"),
+            EstimatedTotalValue: GetOptionalDecimal(root, "grossTradeAmount"),
+            EstimatedUpdatedAt: updatedAt);
+
+        return new DnseWebSocketMessage(DnseWebSocketMessageKind.MarketIndexUpdate, MarketIndexUpdate: update);
+    }
+
+    private DnseWebSocketMessage MapSession(JsonElement root)
+    {
+        var updatedAt = GetOptionalTimestamp(root, "time")
+            ?? GetOptionalTimestamp(root, "sendingTime")
+            ?? _timeProvider.GetUtcNow();
+        var update = new MarketSessionUpdateDto(
+            MarketId: GetOptionalString(root, "marketId") ?? string.Empty,
+            BoardId: GetOptionalString(root, "boardId") ?? "G1",
+            ProductGroupId: GetOptionalString(root, "tscProdGrpId") ?? GetOptionalString(root, "productGroupId") ?? "STO",
+            EventId: GetOptionalString(root, "eventId") ?? string.Empty,
+            TradingSessionId: GetOptionalString(root, "tradingSessionId") ?? string.Empty,
+            UpdatedAt: updatedAt);
+
+        return new DnseWebSocketMessage(DnseWebSocketMessageKind.MarketSessionUpdate, MarketSessionUpdate: update);
+    }
+
     private DnseWebSocketMessage QuoteUpdate(
         JsonElement root,
         decimal? lastPrice = null,
@@ -182,7 +275,9 @@ public sealed class DnseWebSocketMessageMapper
         decimal? floorPrice = null,
         decimal? openPrice = null,
         decimal? highPrice = null,
-        decimal? lowPrice = null)
+        decimal? lowPrice = null,
+        decimal? expectedPrice = null,
+        long? expectedQuantity = null)
     {
         if (!TryGetString(root, "symbol", out var symbol))
         {
@@ -215,7 +310,9 @@ public sealed class DnseWebSocketMessageMapper
             FloorPrice: floorPrice,
             OpenPrice: openPrice,
             HighPrice: highPrice,
-            LowPrice: lowPrice);
+            LowPrice: lowPrice,
+            ExpectedPrice: expectedPrice,
+            ExpectedQuantity: expectedQuantity);
 
         return new DnseWebSocketMessage(DnseWebSocketMessageKind.QuoteUpdate, update);
     }
@@ -348,7 +445,9 @@ public sealed class DnseWebSocketMessageMapper
 
         if (property.ValueKind == JsonValueKind.Number && property.TryGetInt64(out var unixTime))
         {
-            return DateTimeOffset.FromUnixTimeSeconds(unixTime);
+            return unixTime > 1_000_000_000_000
+                ? DateTimeOffset.FromUnixTimeMilliseconds(unixTime)
+                : DateTimeOffset.FromUnixTimeSeconds(unixTime);
         }
 
         return property.ValueKind == JsonValueKind.String && DateTimeOffset.TryParse(property.GetString(), out var timestamp)

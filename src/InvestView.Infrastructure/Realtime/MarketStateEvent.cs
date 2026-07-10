@@ -6,13 +6,17 @@ public sealed record MarketStateEvent(
     MarketStateEventKind Kind,
     MarketQuoteUpdateDto? QuoteUpdate = null,
     MarketTradeUpdateDto? TradeUpdate = null,
-    MarketIndexUpdateDto? MarketIndexUpdate = null);
+    MarketIndexUpdateDto? MarketIndexUpdate = null,
+    MarketOhlcUpdateDto? OhlcUpdate = null,
+    MarketSessionUpdateDto? MarketSessionUpdate = null);
 
 public enum MarketStateEventKind
 {
     QuoteUpdate,
     TradeUpdate,
-    MarketIndexUpdate
+    MarketIndexUpdate,
+    OhlcUpdate,
+    MarketSessionUpdate
 }
 
 public interface IMarketStateEventBus

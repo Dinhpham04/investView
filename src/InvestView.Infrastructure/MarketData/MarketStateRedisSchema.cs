@@ -14,6 +14,7 @@ public sealed class MarketStateRedisSchema
     private const string PriceUpdatedAtField = "priceUpdatedAt";
     private const string DepthUpdatedAtField = "depthUpdatedAt";
     private const string ForeignUpdatedAtField = "foreignUpdatedAt";
+    private const string ExpectedUpdatedAtField = "expectedUpdatedAt";
     private const string StatusUpdatedAtField = "statusUpdatedAt";
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -104,6 +105,13 @@ public sealed class MarketStateRedisSchema
         return $"{Prefix()}:index-names";
     }
 
+    public RedisKey SessionStateKey(string productGroupId, string boardId)
+    {
+        var normalizedProductGroupId = MarketStateMapper.Normalize(productGroupId);
+        var normalizedBoardId = MarketStateMapper.NormalizeBoardId(boardId);
+        return $"{Prefix()}:session:{{{normalizedProductGroupId}:{normalizedBoardId}}}:state";
+    }
+
     public RedisKey BackfillLockKey(string name)
     {
         return $"{Prefix()}:locks:backfill:{MarketStateMapper.Normalize(name)}";
@@ -139,6 +147,8 @@ public sealed class MarketStateRedisSchema
             Entry("tradingStatus", quote.TradingStatus),
             Entry(UpdatedAtField, quote.UpdatedAt)
         };
+        AddIfPresent(entries, "expectedPrice", quote.ExpectedPrice);
+        AddIfPresent(entries, "expectedQuantity", quote.ExpectedQuantity);
 
         if (includeGroupTimestamps)
         {
@@ -172,6 +182,11 @@ public sealed class MarketStateRedisSchema
         if (update.ForeignBuyVolume.HasValue || update.ForeignSellVolume.HasValue || update.ForeignRoom.HasValue)
         {
             entries.Add(Entry(ForeignUpdatedAtField, update.UpdatedAt));
+        }
+
+        if (update.ExpectedPrice.HasValue || update.ExpectedQuantity.HasValue)
+        {
+            entries.Add(Entry(ExpectedUpdatedAtField, update.UpdatedAt));
         }
 
         if (!string.IsNullOrWhiteSpace(update.TradingStatus))
@@ -232,6 +247,15 @@ public sealed class MarketStateRedisSchema
         AddIfPresent(entries, "lowValue", index.LowValue);
         AddIfPresent(entries, "totalVolume", index.TotalVolume);
         AddIfPresent(entries, "totalValue", index.TotalValue);
+        AddIfPresent(entries, "estimatedValue", index.EstimatedValue);
+        AddIfPresent(entries, "estimatedChange", index.EstimatedChange);
+        AddIfPresent(entries, "estimatedChangePercent", index.EstimatedChangePercent);
+        AddIfPresent(entries, "estimatedTotalVolume", index.EstimatedTotalVolume);
+        AddIfPresent(entries, "estimatedTotalValue", index.EstimatedTotalValue);
+        if (index.EstimatedUpdatedAt.HasValue)
+        {
+            entries.Add(Entry("estimatedUpdatedAt", index.EstimatedUpdatedAt.Value));
+        }
 
         return entries.ToArray();
     }
@@ -239,6 +263,26 @@ public sealed class MarketStateRedisSchema
     public MarketIndexDto? IndexFromHash(HashEntry[] entries)
     {
         return FromHashPayload<MarketIndexDto>(entries);
+    }
+
+    public HashEntry[] ToSessionHash(MarketSessionUpdateDto session)
+    {
+        return
+        [
+            Entry(PayloadField, Serialize(session)),
+            Entry(SchemaVersionField, SchemaVersion()),
+            Entry("marketId", session.MarketId),
+            Entry("boardId", session.BoardId),
+            Entry("productGroupId", session.ProductGroupId),
+            Entry("eventId", session.EventId),
+            Entry("tradingSessionId", session.TradingSessionId),
+            Entry(UpdatedAtField, session.UpdatedAt)
+        ];
+    }
+
+    public MarketSessionUpdateDto? SessionFromHash(HashEntry[] entries)
+    {
+        return FromHashPayload<MarketSessionUpdateDto>(entries);
     }
 
     public RedisValue ToOhlcMember(OhlcBarDto bar)
@@ -287,6 +331,7 @@ public sealed class MarketStateRedisSchema
         yield return Entry(PriceUpdatedAtField, updatedAt);
         yield return Entry(DepthUpdatedAtField, updatedAt);
         yield return Entry(ForeignUpdatedAtField, updatedAt);
+        yield return Entry(ExpectedUpdatedAtField, updatedAt);
         yield return Entry(StatusUpdatedAtField, updatedAt);
     }
 

@@ -162,6 +162,81 @@ public sealed class MarketStateBackedMarketDataProviderTests
     }
 
     [Fact]
+    public async Task GetSymbolDetailAsync_WhenSharedStateHasUsableQuote_BuildsSnapshotDetailWithoutFallback()
+    {
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m)
+        ], CancellationToken.None);
+
+        var result = await provider.GetSymbolDetailAsync("ssi", "g1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("SSI", result.Symbol);
+        Assert.Equal("SSI", result.DisplayName);
+        Assert.Equal(26.7m, result.ReferencePrice);
+        Assert.Equal(28.569m, result.CeilingPrice);
+        Assert.Equal(24.831m, result.FloorPrice);
+        Assert.Equal(27.1m, result.LastPrice);
+        Assert.Equal(10, result.ForeignBuyVolume);
+        Assert.Equal(20, result.ForeignSellVolume);
+        Assert.Equal(100, result.ForeignRoom);
+        Assert.Equal(string.Empty, result.Isin);
+        Assert.Equal(0, fallback.SymbolDetailCalls);
+
+        var localQuote = Assert.Single(await localMirror.GetQuotesAsync("G1", ["SSI"], CancellationToken.None));
+        Assert.Equal(27.1m, localQuote.LastPrice);
+    }
+
+    [Fact]
+    public async Task GetSymbolDetailAsync_WhenSharedStateHasUsableQuote_BackfillsMetadataWithoutPriceFallback()
+    {
+        var fallback = new EmptyMarketDataProvider
+        {
+            SymbolMetadata = CreateMetadata("SSI")
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance,
+            fallback);
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m)
+        ], CancellationToken.None);
+
+        var result = await provider.GetSymbolDetailAsync("ssi", "g1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("SSI Corporation", result.Name);
+        Assert.Equal("VN000000SSI", result.Isin);
+        Assert.Equal("STOCK", result.ProductGroupId);
+        Assert.Equal("ST", result.SecurityGroupId);
+        Assert.Equal(26.7m, result.ReferencePrice);
+        Assert.Equal(27.1m, result.LastPrice);
+        Assert.Equal(10, result.ForeignBuyVolume);
+        Assert.Equal(20, result.ForeignSellVolume);
+        Assert.Equal(0, fallback.SymbolDetailCalls);
+        Assert.Equal(1, fallback.SymbolMetadataCalls);
+
+        var cachedDetail = await sharedState.GetSymbolDetailAsync("SSI", "G1", CancellationToken.None);
+        Assert.NotNull(cachedDetail);
+        Assert.Equal("SSI Corporation", cachedDetail.Name);
+        Assert.Equal(27.1m, cachedDetail.LastPrice);
+    }
+
+    [Fact]
     public async Task GetOhlcAsync_WhenSharedStateHasCoveredRange_UsesSharedStateAndWarmsLocalMirror()
     {
         var fallback = new EmptyMarketDataProvider();
@@ -281,6 +356,28 @@ public sealed class MarketStateBackedMarketDataProviderTests
             new DateTimeOffset(2026, 7, 8, 3, 29, 0, TimeSpan.Zero));
     }
 
+    private static SymbolMetadataDto CreateMetadata(string symbol)
+    {
+        return new SymbolMetadataDto(
+            symbol,
+            "G1",
+            "STO",
+            $"{symbol} Securities",
+            $"{symbol} Corporation",
+            "Stock",
+            $"VN000000{symbol}",
+            "STOCK",
+            "ST",
+            "Continuous",
+            "NORMAL",
+            "NORMAL",
+            "NORMAL",
+            new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            null,
+            0,
+            new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero));
+    }
+
     private static IReadOnlyList<OhlcBarDto> CreateBars(string symbol, string resolution, DateTimeOffset from)
     {
         return
@@ -290,7 +387,7 @@ public sealed class MarketStateBackedMarketDataProviderTests
         ];
     }
 
-    private sealed class EmptyMarketDataProvider : IMarketDataProvider
+    private sealed class EmptyMarketDataProvider : IMarketDataProvider, ISymbolMetadataProvider
     {
         public int MarketBoardCalls { get; private set; }
 
@@ -299,6 +396,10 @@ public sealed class MarketStateBackedMarketDataProviderTests
         public IReadOnlyList<MarketQuoteDto> MarketBoardQuotes { get; init; } = [];
 
         public int SymbolDetailCalls { get; private set; }
+
+        public int SymbolMetadataCalls { get; private set; }
+
+        public SymbolMetadataDto? SymbolMetadata { get; init; }
 
         public int OhlcCalls { get; private set; }
 
@@ -323,6 +424,15 @@ public sealed class MarketStateBackedMarketDataProviderTests
         {
             SymbolDetailCalls++;
             return Task.FromResult<SymbolDetailDto?>(null);
+        }
+
+        public Task<SymbolMetadataDto?> GetSymbolMetadataAsync(
+            string symbol,
+            string boardId,
+            CancellationToken cancellationToken)
+        {
+            SymbolMetadataCalls++;
+            return Task.FromResult(SymbolMetadata);
         }
 
         public Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(

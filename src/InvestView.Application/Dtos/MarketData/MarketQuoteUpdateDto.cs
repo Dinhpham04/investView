@@ -21,4 +21,6 @@ public sealed record MarketQuoteUpdateDto(
     decimal? FloorPrice = null,
     decimal? OpenPrice = null,
     decimal? HighPrice = null,
-    decimal? LowPrice = null);
+    decimal? LowPrice = null,
+    decimal? ExpectedPrice = null,
+    long? ExpectedQuantity = null);

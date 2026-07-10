@@ -600,7 +600,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Acceptance criteria:**
 
-- [ ] Optional session state uses `session.{productGroupId}.{boardId}.json` only when needed by the UI.
+- [x] Optional session state uses `session.{productGroupId}.{boardId}.json` only when needed by active market-board subscriptions.
 - [ ] Adapter tracks stream health: connected, authenticated, last pong, last message time, reconnect count, and active subscriptions.
 - [x] Stream can subscribe dynamically based on active board symbols instead of only configured symbols.
 - [x] Stream only connects when active subscriptions exist and the configured streaming schedule is open.
@@ -611,7 +611,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 - [x] Unit tests cover dynamic subscription changes and unknown message tolerance.
 - [ ] Load-oriented tests cover high-frequency trade/quote messages.
-- [ ] Fixture tests cover session `s` if session is implemented.
+- [x] Fixture tests cover session `s`.
 - [ ] Manual verification with credentials if available.
 - [ ] `dotnet build`
 - [ ] `dotnet test`
@@ -769,6 +769,8 @@ Goal: add real provider integration behind stable contracts and package the demo
 - [x] Quote state is stored once per `boardId:symbol` and not duplicated per board UI snapshot.
 - [x] Quote Hash includes canonical payload, scalar fields, and group update timestamps.
 - [x] Symbol detail and OHLC REST reads use local mirror -> Redis -> fallback/backfill order.
+- [x] Symbol detail can build its initial price/depth/foreign snapshot from Redis quote state so opening a detail panel does not call REST just to re-fetch market-board fields.
+- [x] Symbol detail metadata backfill is separated from full price snapshot fallback; DNSE metadata-only reads call `/instruments` and `/price/{symbol}/secdef` without calling trade, top-price, or foreign-trading endpoints when quote state is present.
 - [x] Market-board filters resolve Redis membership and only REST backfill missing symbols.
 - [x] OHLC cache hits require a matching coverage token before returning range data.
 - [x] TTLs are separated by quote state, symbol detail, latest trades, OHLC, and membership data.
@@ -790,7 +792,44 @@ Goal: add real provider integration behind stable contracts and package the demo
 - `SPEC.md`
 - `docs/decisions/ADR-004-redis-backed-market-state.md`
 
-### Task 19: Add Docker Compose and Demo Documentation
+### Task 19: Expand DNSE WebSocket Market-State Updates
+
+**Status:** Completed
+
+**Description:** Subscribe to the remaining DNSE market-data WebSocket channels and route every supported realtime payload through Redis market-state before local mirrors and SignalR fan-out. This closes the gap where quote/depth/foreign data is realtime but OHLC, expected auction price, estimated index, and session state still depend mostly on REST backfill.
+
+**Acceptance criteria:**
+
+- [x] DNSE channel builder supports `ohlc.{resolution}`, `ohlc_closed.{resolution}`, `expected_price.{boardId}`, `estimated_market_index.{indexName}`, and `session.{productGroupId}.{boardId}`.
+- [x] DNSE message mapper handles `b`, `bc`, `e`, `emi`, and `s` payloads in addition to the existing `sd`, `t`, `te`, `q`, `f`, and `mi` handlers.
+- [x] OHLC realtime updates upsert Redis OHLC sorted sets for symbols and market indices without waiting for REST.
+- [x] Expected auction price updates enrich quote state without overwriting matched price.
+- [x] Estimated market index updates enrich index state without overwriting the actual published index value.
+- [x] Session updates are stored in Redis as board/session state.
+- [x] Redis event publication remains the internal synchronization path; DNSE handlers do not broadcast directly to clients.
+- [x] Unit tests cover channel names, message mapping, Redis/in-memory state writes, and provider reads where applicable.
+
+**Verification:**
+
+- [x] `dotnet build`
+- [x] `dotnet test`
+
+**Dependencies:** Task 18
+
+**Files likely touched:**
+
+- `src/InvestView.Application/Dtos/MarketData/*`
+- `src/InvestView.Application/Abstractions/MarketData/IMarketStateStore.cs`
+- `src/InvestView.Application/Abstractions/Realtime/IMarketStateEventPublisher.cs`
+- `src/InvestView.Infrastructure/Dnse/*`
+- `src/InvestView.Infrastructure/Realtime/*`
+- `src/InvestView.Infrastructure/MarketData/*`
+- `docs/plans/implementation-plan.md`
+- `tests/InvestView.Api.Tests/*`
+
+**Implemented notes:** The WebSocket stream now subscribes to expected auction price, open/closed OHLC for configured resolutions, estimated market indices, and session state. These updates are normalized into app-owned DTOs, written through the shared market-state abstraction, published as internal market events, and then applied by local mirrors. Realtime OHLC bars are upserted into sorted sets, but OHLC range coverage still comes from REST backfill so chart APIs do not treat partial realtime history as a full cache hit.
+
+### Task 20: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 

@@ -11,6 +11,9 @@ public sealed class DnseWebSocketSubscriptionBuilderTests
     [InlineData(MarketDataChannel.TradeExtra, "tick_extra.G1.json")]
     [InlineData(MarketDataChannel.TopPrice, "top_price.G1.json")]
     [InlineData(MarketDataChannel.Foreign, "foreign.G1.json")]
+    [InlineData(MarketDataChannel.ExpectedPrice, "expected_price.G1.json")]
+    [InlineData(MarketDataChannel.Ohlc, "ohlc.1.json")]
+    [InlineData(MarketDataChannel.OhlcClosed, "ohlc_closed.1.json")]
     public void BuildChannelName_UsesDnseMarketDataChannelNames(MarketDataChannel channel, string expected)
     {
         var channelName = DnseWebSocketSubscriptionBuilder.BuildChannelName(channel, "g1", "json");
@@ -54,6 +57,42 @@ public sealed class DnseWebSocketSubscriptionBuilderTests
 
         Assert.Equal("subscribe", payload.Action);
         Assert.Equal(["market_index.VN30.json", "market_index.VNINDEX.json"], payload.Channels.Select(channel => channel.Name));
+        Assert.All(payload.Channels, channel => Assert.Empty(channel.Symbols));
+    }
+
+    [Fact]
+    public void BuildEstimatedMarketIndexSubscribePayload_UsesDnseEstimatedMarketIndexChannelNamesWithoutSymbols()
+    {
+        var payload = DnseWebSocketSubscriptionBuilder.BuildEstimatedMarketIndexSubscribePayload(
+            indexNames: ["vn30", " VNINDEX "],
+            encoding: "json");
+
+        Assert.Equal(["estimated_market_index.VN30.json", "estimated_market_index.VNINDEX.json"], payload.Channels.Select(channel => channel.Name));
+        Assert.All(payload.Channels, channel => Assert.Empty(channel.Symbols));
+    }
+
+    [Fact]
+    public void BuildOhlcSubscribePayload_UsesResolutionChannelsWithSymbols()
+    {
+        var payload = DnseWebSocketSubscriptionBuilder.BuildOhlcSubscribePayload(
+            symbols: ["ssi", "HPG"],
+            resolutions: ["1", "1H"],
+            encoding: "json",
+            closed: true);
+
+        Assert.Equal(["ohlc_closed.1.json", "ohlc_closed.1H.json"], payload.Channels.Select(channel => channel.Name));
+        Assert.All(payload.Channels, channel => Assert.Equal(["HPG", "SSI"], channel.Symbols));
+    }
+
+    [Fact]
+    public void BuildSessionSubscribePayload_UsesProductGroupBoardChannelsWithoutSymbols()
+    {
+        var payload = DnseWebSocketSubscriptionBuilder.BuildSessionSubscribePayload(
+            boardIds: ["g1", "g4"],
+            productGroupId: "sto",
+            encoding: "json");
+
+        Assert.Equal(["session.STO.G1.json", "session.STO.G4.json"], payload.Channels.Select(channel => channel.Name));
         Assert.All(payload.Channels, channel => Assert.Empty(channel.Symbols));
     }
 }

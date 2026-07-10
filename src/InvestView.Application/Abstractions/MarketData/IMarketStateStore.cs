@@ -12,6 +12,10 @@ public interface IMarketStateStore
 
     Task<MarketIndexUpdateDto> ApplyMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken);
 
+    Task<MarketOhlcUpdateDto> ApplyOhlcUpdateAsync(MarketOhlcUpdateDto update, CancellationToken cancellationToken);
+
+    Task<MarketSessionUpdateDto> ApplyMarketSessionUpdateAsync(MarketSessionUpdateDto update, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<MarketQuoteDto>> GetQuotesAsync(
         string boardId,
         IReadOnlyCollection<string> symbols,
@@ -73,6 +77,11 @@ public interface IMarketStateStore
         string boardId,
         string symbol,
         int limit,
+        CancellationToken cancellationToken);
+
+    Task<MarketSessionUpdateDto?> GetMarketSessionAsync(
+        string productGroupId,
+        string boardId,
         CancellationToken cancellationToken);
 }
 

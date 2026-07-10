@@ -34,4 +34,16 @@ public sealed class MarketStateEventPublisher : IMarketStateEventPublisher
         var mergedUpdate = await _sharedStateStore.ApplyMarketIndexUpdateAsync(update, cancellationToken);
         await _eventBus.PublishAsync(new MarketStateEvent(MarketStateEventKind.MarketIndexUpdate, MarketIndexUpdate: mergedUpdate), cancellationToken);
     }
+
+    public async Task PublishOhlcUpdateAsync(MarketOhlcUpdateDto update, CancellationToken cancellationToken)
+    {
+        var mergedUpdate = await _sharedStateStore.ApplyOhlcUpdateAsync(update, cancellationToken);
+        await _eventBus.PublishAsync(new MarketStateEvent(MarketStateEventKind.OhlcUpdate, OhlcUpdate: mergedUpdate), cancellationToken);
+    }
+
+    public async Task PublishMarketSessionUpdateAsync(MarketSessionUpdateDto update, CancellationToken cancellationToken)
+    {
+        var mergedUpdate = await _sharedStateStore.ApplyMarketSessionUpdateAsync(update, cancellationToken);
+        await _eventBus.PublishAsync(new MarketStateEvent(MarketStateEventKind.MarketSessionUpdate, MarketSessionUpdate: mergedUpdate), cancellationToken);
+    }
 }

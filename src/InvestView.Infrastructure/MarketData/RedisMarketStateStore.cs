@@ -34,7 +34,9 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         var normalizedUpdate = MarketStateMapper.NormalizeQuoteUpdate(update);
         var key = _schema.QuoteStateKey(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
         var current = await GetQuoteAsync(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
-        if (current is not null && normalizedUpdate.UpdatedAt < current.UpdatedAt)
+        if (current is not null &&
+            normalizedUpdate.UpdatedAt < current.UpdatedAt &&
+            !MarketStateMapper.IsExpectedOnlyQuoteUpdate(normalizedUpdate))
         {
             return MarketStateMapper.CreateQuoteUpdateFromQuote(current);
         }
@@ -83,6 +85,40 @@ public sealed class RedisMarketStateStore : IMarketStateStore
 
         await StoreIndexAsync(next);
         await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+        return normalizedUpdate;
+    }
+
+    public async Task<MarketOhlcUpdateDto> ApplyOhlcUpdateAsync(
+        MarketOhlcUpdateDto update,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedUpdate = MarketStateMapper.NormalizeOhlcUpdate(update);
+        var bar = MarketStateMapper.CreateOhlcBarFromUpdate(normalizedUpdate);
+        var isIndex = normalizedUpdate.Type.Equals("INDEX", StringComparison.Ordinal);
+        var barsKey = isIndex
+            ? _schema.IndexOhlcKey(normalizedUpdate.Symbol, normalizedUpdate.Resolution)
+            : _schema.OhlcKey(normalizedUpdate.Symbol, normalizedUpdate.Resolution);
+        var score = _schema.Score(bar.Time);
+
+        await _database.SortedSetRemoveRangeByScoreAsync(barsKey, score, score);
+        await _database.SortedSetAddAsync(barsKey, _schema.ToOhlcMember(bar), score);
+        await _database.KeyExpireAsync(barsKey, _schema.OhlcTtl);
+
+        return normalizedUpdate;
+    }
+
+    public async Task<MarketSessionUpdateDto> ApplyMarketSessionUpdateAsync(
+        MarketSessionUpdateDto update,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedUpdate = MarketStateMapper.NormalizeSessionUpdate(update);
+        var key = _schema.SessionStateKey(normalizedUpdate.ProductGroupId, normalizedUpdate.BoardId);
+
+        await _database.HashSetAsync(key, _schema.ToSessionHash(normalizedUpdate));
+        await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+
         return normalizedUpdate;
     }
 
@@ -301,6 +337,16 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             .Select(trade => trade!)
             .OrderByDescending(trade => trade.Time)
             .ToArray();
+    }
+
+    public async Task<MarketSessionUpdateDto?> GetMarketSessionAsync(
+        string productGroupId,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = await _database.HashGetAllAsync(_schema.SessionStateKey(productGroupId, boardId));
+        return _schema.SessionFromHash(values);
     }
 
     private async Task StoreQuoteAsync(MarketQuoteDto quote, bool includeGroupTimestamps)

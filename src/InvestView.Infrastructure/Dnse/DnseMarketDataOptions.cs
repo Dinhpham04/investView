@@ -14,6 +14,10 @@ public sealed class DnseMarketDataOptions
 
     public string WebSocketEncoding { get; set; } = "json";
 
+    public string[] WebSocketOhlcResolutions { get; set; } = ["1", "3", "5", "15", "30", "1H", "1D", "1W"];
+
+    public string WebSocketProductGroupId { get; set; } = "STO";
+
     public int WebSocketConnectionTimeoutSeconds { get; set; } = 30;
 
     public int WebSocketReceiveTimeoutSeconds { get; set; } = 240;

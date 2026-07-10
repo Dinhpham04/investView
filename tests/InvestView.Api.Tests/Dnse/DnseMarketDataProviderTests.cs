@@ -140,6 +140,30 @@ public sealed class DnseMarketDataProviderTests
     }
 
     [Fact]
+    public async Task GetSymbolMetadataAsync_LoadsOnlyInstrumentAndSecurityDefinition()
+    {
+        var client = new FakeDnseMarketDataClient();
+        var provider = new DnseMarketDataProvider(
+            client,
+            Options.Create(new DnseMarketDataOptions()));
+
+        var metadata = await provider.GetSymbolMetadataAsync("hpg", "g1", CancellationToken.None);
+
+        Assert.NotNull(metadata);
+        Assert.Equal("HPG", metadata.Symbol);
+        Assert.Equal("G1", metadata.BoardId);
+        Assert.Equal("VN000000HPG4", metadata.Isin);
+        Assert.Equal("STOCK", metadata.ProductGroupId);
+        Assert.Equal("ST", metadata.SecurityGroupId);
+        Assert.Equal("NORMAL", metadata.SymbolAdminStatus);
+        Assert.Contains(client.Calls, call => call.Path == "/instruments");
+        Assert.Contains(client.Calls, call => call.Path == "/price/HPG/secdef");
+        Assert.DoesNotContain(client.Calls, call => call.Path == "/price/HPG/trades/latest");
+        Assert.DoesNotContain(client.Calls, call => call.Path == "/price/HPG/quotes/latest");
+        Assert.DoesNotContain(client.Calls, call => call.Path == "/price/HPG/foreign-trading");
+    }
+
+    [Fact]
     public async Task GetOhlcAsync_CallsDnseOhlcEndpointWithStockQuery()
     {
         var client = new FakeDnseMarketDataClient();

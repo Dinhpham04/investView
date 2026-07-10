@@ -9,4 +9,8 @@ public interface IMarketStateEventPublisher
     Task PublishTradeUpdateAsync(MarketTradeUpdateDto update, CancellationToken cancellationToken);
 
     Task PublishMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken);
+
+    Task PublishOhlcUpdateAsync(MarketOhlcUpdateDto update, CancellationToken cancellationToken);
+
+    Task PublishMarketSessionUpdateAsync(MarketSessionUpdateDto update, CancellationToken cancellationToken);
 }

@@ -8,6 +8,9 @@ public enum MarketDataChannel
     SecurityDefinition,
     Foreign,
     MarketIndex,
+    EstimatedMarketIndex,
     Ohlc,
+    OhlcClosed,
+    ExpectedPrice,
     Session
 }

@@ -20,7 +20,8 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         MarketDataChannel.Trade,
         MarketDataChannel.TradeExtra,
         MarketDataChannel.TopPrice,
-        MarketDataChannel.Foreign
+        MarketDataChannel.Foreign,
+        MarketDataChannel.ExpectedPrice
     ];
 
     private readonly IMarketQuoteBroadcaster _broadcaster;
@@ -150,13 +151,17 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
 
         await AuthenticateAsync(webSocket, cancellationToken);
         var activeSubscriptions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var activeSessionSubscriptions = new HashSet<string>(StringComparer.Ordinal);
         var marketIndicesSubscribed = false;
+        var estimatedMarketIndicesSubscribed = false;
         var subscriptionSnapshot = _subscriptionRegistry.GetSnapshot();
-        marketIndicesSubscribed = await ApplySubscriptionsAsync(
+        (marketIndicesSubscribed, estimatedMarketIndicesSubscribed) = await ApplySubscriptionsAsync(
             webSocket,
             subscriptionSnapshot,
             activeSubscriptions,
+            activeSessionSubscriptions,
             marketIndicesSubscribed,
+            estimatedMarketIndicesSubscribed,
             cancellationToken);
         await BroadcastStatusAsync(true, "DNSE websocket connected.", cancellationToken);
 
@@ -208,11 +213,13 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 break;
             }
 
-            marketIndicesSubscribed = await ApplySubscriptionsAsync(
+            (marketIndicesSubscribed, estimatedMarketIndicesSubscribed) = await ApplySubscriptionsAsync(
                 webSocket,
                 subscriptionSnapshot,
                 activeSubscriptions,
+                activeSessionSubscriptions,
                 marketIndicesSubscribed,
+                estimatedMarketIndicesSubscribed,
                 cancellationToken);
             subscriptionTask = _subscriptionRegistry
                 .WaitForChangeAsync(subscriptionSnapshot.Version, cancellationToken)
@@ -249,18 +256,20 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         }
     }
 
-    private async Task<bool> ApplySubscriptionsAsync(
+    private async Task<(bool MarketIndicesSubscribed, bool EstimatedMarketIndicesSubscribed)> ApplySubscriptionsAsync(
         ClientWebSocket webSocket,
         MarketQuoteSubscriptionSnapshot snapshot,
         Dictionary<string, HashSet<string>> activeSubscriptions,
+        HashSet<string> activeSessionSubscriptions,
         bool marketIndicesSubscribed,
+        bool estimatedMarketIndicesSubscribed,
         CancellationToken cancellationToken)
     {
         if (snapshot.Boards.Count == 0)
         {
             _logger.LogInformation("DNSE websocket is connected and waiting for active market-board subscriptions.");
             await BroadcastStatusAsync(true, "DNSE websocket connected; waiting for market-board subscriptions.", cancellationToken);
-            return marketIndicesSubscribed;
+            return (marketIndicesSubscribed, estimatedMarketIndicesSubscribed);
         }
 
         foreach (var boardSubscription in snapshot.Boards)
@@ -288,6 +297,8 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 MarketBoardChannels);
 
             await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
+            await SendOhlcSubscriptionsAsync(webSocket, newSymbols, cancellationToken);
+
             foreach (var symbol in newSymbols)
             {
                 activeSymbols.Add(symbol);
@@ -302,6 +313,18 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 true,
                 $"DNSE websocket subscribed {newSymbols.Length} new symbol(s) for {boardSubscription.BoardId}.",
                 cancellationToken);
+
+            if (activeSessionSubscriptions.Add(boardSubscription.BoardId))
+            {
+                var sessionPayload = DnseWebSocketSubscriptionBuilder.BuildSessionSubscribePayload(
+                    [boardSubscription.BoardId],
+                    _dnseOptions.WebSocketProductGroupId,
+                    _dnseOptions.WebSocketEncoding);
+                await SendJsonAsync(webSocket, sessionPayload, cancellationToken);
+                _logger.LogInformation(
+                    "Subscribed DNSE websocket session channels {Channels}.",
+                    string.Join(", ", sessionPayload.Channels.Select(channel => channel.Name)));
+            }
         }
 
         if (!marketIndicesSubscribed)
@@ -318,6 +341,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                     _dnseOptions.WebSocketEncoding);
 
                 await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
+                await SendOhlcSubscriptionsAsync(webSocket, indexNames, cancellationToken);
                 marketIndicesSubscribed = true;
 
                 _logger.LogInformation(
@@ -326,7 +350,65 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             }
         }
 
-        return marketIndicesSubscribed;
+        if (!estimatedMarketIndicesSubscribed)
+        {
+            var indexNames = _dnseOptions.DefaultMarketIndices
+                .Select(indexName => indexName.Trim().ToUpperInvariant())
+                .Where(indexName => !string.IsNullOrWhiteSpace(indexName))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (indexNames.Length > 0)
+            {
+                var subscribePayload = DnseWebSocketSubscriptionBuilder.BuildEstimatedMarketIndexSubscribePayload(
+                    indexNames,
+                    _dnseOptions.WebSocketEncoding);
+
+                await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
+                estimatedMarketIndicesSubscribed = true;
+
+                _logger.LogInformation(
+                    "Subscribed DNSE websocket estimated market index channels {Channels}.",
+                    string.Join(", ", subscribePayload.Channels.Select(channel => channel.Name)));
+            }
+        }
+
+        return (marketIndicesSubscribed, estimatedMarketIndicesSubscribed);
+    }
+
+    private async Task SendOhlcSubscriptionsAsync(
+        ClientWebSocket webSocket,
+        IReadOnlyCollection<string> instruments,
+        CancellationToken cancellationToken)
+    {
+        var resolutions = _dnseOptions.WebSocketOhlcResolutions
+            .Select(resolution => resolution.Trim().ToUpperInvariant())
+            .Where(resolution => !string.IsNullOrWhiteSpace(resolution))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (resolutions.Length == 0)
+        {
+            return;
+        }
+
+        var openPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcSubscribePayload(
+            instruments,
+            resolutions,
+            _dnseOptions.WebSocketEncoding,
+            closed: false);
+        var closedPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcSubscribePayload(
+            instruments,
+            resolutions,
+            _dnseOptions.WebSocketEncoding,
+            closed: true);
+
+        await SendJsonAsync(webSocket, openPayload, cancellationToken);
+        await SendJsonAsync(webSocket, closedPayload, cancellationToken);
+
+        _logger.LogInformation(
+            "Subscribed DNSE websocket OHLC channels {OpenChannels} and closed channels {ClosedChannels} for instruments {Instruments}.",
+            string.Join(", ", openPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", closedPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", instruments));
     }
 
     private async Task HandleMessageAsync(ClientWebSocket webSocket, string json, CancellationToken cancellationToken)
@@ -346,6 +428,12 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 break;
             case DnseWebSocketMessageKind.MarketIndexUpdate when message.MarketIndexUpdate is not null:
                 await _marketStateEventPublisher.PublishMarketIndexUpdateAsync(message.MarketIndexUpdate, cancellationToken);
+                break;
+            case DnseWebSocketMessageKind.OhlcUpdate when message.OhlcUpdate is not null:
+                await _marketStateEventPublisher.PublishOhlcUpdateAsync(message.OhlcUpdate, cancellationToken);
+                break;
+            case DnseWebSocketMessageKind.MarketSessionUpdate when message.MarketSessionUpdate is not null:
+                await _marketStateEventPublisher.PublishMarketSessionUpdateAsync(message.MarketSessionUpdate, cancellationToken);
                 break;
             case DnseWebSocketMessageKind.Error:
                 _logger.LogWarning("DNSE websocket error message: {Message}", message.ErrorMessage);

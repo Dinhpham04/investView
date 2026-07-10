@@ -167,6 +167,96 @@ public sealed class DnseWebSocketMessageMapperTests
     }
 
     [Fact]
+    public void Map_WhenMessageIsOhlc_ReturnsRealtimeOhlcUpdate()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "b",
+              "symbol": "SSI",
+              "resolution": "1",
+              "open": 35.0,
+              "high": 35.2,
+              "low": 34.9,
+              "close": 35.1,
+              "volume": 12345,
+              "type": "STOCK",
+              "time": 1783479600,
+              "lastUpdated": 1783479660000
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.OhlcUpdate, message.Kind);
+        Assert.NotNull(message.OhlcUpdate);
+        Assert.Equal("SSI", message.OhlcUpdate.Symbol);
+        Assert.Equal("1", message.OhlcUpdate.Resolution);
+        Assert.Equal(35_000m, message.OhlcUpdate.Open);
+        Assert.Equal(35_100m, message.OhlcUpdate.Close);
+        Assert.Equal(123_450, message.OhlcUpdate.Volume);
+        Assert.False(message.OhlcUpdate.IsClosed);
+        Assert.Equal(DateTimeOffset.FromUnixTimeSeconds(1_783_479_600), message.OhlcUpdate.Time);
+        Assert.Equal(DateTimeOffset.FromUnixTimeMilliseconds(1_783_479_660_000), message.OhlcUpdate.UpdatedAt);
+    }
+
+    [Fact]
+    public void Map_WhenMessageIsClosedOhlc_ReturnsClosedOhlcUpdate()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "bc",
+              "symbol": "VN30",
+              "resolution": "1D",
+              "open": 1840.0,
+              "high": 1850.0,
+              "low": 1838.0,
+              "close": 1848.5,
+              "volume": 1234567,
+              "type": "INDEX",
+              "time": "2026-07-08T08:00:00Z"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.OhlcUpdate, message.Kind);
+        Assert.NotNull(message.OhlcUpdate);
+        Assert.Equal("VN30", message.OhlcUpdate.Symbol);
+        Assert.Equal("INDEX", message.OhlcUpdate.Type);
+        Assert.True(message.OhlcUpdate.IsClosed);
+        Assert.Equal(12_345_670, message.OhlcUpdate.Volume);
+    }
+
+    [Fact]
+    public void Map_WhenMessageIsExpectedPrice_ReturnsExpectedPriceQuoteUpdate()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "e",
+              "marketId": "STO",
+              "boardId": "G1",
+              "symbol": "SSI",
+              "closePrice": 35.0,
+              "expectedTradePrice": 35.2,
+              "expectedTradeQuantity": 1000,
+              "time": "2026-07-08T02:15:00Z"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.QuoteUpdate, message.Kind);
+        Assert.NotNull(message.QuoteUpdate);
+        Assert.Null(message.QuoteUpdate.LastPrice);
+        Assert.Equal(35_200m, message.QuoteUpdate.ExpectedPrice);
+        Assert.Equal(10_000, message.QuoteUpdate.ExpectedQuantity);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-08T02:15:00Z"), message.QuoteUpdate.UpdatedAt);
+    }
+
+    [Fact]
     public void Map_WhenMessageIsMarketIndex_ReturnsMarketIndexUpdate()
     {
         var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
@@ -208,6 +298,64 @@ public sealed class DnseWebSocketMessageMapperTests
         Assert.Equal("1", message.MarketIndexUpdate.MarketId);
         Assert.Equal("99", message.MarketIndexUpdate.TradingSessionId);
         Assert.Equal(DateTimeOffset.Parse("2026-07-03T07:45:00+00:00"), message.MarketIndexUpdate.UpdatedAt);
+    }
+
+    [Fact]
+    public void Map_WhenMessageIsEstimatedMarketIndex_ReturnsEstimatedIndexFields()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "emi",
+              "indexName": "VN30",
+              "changedRatio": -0.20,
+              "changedValue": -2.10,
+              "valueIndexes": 1848.40,
+              "grossTradeAmount": 6391.86,
+              "totalVolumeTraded": 184907600,
+              "time": "2026-07-08T06:56:29Z"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.MarketIndexUpdate, message.Kind);
+        Assert.NotNull(message.MarketIndexUpdate);
+        Assert.Equal("VN30", message.MarketIndexUpdate.IndexName);
+        Assert.Null(message.MarketIndexUpdate.Value);
+        Assert.Equal(1848.40m, message.MarketIndexUpdate.EstimatedValue);
+        Assert.Equal(-2.10m, message.MarketIndexUpdate.EstimatedChange);
+        Assert.Equal(-0.20m, message.MarketIndexUpdate.EstimatedChangePercent);
+        Assert.Equal(184_907_600, message.MarketIndexUpdate.EstimatedTotalVolume);
+        Assert.Equal(6391.86m, message.MarketIndexUpdate.EstimatedTotalValue);
+    }
+
+    [Fact]
+    public void Map_WhenMessageIsSession_ReturnsSessionUpdate()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "s",
+              "marketId": "DVX",
+              "boardId": "G1",
+              "eventId": "AB2",
+              "tradingSessionId": "40",
+              "tscProdGrpId": "STO",
+              "sendingTime": "2026-07-08T02:15:00Z"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.MarketSessionUpdate, message.Kind);
+        Assert.NotNull(message.MarketSessionUpdate);
+        Assert.Equal("DVX", message.MarketSessionUpdate.MarketId);
+        Assert.Equal("G1", message.MarketSessionUpdate.BoardId);
+        Assert.Equal("STO", message.MarketSessionUpdate.ProductGroupId);
+        Assert.Equal("AB2", message.MarketSessionUpdate.EventId);
+        Assert.Equal("40", message.MarketSessionUpdate.TradingSessionId);
+        Assert.Equal(DateTimeOffset.Parse("2026-07-08T02:15:00Z"), message.MarketSessionUpdate.UpdatedAt);
     }
 
     [Fact]

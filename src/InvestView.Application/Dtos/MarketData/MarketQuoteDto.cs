@@ -23,4 +23,6 @@ public sealed record MarketQuoteDto(
     IReadOnlyList<PriceLevelDto> BidLevels,
     IReadOnlyList<PriceLevelDto> AskLevels,
     string TradingStatus,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    decimal? ExpectedPrice = null,
+    long? ExpectedQuantity = null);

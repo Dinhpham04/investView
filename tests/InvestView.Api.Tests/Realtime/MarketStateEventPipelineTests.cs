@@ -96,6 +96,151 @@ public sealed class MarketStateEventPipelineTests
     }
 
     [Fact]
+    public async Task PublishMarketIndexUpdateAsync_WhenEstimatedUpdate_UpdatesLocalMirrorAndBroadcasts()
+    {
+        var sharedStore = new InMemoryMarketStateStore();
+        await sharedStore.UpsertMarketIndicesAsync(
+        [
+            new MarketIndexDto(
+                "VN30",
+                Value: 1840m,
+                Change: 3m,
+                ChangePercent: 0.16m,
+                ReferenceValue: 1837m,
+                HighValue: 1845m,
+                LowValue: 1835m,
+                TotalVolume: 100_000,
+                TotalValue: 1_000_000m,
+                UpCount: 15,
+                DownCount: 10,
+                NoChangeCount: 5,
+                CeilingCount: 1,
+                FloorCount: 0,
+                MarketId: "HOSE",
+                TradingSessionId: "99",
+                UpdatedAt: new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero))
+        ], CancellationToken.None);
+        var localMirror = new InMemoryMarketStateStore();
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var subscriber = new MarketStateEventSubscriber(
+            localMirror,
+            sharedStore,
+            broadcaster,
+            NullLogger<MarketStateEventSubscriber>.Instance);
+        var publisher = new MarketStateEventPublisher(
+            sharedStore,
+            new InProcessMarketStateEventBus([subscriber]));
+        var estimatedAt = new DateTimeOffset(2026, 7, 8, 3, 1, 0, TimeSpan.Zero);
+
+        await publisher.PublishMarketIndexUpdateAsync(
+            new MarketIndexUpdateDto(
+                "VN30",
+                Value: null,
+                Change: null,
+                ChangePercent: null,
+                ReferenceValue: null,
+                HighValue: null,
+                LowValue: null,
+                TotalVolume: null,
+                TotalValue: null,
+                UpCount: null,
+                DownCount: null,
+                NoChangeCount: null,
+                CeilingCount: null,
+                FloorCount: null,
+                MarketId: string.Empty,
+                TradingSessionId: string.Empty,
+                UpdatedAt: estimatedAt,
+                EstimatedValue: 1841.5m,
+                EstimatedChange: 4.5m,
+                EstimatedChangePercent: 0.24m,
+                EstimatedTotalVolume: 110_000,
+                EstimatedTotalValue: 1_100_000m,
+                EstimatedUpdatedAt: estimatedAt),
+            CancellationToken.None);
+
+        var broadcast = Assert.Single(broadcaster.MarketIndexUpdates);
+        Assert.Equal("VN30", broadcast.IndexName);
+        Assert.Null(broadcast.Value);
+        Assert.Equal(1841.5m, broadcast.EstimatedValue);
+
+        var localIndex = Assert.Single(await localMirror.GetMarketIndicesAsync(["VN30"], CancellationToken.None));
+        Assert.Equal(1840m, localIndex.Value);
+        Assert.Equal(new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero), localIndex.UpdatedAt);
+        Assert.Equal(1841.5m, localIndex.EstimatedValue);
+        Assert.Equal(estimatedAt, localIndex.EstimatedUpdatedAt);
+    }
+
+    [Fact]
+    public async Task PublishOhlcUpdateAsync_WritesSharedStateAndUpdatesLocalMirror()
+    {
+        var sharedStore = new InMemoryMarketStateStore();
+        var localMirror = new InMemoryMarketStateStore();
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var subscriber = new MarketStateEventSubscriber(
+            localMirror,
+            sharedStore,
+            broadcaster,
+            NullLogger<MarketStateEventSubscriber>.Instance);
+        var publisher = new MarketStateEventPublisher(
+            sharedStore,
+            new InProcessMarketStateEventBus([subscriber]));
+        var barTime = new DateTimeOffset(2026, 7, 8, 3, 30, 0, TimeSpan.Zero);
+        var update = new MarketOhlcUpdateDto(
+            "ssi",
+            "1",
+            barTime,
+            Open: 26.7m,
+            High: 27.1m,
+            Low: 26.6m,
+            Close: 27m,
+            Volume: 1_000,
+            Type: "stock",
+            IsClosed: false,
+            UpdatedAt: barTime);
+
+        await publisher.PublishOhlcUpdateAsync(update, CancellationToken.None);
+
+        Assert.Empty(broadcaster.QuoteUpdates);
+        Assert.Empty(broadcaster.TradeUpdates);
+        Assert.Empty(broadcaster.MarketIndexUpdates);
+
+        var localBars = await localMirror.GetOhlcBarsAsync("SSI", "1", barTime.AddMinutes(-1), barTime.AddMinutes(1), CancellationToken.None);
+        var sharedBars = await sharedStore.GetOhlcBarsAsync("SSI", "1", barTime.AddMinutes(-1), barTime.AddMinutes(1), CancellationToken.None);
+        Assert.Equal(27m, Assert.Single(localBars).Close);
+        Assert.Equal(27m, Assert.Single(sharedBars).Close);
+    }
+
+    [Fact]
+    public async Task PublishMarketSessionUpdateAsync_WritesSharedStateAndUpdatesLocalMirror()
+    {
+        var sharedStore = new InMemoryMarketStateStore();
+        var localMirror = new InMemoryMarketStateStore();
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var subscriber = new MarketStateEventSubscriber(
+            localMirror,
+            sharedStore,
+            broadcaster,
+            NullLogger<MarketStateEventSubscriber>.Instance);
+        var publisher = new MarketStateEventPublisher(
+            sharedStore,
+            new InProcessMarketStateEventBus([subscriber]));
+        var updatedAt = new DateTimeOffset(2026, 7, 8, 2, 15, 0, TimeSpan.Zero);
+
+        await publisher.PublishMarketSessionUpdateAsync(
+            new MarketSessionUpdateDto("dvx", "g1", "sto", "ab2", "40", updatedAt),
+            CancellationToken.None);
+
+        var localSession = await localMirror.GetMarketSessionAsync("STO", "G1", CancellationToken.None);
+        var sharedSession = await sharedStore.GetMarketSessionAsync("STO", "G1", CancellationToken.None);
+        Assert.NotNull(localSession);
+        Assert.NotNull(sharedSession);
+        Assert.Equal("DVX", localSession.MarketId);
+        Assert.Equal("DVX", sharedSession.MarketId);
+        Assert.Equal("40", localSession.TradingSessionId);
+    }
+
+    [Fact]
     public async Task PublishQuoteUpdateAsync_WhenUpdateIsStale_BroadcastsLatestStateInsteadOfStaleDelta()
     {
         var sharedStore = new InMemoryMarketStateStore();
@@ -222,6 +367,7 @@ public sealed class MarketStateEventPipelineTests
     {
         public List<MarketQuoteUpdateDto> QuoteUpdates { get; } = [];
         public List<MarketTradeUpdateDto> TradeUpdates { get; } = [];
+        public List<MarketIndexUpdateDto> MarketIndexUpdates { get; } = [];
 
         public Task BroadcastQuoteUpdateAsync(MarketQuoteUpdateDto update, CancellationToken cancellationToken)
         {
@@ -237,6 +383,7 @@ public sealed class MarketStateEventPipelineTests
 
         public Task BroadcastMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken)
         {
+            MarketIndexUpdates.Add(update);
             return Task.CompletedTask;
         }
 

@@ -80,13 +80,13 @@ function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: M
 export function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketIndex[]; isError: boolean; isLoading: boolean }) {
   return (
     <div className="min-w-0 overflow-x-auto border border-[#2d2a38] bg-[#1d1a2a] text-[11px] font-semibold">
-      <div className="grid h-7 min-w-[462px] grid-cols-[84px_66px_46px_72px_46px_112px] items-center gap-1 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
+      <div className="grid h-7 min-w-[462px] grid-cols-[72px_62px_42px_70px_52px_108px] items-center gap-2 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
         <span className="truncate">⚙ Chỉ số</span>
         <span className="truncate text-right">Điểm</span>
         <span className="truncate text-right">+ / -</span>
-        <span className="truncate text-right">KLGD (Triệu)</span>
+        <span className="truncate text-right" title="KLGD (Triệu)">KLGD (Tr)</span>
         <span className="truncate text-right">GTGD (Tỷ)</span>
-        <span className="truncate text-right">CK Tăng/Giảm</span>
+        <span className="truncate text-right" title="CK Tăng/Giảm">CK T/G</span>
       </div>
       {isLoading ? <div className="px-3 py-8 text-center text-market-text-muted">Đang tải chỉ số</div> : null}
       {isError ? <div className="px-3 py-8 text-center text-state-error">Không tải được chỉ số</div> : null}
@@ -94,7 +94,7 @@ export function MarketIndexTable({ indices, isError, isLoading }: { indices: Mar
         <div>
           {indices.map((index) => (
             <div
-              className="grid h-[25px] min-w-[462px] grid-cols-[84px_66px_46px_72px_46px_112px] items-center gap-1 border-b border-[#282534] px-2 tabular-nums last:border-b-0"
+              className="grid h-[25px] min-w-[462px] grid-cols-[72px_62px_42px_70px_52px_108px] items-center gap-2 border-b border-[#282534] px-2 tabular-nums last:border-b-0"
               key={index.indexName}
             >
               <span className="truncate text-[#d7d4e3]">{index.indexName}</span>

@@ -170,6 +170,38 @@ public static class DnseMarketDataMapper
             UpdatedAt: quote.UpdatedAt);
     }
 
+    public static SymbolMetadataDto MapSymbolMetadata(
+        string symbol,
+        string boardId,
+        JsonElement? instrument,
+        JsonElement? securityDefinition,
+        DateTimeOffset fallbackUpdatedAt)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedBoardId = NormalizeToken(boardId, "G1");
+        var instrumentPayload = FirstObjectOrSelf(UnwrapPayload(instrument, "data", "instruments", "instrument"));
+        var secdefPayload = FirstObjectOrSelf(UnwrapPayload(securityDefinition, "data", "secdef", "secdefs", "securityDefinition", "securityDefinitions"));
+
+        return new SymbolMetadataDto(
+            Symbol: normalizedSymbol,
+            BoardId: normalizedBoardId,
+            MarketId: GetString(instrumentPayload, "marketId", "exchange", "exchangeId") ?? "UNKNOWN",
+            DisplayName: GetString(instrumentPayload, "displayName", "name", "symbolName", "organShortName") ?? normalizedSymbol,
+            Name: GetString(instrumentPayload, "fullName", "organName", "companyName", "name", "symbolName") ?? normalizedSymbol,
+            SecurityType: GetString(instrumentPayload, "securityType", "type", "securityGroupId") ?? "Stock",
+            Isin: GetString(secdefPayload, "isin") ?? GetString(instrumentPayload, "isin") ?? string.Empty,
+            ProductGroupId: GetString(secdefPayload, "productGrpId", "productGroupId") ?? GetString(instrumentPayload, "productGrpId", "productGroupId") ?? string.Empty,
+            SecurityGroupId: GetString(secdefPayload, "securityGroupId") ?? GetString(instrumentPayload, "securityGroupId") ?? string.Empty,
+            TradingStatus: GetString(secdefPayload, "tradingStatus", "status", "securityStatus") ?? string.Empty,
+            SymbolAdminStatus: GetString(secdefPayload, "symbolAdminStatusCode", "symbolAdminStatus", "adminStatus") ?? string.Empty,
+            TradingMethodStatus: GetString(secdefPayload, "symbolTradingMethodStatusCode", "symbolTradingMethodStatus", "tradingMethodStatus") ?? string.Empty,
+            TradingSanctionStatus: GetString(secdefPayload, "symbolTradingSanctionStatusCode", "symbolTradingSanctionStatus", "tradingSanctionStatus") ?? string.Empty,
+            ListingDate: GetDateTimeOffset(secdefPayload, "listingDate") ?? GetDateTimeOffset(instrumentPayload, "listingDate", "listedDate"),
+            FinalTradeDate: GetDateTimeOffset(secdefPayload, "finalTradeDate"),
+            OpenInterestQuantity: GetLong(secdefPayload, "openInterestQuantity", "openInterest"),
+            UpdatedAt: fallbackUpdatedAt);
+    }
+
     public static IReadOnlyList<OhlcBarDto> MapOhlcBars(
         string symbol,
         string resolution,

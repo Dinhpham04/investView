@@ -3,7 +3,7 @@ using InvestView.Application.Dtos.MarketData;
 
 namespace InvestView.Infrastructure.MarketData;
 
-public sealed class MockMarketDataProvider : IMarketDataProvider
+public sealed class MockMarketDataProvider : IMarketDataProvider, ISymbolMetadataProvider
 {
     public const string DefaultBoardId = "G1";
 
@@ -200,6 +200,44 @@ public sealed class MockMarketDataProvider : IMarketDataProvider
             quote.UpdatedAt);
 
         return Task.FromResult<SymbolDetailDto?>(detail);
+    }
+
+    public Task<SymbolMetadataDto?> GetSymbolMetadataAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var normalizedBoardId = NormalizeBoardId(boardId);
+        var quote = Quotes.FirstOrDefault(item =>
+            item.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase) &&
+            item.BoardId.Equals(normalizedBoardId, StringComparison.OrdinalIgnoreCase));
+        if (quote is null)
+        {
+            return Task.FromResult<SymbolMetadataDto?>(null);
+        }
+
+        var metadata = new SymbolMetadataDto(
+            quote.Symbol,
+            quote.BoardId,
+            quote.MarketId,
+            quote.DisplayName,
+            quote.DisplayName,
+            "Stock",
+            "VN000000" + quote.Symbol,
+            "STOCK",
+            "ST",
+            quote.TradingStatus,
+            "NORMAL",
+            "NORMAL",
+            "NORMAL",
+            new DateTimeOffset(2007, 11, 15, 0, 0, 0, TimeSpan.Zero),
+            null,
+            0,
+            quote.UpdatedAt);
+
+        return Task.FromResult<SymbolMetadataDto?>(metadata);
     }
 
     public Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(

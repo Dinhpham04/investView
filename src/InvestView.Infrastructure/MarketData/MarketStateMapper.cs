@@ -52,6 +52,28 @@ internal static class MarketStateMapper
         };
     }
 
+    public static MarketOhlcUpdateDto NormalizeOhlcUpdate(MarketOhlcUpdateDto update)
+    {
+        return update with
+        {
+            Symbol = Normalize(update.Symbol),
+            Resolution = NormalizeResolution(update.Resolution),
+            Type = Normalize(update.Type)
+        };
+    }
+
+    public static MarketSessionUpdateDto NormalizeSessionUpdate(MarketSessionUpdateDto update)
+    {
+        return update with
+        {
+            MarketId = Normalize(update.MarketId),
+            BoardId = NormalizeBoardId(update.BoardId),
+            ProductGroupId = Normalize(update.ProductGroupId),
+            EventId = Normalize(update.EventId),
+            TradingSessionId = Normalize(update.TradingSessionId)
+        };
+    }
+
     public static IReadOnlyCollection<string> NormalizeSymbols(IReadOnlyCollection<string> symbols)
     {
         return symbols
@@ -80,6 +102,7 @@ internal static class MarketStateMapper
 
     public static MarketQuoteDto MergeQuote(MarketQuoteDto current, MarketQuoteUpdateDto update)
     {
+        var isExpectedOnlyUpdate = IsExpectedOnlyQuoteUpdate(update);
         var lastPrice = update.LastPrice ?? current.LastPrice;
         var referencePrice = update.ReferencePrice ?? current.ReferencePrice;
         var change = update.Change ?? (referencePrice > 0m ? lastPrice - referencePrice : current.Change);
@@ -107,8 +130,33 @@ internal static class MarketStateMapper
             BidLevels = update.BidLevels ?? current.BidLevels,
             AskLevels = update.AskLevels ?? current.AskLevels,
             TradingStatus = update.TradingStatus ?? current.TradingStatus,
-            UpdatedAt = update.UpdatedAt
+            UpdatedAt = isExpectedOnlyUpdate ? current.UpdatedAt : update.UpdatedAt,
+            ExpectedPrice = update.ExpectedPrice ?? current.ExpectedPrice,
+            ExpectedQuantity = update.ExpectedQuantity ?? current.ExpectedQuantity
         };
+    }
+
+    public static bool IsExpectedOnlyQuoteUpdate(MarketQuoteUpdateDto update)
+    {
+        return (update.ExpectedPrice.HasValue || update.ExpectedQuantity.HasValue) &&
+               !update.LastPrice.HasValue &&
+               !update.Change.HasValue &&
+               !update.ChangePercent.HasValue &&
+               !update.LastQuantity.HasValue &&
+               !update.TotalVolume.HasValue &&
+               !update.TotalValue.HasValue &&
+               !update.ForeignBuyVolume.HasValue &&
+               !update.ForeignSellVolume.HasValue &&
+               !update.ForeignRoom.HasValue &&
+               update.BidLevels is null &&
+               update.AskLevels is null &&
+               string.IsNullOrWhiteSpace(update.TradingStatus) &&
+               !update.ReferencePrice.HasValue &&
+               !update.CeilingPrice.HasValue &&
+               !update.FloorPrice.HasValue &&
+               !update.OpenPrice.HasValue &&
+               !update.HighPrice.HasValue &&
+               !update.LowPrice.HasValue;
     }
 
     public static MarketQuoteDto CreateQuoteFromUpdate(MarketQuoteUpdateDto update)
@@ -142,7 +190,9 @@ internal static class MarketStateMapper
             BidLevels: update.BidLevels ?? [],
             AskLevels: update.AskLevels ?? [],
             TradingStatus: update.TradingStatus ?? string.Empty,
-            UpdatedAt: update.UpdatedAt);
+            UpdatedAt: update.UpdatedAt,
+            ExpectedPrice: update.ExpectedPrice,
+            ExpectedQuantity: update.ExpectedQuantity);
     }
 
     public static MarketQuoteUpdateDto CreateQuoteUpdateFromTrade(MarketTradeUpdateDto update)
@@ -188,7 +238,9 @@ internal static class MarketStateMapper
             quote.FloorPrice,
             quote.OpenPrice,
             quote.HighPrice,
-            quote.LowPrice);
+            quote.LowPrice,
+            quote.ExpectedPrice,
+            quote.ExpectedQuantity);
     }
 
     public static MarketTradeDto CreateTradeFromUpdate(MarketTradeUpdateDto update)
@@ -208,6 +260,8 @@ internal static class MarketStateMapper
 
     public static MarketIndexDto MergeIndex(MarketIndexDto current, MarketIndexUpdateDto update)
     {
+        var hasActualIndexFields = HasActualIndexFields(update);
+
         return current with
         {
             Value = update.Value ?? current.Value,
@@ -225,7 +279,13 @@ internal static class MarketStateMapper
             FloorCount = update.FloorCount ?? current.FloorCount,
             MarketId = string.IsNullOrWhiteSpace(update.MarketId) ? current.MarketId : update.MarketId,
             TradingSessionId = string.IsNullOrWhiteSpace(update.TradingSessionId) ? current.TradingSessionId : update.TradingSessionId,
-            UpdatedAt = update.UpdatedAt
+            UpdatedAt = hasActualIndexFields ? update.UpdatedAt : current.UpdatedAt,
+            EstimatedValue = update.EstimatedValue ?? current.EstimatedValue,
+            EstimatedChange = update.EstimatedChange ?? current.EstimatedChange,
+            EstimatedChangePercent = update.EstimatedChangePercent ?? current.EstimatedChangePercent,
+            EstimatedTotalVolume = update.EstimatedTotalVolume ?? current.EstimatedTotalVolume,
+            EstimatedTotalValue = update.EstimatedTotalValue ?? current.EstimatedTotalValue,
+            EstimatedUpdatedAt = update.EstimatedUpdatedAt ?? current.EstimatedUpdatedAt
         };
     }
 
@@ -248,7 +308,13 @@ internal static class MarketStateMapper
             update.FloorCount,
             update.MarketId,
             update.TradingSessionId,
-            update.UpdatedAt);
+            update.UpdatedAt,
+            update.EstimatedValue,
+            update.EstimatedChange,
+            update.EstimatedChangePercent,
+            update.EstimatedTotalVolume,
+            update.EstimatedTotalValue,
+            update.EstimatedUpdatedAt);
     }
 
     public static MarketIndexUpdateDto CreateIndexUpdateFromIndex(MarketIndexDto index)
@@ -270,6 +336,49 @@ internal static class MarketStateMapper
             index.FloorCount,
             index.MarketId,
             index.TradingSessionId,
-            index.UpdatedAt);
+            index.UpdatedAt,
+            index.EstimatedValue,
+            index.EstimatedChange,
+            index.EstimatedChangePercent,
+            index.EstimatedTotalVolume,
+            index.EstimatedTotalValue,
+            index.EstimatedUpdatedAt);
+    }
+
+    public static OhlcBarDto CreateOhlcBarFromUpdate(MarketOhlcUpdateDto update)
+    {
+        return new OhlcBarDto(
+            update.Symbol,
+            NormalizeResolution(update.Resolution),
+            update.Time,
+            update.Open,
+            update.High,
+            update.Low,
+            update.Close,
+            update.Volume);
+    }
+
+    private static string NormalizeResolution(string resolution)
+    {
+        return string.IsNullOrWhiteSpace(resolution) ? "1" : resolution.Trim().ToUpperInvariant();
+    }
+
+    private static bool HasActualIndexFields(MarketIndexUpdateDto update)
+    {
+        return update.Value.HasValue ||
+               update.Change.HasValue ||
+               update.ChangePercent.HasValue ||
+               update.ReferenceValue.HasValue ||
+               update.HighValue.HasValue ||
+               update.LowValue.HasValue ||
+               update.TotalVolume.HasValue ||
+               update.TotalValue.HasValue ||
+               update.UpCount.HasValue ||
+               update.DownCount.HasValue ||
+               update.NoChangeCount.HasValue ||
+               update.CeilingCount.HasValue ||
+               update.FloorCount.HasValue ||
+               !string.IsNullOrWhiteSpace(update.MarketId) ||
+               !string.IsNullOrWhiteSpace(update.TradingSessionId);
     }
 }

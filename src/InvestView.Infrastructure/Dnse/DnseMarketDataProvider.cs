@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace InvestView.Infrastructure.Dnse;
 
-public sealed class DnseMarketDataProvider : IMarketDataProvider
+public sealed class DnseMarketDataProvider : IMarketDataProvider, ISymbolMetadataProvider
 {
     private const string DefaultBoardId = "G1";
     private readonly IDnseMarketDataClient _client;
@@ -89,6 +89,41 @@ public sealed class DnseMarketDataProvider : IMarketDataProvider
             foreignTrading.RootElement,
             DateTimeOffset.UtcNow,
             _options.QuantityScaleFactor);
+    }
+
+    public async Task<SymbolMetadataDto?> GetSymbolMetadataAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedSymbol = NormalizeSymbol(symbol);
+        var normalizedBoardId = NormalizeBoardId(boardId);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return null;
+        }
+
+        using var instruments = await _client.GetJsonAsync(
+            "/instruments",
+            new Dictionary<string, string?>
+            {
+                ["symbol"] = normalizedSymbol,
+                ["limit"] = "1",
+                ["page"] = "1"
+            },
+            cancellationToken);
+        using var securityDefinition = await _client.GetJsonAsync(
+            $"/price/{normalizedSymbol}/secdef",
+            new Dictionary<string, string?> { ["boardId"] = normalizedBoardId },
+            cancellationToken);
+
+        var instrument = DnseMarketDataMapper.FindObjectBySymbol(instruments.RootElement, normalizedSymbol);
+        return DnseMarketDataMapper.MapSymbolMetadata(
+            normalizedSymbol,
+            normalizedBoardId,
+            instrument,
+            securityDefinition.RootElement,
+            DateTimeOffset.UtcNow);
     }
 
     public async Task<IReadOnlyList<OhlcBarDto>> GetOhlcAsync(
