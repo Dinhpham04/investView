@@ -38,6 +38,7 @@ public static class DependencyInjection
             services.AddOptions<MarketDataProviderOptions>();
             services.AddOptions<DnseMarketDataOptions>();
             services.AddOptions<MarketQuoteStreamOptions>();
+            services.AddOptions<SecurityDefinitionWarmupOptions>();
         }
         else
         {
@@ -49,6 +50,8 @@ public static class DependencyInjection
                 configuration.GetSection(DnseMarketDataOptions.SectionName));
             services.Configure<MarketQuoteStreamOptions>(
                 configuration.GetSection(MarketQuoteStreamOptions.SectionName));
+            services.Configure<SecurityDefinitionWarmupOptions>(
+                configuration.GetSection(SecurityDefinitionWarmupOptions.SectionName));
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>
@@ -78,12 +81,15 @@ public static class DependencyInjection
         services.AddHostedService<RedisMarketStateSubscriberService>();
         services.AddSingleton<IMarketStateEventPublisher, MarketStateEventPublisher>();
         services.AddSingleton<MarketQuoteStreamSchedule>();
+        services.AddSingleton<SecurityDefinitionWarmupSchedule>();
+        services.AddSingleton<SecurityDefinitionWarmupSymbolResolver>();
         services.AddSingleton<IMarketQuoteSubscriptionRegistry, MarketQuoteSubscriptionRegistry>();
         services.AddHttpClient<IDnseMarketDataClient, DnseMarketDataClient>();
         services.AddSingleton<DnseMarketDataProvider>();
         services.AddSingleton<MockQuoteStreamPublisher>();
         services.AddHostedService<MockQuoteStreamService>();
         services.AddHostedService<DnseWebSocketQuoteStreamService>();
+        services.AddHostedService<SecurityDefinitionWarmupService>();
         services.AddSingleton<IMarketDataProvider>(serviceProvider =>
         {
             var innerProvider = ResolveInnerMarketDataProvider(serviceProvider);

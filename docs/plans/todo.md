@@ -24,11 +24,11 @@
 
 ## Milestone 3: Realtime Quote Updates
 
-- [ ] Task 6: Add SignalR quote hub with mock stream
-  - [ ] Establish app-facing realtime DTO before DNSE WebSocket adapter
-- [ ] Task 7: Connect frontend to realtime quotes
-  - [ ] Apply quote updates through AG Grid row identity and transactions
-- [ ] Checkpoint: Realtime market board
+- [x] Task 6: Add SignalR quote hub with mock stream
+  - [x] Establish app-facing realtime DTO before DNSE WebSocket adapter
+- [x] Task 7: Connect frontend to realtime quotes
+  - [x] Apply quote updates through AG Grid row identity and transactions
+- [x] Checkpoint: Realtime market board
 
 ## Milestone 4: Persistence, Watchlist, Portfolio, and Simulated Orders
 
@@ -39,13 +39,18 @@
 
 ## Milestone 5: DNSE Integration and Demo Packaging
 
-- [ ] Task 11: Add DNSE REST adapter
-  - [ ] Implement isolated REST signer from local SDK reference
-  - [ ] Cover `/instruments`, `/price/{symbol}/secdef`, latest trade, latest quote, and OHLC
-  - [ ] Keep TLS certificate validation enabled
-- [ ] Task 12: Add DNSE WebSocket adapter
-  - [ ] Implement separate WebSocket auth flow
-  - [ ] Subscribe to `tick.G1.json`, `top_price.G1.json`, and `security_definition.G1.json`
-  - [ ] Handle ping/pong, reconnect, re-auth, re-subscribe, and stream health
-- [ ] Task 13: Add Docker Compose and demo documentation
+- [x] Task 11: Add DNSE REST adapter
+  - [x] Implement isolated REST signer from local SDK reference
+  - [x] Cover `/instruments`, `/price/{symbol}/secdef`, latest trade, latest quote, and OHLC
+  - [x] Keep TLS certificate validation enabled
+- [x] Task 12: Add DNSE WebSocket adapter
+  - [x] Implement separate WebSocket auth flow
+  - [x] Subscribe to `tick.G1.json`, `top_price.G1.json`, and `security_definition.G1.json`
+  - [x] Handle ping/pong, reconnect, re-auth, re-subscribe, and stream health
+- [x] Task 13: Add proactive Security Definition warmup
+  - [x] Resolve HOSE/HNX/UPCOM stock symbols via DNSE `/instruments`
+  - [x] Store market memberships in Redis
+  - [x] Subscribe only `security_definition.G1.json` during the BOD warmup window
+  - [x] Publish `sd` updates through the Redis market-state merge pipeline
+- [ ] Task 14: Add Docker Compose and demo documentation
 - [ ] Checkpoint: MVP ready

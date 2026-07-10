@@ -272,30 +272,32 @@ Goal: connect the REST snapshot path to DNSE before proving realtime data handli
 
 ### Task 6: Add DNSE REST Snapshot Adapter
 
+**Status:** Done
+
 **Description:** Implement `DnseMarketDataProvider` behind `IMarketDataProvider` so the existing market board can load a real DNSE REST snapshot without changing the React API contract. This task integrates snapshot data first; DNSE WebSocket remains a later task.
 
 **Acceptance criteria:**
 
-- [ ] DNSE credentials/config are read from environment/configuration.
-- [ ] Market data provider can be selected by config: `Mock` or `Dnse`.
-- [ ] Missing DNSE credentials fall back to mock provider or fail with a clear config message.
-- [ ] DNSE response models do not leave Infrastructure.
-- [ ] REST adapter supports the market board snapshot using `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading` where available.
-- [ ] REST client uses default base URL `https://openapi.dnse.com.vn` unless overridden.
-- [ ] REST client sends API version `2026-05-07` unless overridden.
-- [ ] REST date header name is configurable and defaults to `Date`.
-- [ ] REST signer is isolated and signs method, path, date header, and nonce as shown by the local SDK.
-- [ ] Query parameters are present in the request URL but not in the signed path string.
-- [ ] Adapter uses normal .NET TLS certificate validation; it does not copy the SDK's disabled-cert behavior.
+- [x] DNSE credentials/config are read from environment/configuration.
+- [x] Market data provider can be selected by config: `Mock` or `Dnse`.
+- [x] Missing DNSE credentials fall back to mock provider or fail with a clear config message.
+- [x] DNSE response models do not leave Infrastructure.
+- [x] REST adapter supports the market board snapshot using `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading` where available.
+- [x] REST client uses default base URL `https://openapi.dnse.com.vn` unless overridden.
+- [x] REST client sends API version `2026-05-07` unless overridden.
+- [x] REST date header name is configurable and defaults to `Date`.
+- [x] REST signer is isolated and signs method, path, date header, and nonce as shown by the local SDK.
+- [x] Query parameters are present in the request URL but not in the signed path string.
+- [x] Adapter uses normal .NET TLS certificate validation; it does not copy the SDK's disabled-cert behavior.
 
 **Verification:**
 
-- [ ] Unit tests cover REST signature construction with deterministic timestamp and nonce.
-- [ ] Unit tests cover URL/query construction for `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading`.
-- [ ] Unit tests cover DNSE response mapping using fixture JSON.
+- [x] Unit tests cover REST signature construction with deterministic timestamp and nonce.
+- [x] Unit tests cover URL/query construction for `/instruments`, `/price/{symbol}/secdef`, `/price/{symbol}/trades/latest`, `/price/{symbol}/quotes/latest`, and `/price/{symbol}/foreign-trading`.
+- [x] Unit tests cover DNSE response mapping using fixture JSON.
 - [ ] Integration path can be manually verified when DNSE credentials are available.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] `dotnet build`
+- [x] `dotnet test`
 
 **Dependencies:** Task 4, Task 5
 
@@ -551,7 +553,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 13: Expand DNSE REST Adapter for Symbol Detail, OHLC, and Latest Trades
 
-**Status:** In Progress
+**Status:** Done
 
 **Description:** Expand the DNSE REST integration beyond the market-board snapshot to cover symbol detail, OHLC chart data, and latest matched trades needed by later detail/chart screens. Use the local SDK and DNSE docs as the source of truth for endpoint behavior, payload shape, and mapping edge cases.
 
@@ -596,6 +598,8 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 14: Harden DNSE WebSocket Adapter
 
+**Status:** In Progress
+
 **Description:** Extend the DNSE WebSocket stream added in Task 9 with broader production hardening after the core investor workflow is stable. Use the local SDK WebSocket implementation as the reference for auth, channel names, message types, heartbeat, reconnect behavior, and performance tuning.
 
 **Acceptance criteria:**
@@ -630,15 +634,17 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 15: Harden Market Board Realtime Merge Rules
 
+**Status:** In Progress
+
 **Description:** Harden frontend realtime quote merging so the market board does not regress or display inconsistent values when DNSE WebSocket events arrive out of order, after reconnects, or from different channels with partial payloads. This task should be implemented after the realtime data path has been manually observed with enough live DNSE traffic.
 
 **Acceptance criteria:**
 
 - [ ] `marketBoardRealtime.ts` ignores stale updates that are older than the current row state.
 - [ ] Merge rules are explicit per channel/field group: trade, top price, security definition, and foreign trading.
-- [ ] Partial realtime updates preserve unrelated snapshot or stream fields.
-- [ ] `change` and `changePercent` remain consistent with last price and reference price when DNSE omits either value.
-- [ ] Flash classes are applied only to cells whose displayed values actually changed.
+- [x] Partial realtime updates preserve unrelated snapshot or stream fields.
+- [x] `change` and `changePercent` remain consistent with last price and reference price when DNSE omits either value.
+- [x] Flash classes are applied only to cells whose displayed values actually changed.
 
 **Verification:**
 
@@ -663,7 +669,7 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 ### Task 16: Add Market Index Overview
 
-**Status:** In Progress
+**Status:** Done
 
 **Description:** Add a market index overview section above the market board, using DNSE official index enum names directly. The feature shows compact intraday cards and a summary table for market indices such as `VNINDEX`, `VN30`, `HNX`, `HNX30`, and `UPCOM`. Index chart data uses DNSE OHLC for `type=INDEX`; realtime headline/breadth data uses the DNSE `market_index.{market_index}.json` WebSocket channel when enabled.
 
@@ -829,7 +835,41 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Implemented notes:** The WebSocket stream now subscribes to expected auction price, open/closed OHLC for configured resolutions, estimated market indices, and session state. These updates are normalized into app-owned DTOs, written through the shared market-state abstraction, published as internal market events, and then applied by local mirrors. Realtime OHLC bars are upserted into sorted sets, but OHLC range coverage still comes from REST backfill so chart APIs do not treat partial realtime history as a full cache hit.
 
-### Task 20: Add Docker Compose and Demo Documentation
+### Task 20: Add Proactive Security Definition Warmup
+
+**Status:** Done
+
+**Description:** Add a separate BOD warmup path for DNSE `security_definition.{boardId}.json` so reference, ceiling, floor, and security status can be loaded into Redis for HOSE/HNX/UPCOM before the market board has active SignalR subscriptions. This warmup must not depend on `QuoteStream:Schedule:RequireActiveSubscriptions`.
+
+**Acceptance criteria:**
+
+- [x] Warmup resolves stock symbols for configured market ids (`STO`, `STX`, `UPX`) through DNSE `/instruments` with `securityGroupId=ST`.
+- [x] Warmup writes complete market membership sets into Redis for each configured market id.
+- [x] Warmup connects to DNSE WebSocket during a configurable local BOD window and subscribes only to `security_definition.{boardId}.json`.
+- [x] Warmup batches symbol subscriptions to avoid sending one huge subscribe payload.
+- [x] Incoming `sd` payloads are mapped through the existing DNSE message mapper and published through the market-state event pipeline.
+- [x] Redis quote state is updated through the existing merge path, preserving other fields when security-definition fields arrive.
+- [x] Warmup runs at most once per configured local trading day and skips cleanly when disabled or DNSE credentials are missing.
+
+**Verification:**
+
+- [x] Unit tests cover symbol resolution, market filters, paging, and dedupe.
+- [x] Unit tests cover warmup schedule decisions.
+- [x] Targeted backend tests cover DNSE websocket mapper/builder and DI.
+- [x] `dotnet test tests/InvestView.Api.Tests/InvestView.Api.Tests.csproj -c Release --filter "FullyQualifiedName~DependencyInjectionTests|FullyQualifiedName~DnseWebSocketSubscriptionBuilderTests|FullyQualifiedName~DnseWebSocketMessageMapperTests|FullyQualifiedName~SecurityDefinitionWarmup"`
+
+**Dependencies:** Task 17, Task 18, Task 19
+
+**Files likely touched:**
+
+- `src/InvestView.Infrastructure/Realtime/*`
+- `src/InvestView.Infrastructure/DependencyInjection.cs`
+- `src/InvestView.Api/appsettings.json`
+- `tests/InvestView.Api.Tests/Realtime/*`
+- `docs/plans/implementation-plan.md`
+- `docs/plans/todo.md`
+
+### Task 21: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 
