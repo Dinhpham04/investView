@@ -15,8 +15,7 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(
         this IServiceCollection services,
-        IConfiguration? configuration = null,
-        Action<MarketDataCacheOptions>? configureMarketDataCache = null)
+        IConfiguration? configuration = null)
     {
         var marketStateOptions = new MarketStateOptions();
         configuration?.GetSection(MarketStateOptions.SectionName).Bind(marketStateOptions);
@@ -30,10 +29,8 @@ public static class DependencyInjection
         }
 
         services.AddLogging();
-        services.AddMemoryCache();
         services.AddSingleton(TimeProvider.System);
 
-        services.AddOptions<MarketDataCacheOptions>();
         services.AddOptions<MarketStateOptions>();
 
         if (configuration is null)
@@ -44,8 +41,6 @@ public static class DependencyInjection
         }
         else
         {
-            services.Configure<MarketDataCacheOptions>(
-                configuration.GetSection(MarketDataCacheOptions.SectionName));
             services.Configure<MarketStateOptions>(
                 configuration.GetSection(MarketStateOptions.SectionName));
             services.Configure<MarketDataProviderOptions>(
@@ -54,11 +49,6 @@ public static class DependencyInjection
                 configuration.GetSection(DnseMarketDataOptions.SectionName));
             services.Configure<MarketQuoteStreamOptions>(
                 configuration.GetSection(MarketQuoteStreamOptions.SectionName));
-        }
-
-        if (configureMarketDataCache is not null)
-        {
-            services.Configure(configureMarketDataCache);
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>
@@ -94,19 +84,9 @@ public static class DependencyInjection
         services.AddSingleton<MockQuoteStreamPublisher>();
         services.AddHostedService<MockQuoteStreamService>();
         services.AddHostedService<DnseWebSocketQuoteStreamService>();
-        services.AddSingleton<CachedMarketDataProvider>(serviceProvider =>
-        {
-            var inner = ResolveInnerMarketDataProvider(serviceProvider);
-
-            return new CachedMarketDataProvider(
-                inner,
-                serviceProvider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
-                serviceProvider.GetRequiredService<IOptions<MarketDataCacheOptions>>(),
-                serviceProvider.GetRequiredService<ILogger<CachedMarketDataProvider>>());
-        });
         services.AddSingleton<IMarketDataProvider>(serviceProvider =>
             new MarketStateBackedMarketDataProvider(
-                serviceProvider.GetRequiredService<CachedMarketDataProvider>(),
+                ResolveInnerMarketDataProvider(serviceProvider),
                 serviceProvider.GetRequiredService<IMarketStateMirror>(),
                 serviceProvider.GetRequiredService<IMarketStateStore>(),
                 serviceProvider.GetRequiredService<ILogger<MarketStateBackedMarketDataProvider>>()));

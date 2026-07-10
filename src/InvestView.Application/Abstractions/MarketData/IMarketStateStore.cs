@@ -17,10 +17,56 @@ public interface IMarketStateStore
         IReadOnlyCollection<string> symbols,
         CancellationToken cancellationToken);
 
+    Task UpsertSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<string>> GetSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        CancellationToken cancellationToken);
+
     Task UpsertMarketIndicesAsync(IReadOnlyCollection<MarketIndexDto> indices, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<MarketIndexDto>> GetMarketIndicesAsync(
         IReadOnlyCollection<string> indexNames,
+        CancellationToken cancellationToken);
+
+    Task UpsertSymbolDetailAsync(SymbolDetailDto detail, CancellationToken cancellationToken);
+
+    Task<SymbolDetailDto?> GetSymbolDetailAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken);
+
+    Task UpsertOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OhlcBarDto>> GetOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
+    Task UpsertIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(

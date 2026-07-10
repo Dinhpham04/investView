@@ -7,7 +7,6 @@ using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace InvestView.Api.Tests.Infrastructure;
@@ -15,27 +14,15 @@ namespace InvestView.Api.Tests.Infrastructure;
 public sealed class DependencyInjectionTests
 {
     [Fact]
-    public void AddInfrastructure_WhenMarketDataCacheIsConfigured_BindsCacheOptions()
+    public void AddInfrastructure_DoesNotRegisterMemoryCacheForMarketData()
     {
-        var configuration = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["MarketData:Provider"] = "Mock",
-                ["MarketData:Cache:MarketBoardTtl"] = "7.00:00:00",
-                ["MarketData:Cache:SymbolDetailTtl"] = "00:30:00",
-                ["MarketData:Cache:OhlcTtl"] = "00:05:00",
-                ["MarketData:State:RedisConnectionString"] = "localhost:6379"
-            })
-            .Build();
         var services = new ServiceCollection();
+        var memoryCachingNamespace = string.Join(".", "Microsoft", "Extensions", "Caching", "Memory");
 
-        services.AddInfrastructure(configuration);
+        services.AddInfrastructure(CreateRedisConfiguration());
 
-        using var serviceProvider = services.BuildServiceProvider();
-        var options = serviceProvider.GetRequiredService<IOptions<MarketDataCacheOptions>>().Value;
-        Assert.Equal(TimeSpan.FromDays(7), options.MarketBoardTtl);
-        Assert.Equal(TimeSpan.FromMinutes(30), options.SymbolDetailTtl);
-        Assert.Equal(TimeSpan.FromMinutes(5), options.OhlcTtl);
+        Assert.DoesNotContain(services, descriptor =>
+            descriptor.ServiceType.Namespace == memoryCachingNamespace);
     }
 
     [Theory]

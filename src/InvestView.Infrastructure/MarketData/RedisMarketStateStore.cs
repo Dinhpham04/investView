@@ -1,4 +1,3 @@
-using System.Text.Json;
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Dtos.MarketData;
 using Microsoft.Extensions.Options;
@@ -8,17 +7,15 @@ namespace InvestView.Infrastructure.MarketData;
 
 public sealed class RedisMarketStateStore : IMarketStateStore
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-
     private readonly IDatabase _database;
-    private readonly MarketStateOptions _options;
+    private readonly MarketStateRedisSchema _schema;
 
     public RedisMarketStateStore(
         IConnectionMultiplexer connectionMultiplexer,
         IOptions<MarketStateOptions> options)
     {
         _database = connectionMultiplexer.GetDatabase();
-        _options = options.Value;
+        _schema = new MarketStateRedisSchema(options.Value);
     }
 
     public async Task UpsertQuotesAsync(IReadOnlyCollection<MarketQuoteDto> quotes, CancellationToken cancellationToken)
@@ -27,12 +24,7 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         {
             cancellationToken.ThrowIfCancellationRequested();
             var normalizedQuote = MarketStateMapper.NormalizeQuote(quote);
-            await _database.StringSetAsync(
-                QuoteRedisKey(normalizedQuote.BoardId, normalizedQuote.Symbol),
-                Serialize(normalizedQuote),
-                EffectiveTtl());
-            await _database.SetAddAsync(BoardSymbolsRedisKey(normalizedQuote.BoardId), normalizedQuote.Symbol);
-            await _database.KeyExpireAsync(BoardSymbolsRedisKey(normalizedQuote.BoardId), EffectiveTtl());
+            await StoreQuoteAsync(normalizedQuote, includeGroupTimestamps: true);
         }
     }
 
@@ -40,8 +32,8 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedUpdate = MarketStateMapper.NormalizeQuoteUpdate(update);
-        var key = QuoteRedisKey(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
-        var current = await GetValueAsync<MarketQuoteDto>(key);
+        var key = _schema.QuoteStateKey(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
+        var current = await GetQuoteAsync(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
         if (current is not null && normalizedUpdate.UpdatedAt < current.UpdatedAt)
         {
             return MarketStateMapper.CreateQuoteUpdateFromQuote(current);
@@ -51,9 +43,11 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             ? MarketStateMapper.CreateQuoteFromUpdate(normalizedUpdate)
             : MarketStateMapper.MergeQuote(current, normalizedUpdate);
 
-        await _database.StringSetAsync(key, Serialize(next), EffectiveTtl());
-        await _database.SetAddAsync(BoardSymbolsRedisKey(normalizedUpdate.BoardId), normalizedUpdate.Symbol);
-        await _database.KeyExpireAsync(BoardSymbolsRedisKey(normalizedUpdate.BoardId), EffectiveTtl());
+        await _database.HashSetAsync(key, _schema.ToQuoteHash(next, includeGroupTimestamps: false));
+        await _database.HashSetAsync(key, _schema.ToQuoteGroupTimestampHash(normalizedUpdate));
+        await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+        await AddQuoteMembershipsAsync(next);
+
         return normalizedUpdate;
     }
 
@@ -61,12 +55,12 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedUpdate = MarketStateMapper.NormalizeTradeUpdate(update);
-        var tradeKey = TradeRedisKey(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
+        var tradeKey = _schema.QuoteTradesKey(normalizedUpdate.BoardId, normalizedUpdate.Symbol);
         var trade = MarketStateMapper.CreateTradeFromUpdate(normalizedUpdate);
 
-        await _database.ListLeftPushAsync(tradeKey, Serialize(trade));
-        await _database.ListTrimAsync(tradeKey, 0, 99);
-        await _database.KeyExpireAsync(tradeKey, EffectiveTtl());
+        await _database.ListLeftPushAsync(tradeKey, _schema.ToTradeMember(trade));
+        await _database.ListTrimAsync(tradeKey, 0, 199);
+        await _database.KeyExpireAsync(tradeKey, _schema.LatestTradesTtl);
         await ApplyQuoteUpdateAsync(MarketStateMapper.CreateQuoteUpdateFromTrade(normalizedUpdate), cancellationToken);
 
         return normalizedUpdate;
@@ -76,8 +70,8 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedUpdate = MarketStateMapper.NormalizeIndexUpdate(update);
-        var key = IndexRedisKey(normalizedUpdate.IndexName);
-        var current = await GetValueAsync<MarketIndexDto>(key);
+        var key = _schema.IndexStateKey(normalizedUpdate.IndexName);
+        var current = await GetIndexAsync(normalizedUpdate.IndexName);
         if (current is not null && normalizedUpdate.UpdatedAt < current.UpdatedAt)
         {
             return MarketStateMapper.CreateIndexUpdateFromIndex(current);
@@ -87,7 +81,8 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             ? MarketStateMapper.CreateIndexFromUpdate(normalizedUpdate)
             : MarketStateMapper.MergeIndex(current, normalizedUpdate);
 
-        await _database.StringSetAsync(key, Serialize(next), EffectiveTtl());
+        await StoreIndexAsync(next);
+        await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
         return normalizedUpdate;
     }
 
@@ -98,19 +93,70 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         var normalizedBoardId = MarketStateMapper.NormalizeBoardId(boardId);
         var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
-        var quotes = new List<MarketQuoteDto>(normalizedSymbols.Count);
+        var quoteTasks = normalizedSymbols
+            .Select(symbol => _database.HashGetAllAsync(_schema.QuoteStateKey(normalizedBoardId, symbol)))
+            .ToArray();
+
+        await Task.WhenAll(quoteTasks);
+
+        return quoteTasks
+            .Select(task => _schema.QuoteFromHash(task.Result))
+            .Where(quote => quote is not null)
+            .Select(quote => quote!)
+            .OrderBy(quote => quote.Symbol, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public async Task UpsertSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
+        var boardId = MarketStateMapper.NormalizeBoardId(query.BoardId);
+        var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
+        var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
 
         foreach (var symbol in normalizedSymbols)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            var quote = await GetValueAsync<MarketQuoteDto>(QuoteRedisKey(normalizedBoardId, symbol));
-            if (quote is not null)
+            await AddMembershipAsync(_schema.BoardSymbolsKey(boardId), symbol);
+            if (!string.IsNullOrWhiteSpace(marketId))
             {
-                quotes.Add(quote);
+                await AddMembershipAsync(_schema.MarketSymbolsKey(marketId), symbol);
+            }
+
+            if (!string.IsNullOrWhiteSpace(indexName))
+            {
+                await AddMembershipAsync(_schema.CategorySymbolsKey(indexName), symbol);
             }
         }
+    }
 
-        return quotes.OrderBy(quote => quote.Symbol, StringComparer.Ordinal).ToArray();
+    public async Task<IReadOnlyCollection<string>> GetSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var explicitSymbols = MarketStateMapper.NormalizeSymbols(query.Symbols);
+        if (explicitSymbols.Count > 0)
+        {
+            return explicitSymbols;
+        }
+
+        var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(indexName))
+        {
+            return await GetMembershipAsync(_schema.CategorySymbolsKey(indexName));
+        }
+
+        var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(marketId))
+        {
+            return await GetMembershipAsync(_schema.MarketSymbolsKey(marketId));
+        }
+
+        return await GetMembershipAsync(_schema.BoardSymbolsKey(query.BoardId));
     }
 
     public async Task UpsertMarketIndicesAsync(IReadOnlyCollection<MarketIndexDto> indices, CancellationToken cancellationToken)
@@ -118,13 +164,7 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         foreach (var index in indices)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var normalizedIndex = MarketStateMapper.NormalizeIndex(index);
-            await _database.StringSetAsync(
-                IndexRedisKey(normalizedIndex.IndexName),
-                Serialize(normalizedIndex),
-                EffectiveTtl());
-            await _database.SetAddAsync(IndexNamesRedisKey(), normalizedIndex.IndexName);
-            await _database.KeyExpireAsync(IndexNamesRedisKey(), EffectiveTtl());
+            await StoreIndexAsync(MarketStateMapper.NormalizeIndex(index));
         }
     }
 
@@ -135,7 +175,7 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         var normalizedNames = MarketStateMapper.NormalizeSymbols(indexNames);
         if (normalizedNames.Count == 0)
         {
-            var members = await _database.SetMembersAsync(IndexNamesRedisKey());
+            var members = await _database.SetMembersAsync(_schema.IndexNamesKey());
             normalizedNames = members
                 .Select(member => MarketStateMapper.Normalize(member!))
                 .Where(member => !string.IsNullOrWhiteSpace(member))
@@ -144,23 +184,102 @@ public sealed class RedisMarketStateStore : IMarketStateStore
                 .ToArray();
         }
 
-        if (normalizedNames.Count == 0)
-        {
-            return [];
-        }
+        var indexTasks = normalizedNames
+            .Select(indexName => _database.HashGetAllAsync(_schema.IndexStateKey(indexName)))
+            .ToArray();
 
-        var indices = new List<MarketIndexDto>(normalizedNames.Count);
-        foreach (var indexName in normalizedNames)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var index = await GetValueAsync<MarketIndexDto>(IndexRedisKey(indexName));
-            if (index is not null)
-            {
-                indices.Add(index);
-            }
-        }
+        await Task.WhenAll(indexTasks);
 
-        return indices.OrderBy(index => index.IndexName, StringComparer.Ordinal).ToArray();
+        return indexTasks
+            .Select(task => _schema.IndexFromHash(task.Result))
+            .Where(index => index is not null)
+            .Select(index => index!)
+            .OrderBy(index => index.IndexName, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    public async Task UpsertSymbolDetailAsync(SymbolDetailDto detail, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedDetail = NormalizeDetail(detail);
+        var key = _schema.SymbolDetailKey(normalizedDetail.BoardId, normalizedDetail.Symbol);
+
+        await _database.HashSetAsync(key, _schema.ToSymbolDetailHash(normalizedDetail));
+        await _database.KeyExpireAsync(key, _schema.SymbolDetailTtl);
+    }
+
+    public async Task<SymbolDetailDto?> GetSymbolDetailAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var values = await _database.HashGetAllAsync(_schema.SymbolDetailKey(boardId, symbol));
+        return _schema.SymbolDetailFromHash(values);
+    }
+
+    public async Task UpsertOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken)
+    {
+        await StoreOhlcBarsAsync(
+            _schema.OhlcKey(symbol, resolution),
+            _schema.OhlcCoverageKey(symbol, resolution),
+            from,
+            to,
+            bars,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<OhlcBarDto>> GetOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        return await GetOhlcBarsAsync(
+            _schema.OhlcKey(symbol, resolution),
+            _schema.OhlcCoverageKey(symbol, resolution),
+            from,
+            to,
+            cancellationToken);
+    }
+
+    public async Task UpsertIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken)
+    {
+        await StoreOhlcBarsAsync(
+            _schema.IndexOhlcKey(indexName, resolution),
+            _schema.IndexOhlcCoverageKey(indexName, resolution),
+            from,
+            to,
+            bars,
+            cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        return await GetOhlcBarsAsync(
+            _schema.IndexOhlcKey(indexName, resolution),
+            _schema.IndexOhlcCoverageKey(indexName, resolution),
+            from,
+            to,
+            cancellationToken);
     }
 
     public async Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
@@ -172,70 +291,138 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedLimit = Math.Clamp(limit, 1, 200);
         var values = await _database.ListRangeAsync(
-            TradeRedisKey(boardId, symbol),
+            _schema.QuoteTradesKey(boardId, symbol),
             0,
             normalizedLimit - 1);
 
         return values
-            .Select(Deserialize<MarketTradeDto>)
+            .Select(_schema.TradeFromMember)
             .Where(trade => trade is not null)
             .Select(trade => trade!)
             .OrderByDescending(trade => trade.Time)
             .ToArray();
     }
 
-    private async Task<T?> GetValueAsync<T>(RedisKey key)
+    private async Task StoreQuoteAsync(MarketQuoteDto quote, bool includeGroupTimestamps)
     {
-        var value = await _database.StringGetAsync(key);
-        return value.HasValue ? Deserialize<T>(value) : default;
+        var key = _schema.QuoteStateKey(quote.BoardId, quote.Symbol);
+        await _database.HashSetAsync(key, _schema.ToQuoteHash(quote, includeGroupTimestamps));
+        await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+        await AddQuoteMembershipsAsync(quote);
     }
 
-    private RedisKey QuoteRedisKey(string boardId, string symbol)
+    private async Task AddQuoteMembershipsAsync(MarketQuoteDto quote)
     {
-        return $"{KeyPrefix()}:quote:{MarketStateMapper.NormalizeBoardId(boardId)}:{MarketStateMapper.Normalize(symbol)}";
+        await AddMembershipAsync(_schema.BoardSymbolsKey(quote.BoardId), quote.Symbol);
+
+        if (!string.IsNullOrWhiteSpace(quote.MarketId))
+        {
+            await AddMembershipAsync(_schema.MarketSymbolsKey(quote.MarketId), quote.Symbol);
+        }
     }
 
-    private RedisKey IndexRedisKey(string indexName)
+    private async Task AddMembershipAsync(RedisKey key, string symbol)
     {
-        return $"{KeyPrefix()}:index:{MarketStateMapper.Normalize(indexName)}";
+        var normalizedSymbol = MarketStateMapper.Normalize(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return;
+        }
+
+        await _database.SetAddAsync(key, normalizedSymbol);
+        await _database.KeyExpireAsync(key, _schema.MembershipTtl);
     }
 
-    private RedisKey TradeRedisKey(string boardId, string symbol)
+    private async Task<IReadOnlyCollection<string>> GetMembershipAsync(RedisKey key)
     {
-        return $"{KeyPrefix()}:trades:{MarketStateMapper.NormalizeBoardId(boardId)}:{MarketStateMapper.Normalize(symbol)}";
+        var members = await _database.SetMembersAsync(key);
+        return members
+            .Select(member => MarketStateMapper.Normalize(member!))
+            .Where(member => !string.IsNullOrWhiteSpace(member))
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
     }
 
-    private RedisKey BoardSymbolsRedisKey(string boardId)
+    private async Task<MarketQuoteDto?> GetQuoteAsync(string boardId, string symbol)
     {
-        return $"{KeyPrefix()}:board-symbols:{MarketStateMapper.NormalizeBoardId(boardId)}";
+        var values = await _database.HashGetAllAsync(_schema.QuoteStateKey(boardId, symbol));
+        return _schema.QuoteFromHash(values);
     }
 
-    private RedisKey IndexNamesRedisKey()
+    private async Task StoreIndexAsync(MarketIndexDto index)
     {
-        return $"{KeyPrefix()}:index-names";
+        var key = _schema.IndexStateKey(index.IndexName);
+        await _database.HashSetAsync(key, _schema.ToIndexHash(index));
+        await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+
+        var indexNamesKey = _schema.IndexNamesKey();
+        await _database.SetAddAsync(indexNamesKey, index.IndexName);
+        await _database.KeyExpireAsync(indexNamesKey, _schema.MembershipTtl);
     }
 
-    private string KeyPrefix()
+    private async Task<MarketIndexDto?> GetIndexAsync(string indexName)
     {
-        return string.IsNullOrWhiteSpace(_options.RedisKeyPrefix)
-            ? "investview"
-            : _options.RedisKeyPrefix.Trim().TrimEnd(':');
+        var values = await _database.HashGetAllAsync(_schema.IndexStateKey(indexName));
+        return _schema.IndexFromHash(values);
     }
 
-    private TimeSpan EffectiveTtl()
+    private async Task StoreOhlcBarsAsync(
+        RedisKey barsKey,
+        RedisKey coverageKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken)
     {
-        return _options.LatestStateTtl <= TimeSpan.Zero ? TimeSpan.FromHours(18) : _options.LatestStateTtl;
+        foreach (var bar in bars.OrderBy(bar => bar.Time))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var score = _schema.Score(bar.Time);
+            await _database.SortedSetRemoveRangeByScoreAsync(barsKey, score, score);
+            await _database.SortedSetAddAsync(barsKey, _schema.ToOhlcMember(bar), score);
+        }
+
+        await _database.SetAddAsync(coverageKey, _schema.CoverageToken(from, to));
+        await _database.KeyExpireAsync(barsKey, _schema.OhlcTtl);
+        await _database.KeyExpireAsync(coverageKey, _schema.OhlcTtl);
     }
 
-    private static RedisValue Serialize<T>(T value)
+    private async Task<IReadOnlyList<OhlcBarDto>> GetOhlcBarsAsync(
+        RedisKey barsKey,
+        RedisKey coverageKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
     {
-        return JsonSerializer.Serialize(value, SerializerOptions);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!await _database.SetContainsAsync(coverageKey, _schema.CoverageToken(from, to)))
+        {
+            return [];
+        }
+
+        var values = await _database.SortedSetRangeByScoreAsync(
+            barsKey,
+            _schema.MinScore(from),
+            _schema.MaxScore(to),
+            Exclude.None,
+            Order.Ascending);
+
+        return values
+            .Select(_schema.OhlcFromMember)
+            .Where(bar => bar is not null)
+            .Select(bar => bar!)
+            .OrderBy(bar => bar.Time)
+            .ToArray();
     }
 
-    private static T? Deserialize<T>(RedisValue value)
+    private static SymbolDetailDto NormalizeDetail(SymbolDetailDto detail)
     {
-        return value.HasValue
-            ? JsonSerializer.Deserialize<T>((string)value!, SerializerOptions)
-            : default;
+        return detail with
+        {
+            Symbol = MarketStateMapper.Normalize(detail.Symbol),
+            BoardId = MarketStateMapper.NormalizeBoardId(detail.BoardId),
+            MarketId = MarketStateMapper.Normalize(detail.MarketId)
+        };
     }
 }

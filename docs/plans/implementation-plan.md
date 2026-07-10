@@ -187,11 +187,13 @@ Goal: establish the market data boundary before DNSE integration.
 
 **Estimated scope:** Medium
 
-### Task 4: Add Cached Market Data Provider
+### Task 4: Add Local REST Cache Provider
 
-**Status:** Done
+**Status:** Superseded by Task 17
 
-**Description:** Add `CachedMarketDataProvider` as a decorator around `IMarketDataProvider` using `IMemoryCache`.
+**Description:** The earlier implementation added a process-local REST cache decorator around `IMarketDataProvider`.
+
+**Superseded note:** This implementation was removed when the project moved to the production Redis-backed market state path. Runtime market data freshness is now centralized in Redis; local memory is only a hot mirror populated from Redis Pub/Sub/state reads.
 
 **Acceptance criteria:**
 
@@ -753,7 +755,42 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Implemented notes:** The production runtime path is Redis-only. `MarketData:State:RedisConnectionString` or `REDIS_CONNECTION_STRING` is required; in-memory state remains only as each API server's local hot mirror and test infrastructure. EOD persistence and Redis Streams remain future work.
 
-### Task 18: Add Docker Compose and Demo Documentation
+**Follow-up note:** The older process-local cache decorator and its configuration were removed. REST fallback/backfill now goes through the Redis-backed state provider path instead of a separate local cache decorator.
+
+### Task 18: Implement Redis Market Data Schema V2
+
+**Status:** Implemented
+
+**Description:** Organize Redis market data by canonical subject so REST snapshots, REST detail/OHLC backfill, and realtime updates all converge into Redis before API reads. Quote/detail/index state uses Hashes, latest trades use Lists, OHLC uses Sorted Sets with range coverage, and board/market/index memberships use Sets.
+
+**Acceptance criteria:**
+
+- [x] Redis keys include prefix, environment, market-data namespace, and schema version.
+- [x] Quote state is stored once per `boardId:symbol` and not duplicated per board UI snapshot.
+- [x] Quote Hash includes canonical payload, scalar fields, and group update timestamps.
+- [x] Symbol detail and OHLC REST reads use local mirror -> Redis -> fallback/backfill order.
+- [x] Market-board filters resolve Redis membership and only REST backfill missing symbols.
+- [x] OHLC cache hits require a matching coverage token before returning range data.
+- [x] TTLs are separated by quote state, symbol detail, latest trades, OHLC, and membership data.
+- [x] Tests cover Redis key/field schema and provider fallback/backfill behavior.
+
+**Verification:**
+
+- [x] `dotnet build`
+- [x] `dotnet test`
+
+**Dependencies:** Task 17
+
+**Files likely touched:**
+
+- `src/InvestView.Application/Abstractions/MarketData/IMarketStateStore.cs`
+- `src/InvestView.Infrastructure/MarketData/*`
+- `src/InvestView.Api/appsettings.json`
+- `tests/InvestView.Api.Tests/MarketData/*`
+- `SPEC.md`
+- `docs/decisions/ADR-004-redis-backed-market-state.md`
+
+### Task 19: Add Docker Compose and Demo Documentation
 
 **Description:** Package the MVP for local demo and document how to run and explain it.
 

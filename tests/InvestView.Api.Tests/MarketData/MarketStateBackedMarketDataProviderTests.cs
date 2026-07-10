@@ -54,6 +54,164 @@ public sealed class MarketStateBackedMarketDataProviderTests
         Assert.Equal(0, fallback.MarketBoardCalls);
     }
 
+    [Fact]
+    public async Task GetMarketBoardAsync_WhenQueryHasNoSymbolsAndSharedMembershipHasQuotes_DoesNotCallFallback()
+    {
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        var query = new MarketBoardQuery([], "G1", MarketId: "STO", IndexName: "VN30");
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m),
+            CreateQuote("HPG", referencePrice: 23.5m, lastPrice: 24.0m)
+        ], CancellationToken.None);
+        await sharedState.UpsertSymbolMembershipsAsync(query, ["SSI", "HPG"], CancellationToken.None);
+
+        var quotes = await provider.GetMarketBoardAsync(query, CancellationToken.None);
+
+        Assert.Equal(["HPG", "SSI"], quotes.Select(quote => quote.Symbol).ToArray());
+        Assert.Equal(0, fallback.MarketBoardCalls);
+        var localMembership = await localMirror.GetSymbolMembershipsAsync(query, CancellationToken.None);
+        Assert.Equal(["HPG", "SSI"], localMembership.Order(StringComparer.Ordinal).ToArray());
+    }
+
+    [Fact]
+    public async Task GetMarketBoardAsync_WhenSharedStateHasForeignTradingFields_ReturnsCachedFieldsWithoutFallback()
+    {
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        var query = new MarketBoardQuery(["SSI"], "G1", MarketId: null, IndexName: null);
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m)
+        ], CancellationToken.None);
+
+        var quotes = await provider.GetMarketBoardAsync(query, CancellationToken.None);
+
+        var quote = Assert.Single(quotes);
+        Assert.Equal(10, quote.ForeignBuyVolume);
+        Assert.Equal(20, quote.ForeignSellVolume);
+        Assert.Equal(100, quote.ForeignRoom);
+        Assert.Equal(0, fallback.MarketBoardCalls);
+    }
+
+    [Fact]
+    public async Task GetMarketBoardAsync_WhenMembershipHasPartialState_BackfillsOnlyMissingSymbols()
+    {
+        var fallback = new EmptyMarketDataProvider
+        {
+            MarketBoardQuotes =
+            [
+                CreateQuote("HPG", referencePrice: 23.5m, lastPrice: 24.0m)
+            ]
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        var query = new MarketBoardQuery([], "G1", MarketId: "STO", IndexName: "VN30");
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m)
+        ], CancellationToken.None);
+        await sharedState.UpsertSymbolMembershipsAsync(query, ["SSI", "HPG"], CancellationToken.None);
+
+        var quotes = await provider.GetMarketBoardAsync(query, CancellationToken.None);
+
+        Assert.Equal(["HPG", "SSI"], quotes.Select(quote => quote.Symbol).ToArray());
+        Assert.Equal(1, fallback.MarketBoardCalls);
+        Assert.Equal(["HPG"], fallback.LastMarketBoardSymbols);
+    }
+
+    [Fact]
+    public async Task GetSymbolDetailAsync_WhenSharedStateHasDetail_UsesSharedStateAndWarmsLocalMirror()
+    {
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        var detail = CreateDetail("SSI", referencePrice: 26.7m, lastPrice: 27.1m);
+        await sharedState.UpsertSymbolDetailAsync(detail, CancellationToken.None);
+
+        var result = await provider.GetSymbolDetailAsync("ssi", "g1", CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("SSI", result.Symbol);
+        Assert.Equal(0, fallback.SymbolDetailCalls);
+        var localQuote = Assert.Single(await localMirror.GetQuotesAsync("G1", ["SSI"], CancellationToken.None));
+        Assert.Equal(27.1m, localQuote.LastPrice);
+    }
+
+    [Fact]
+    public async Task GetOhlcAsync_WhenSharedStateHasCoveredRange_UsesSharedStateAndWarmsLocalMirror()
+    {
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var to = from.AddHours(1);
+        var bars = CreateBars("SSI", "1", from);
+        await sharedState.UpsertOhlcBarsAsync("ssi", "1", from, to, bars, CancellationToken.None);
+
+        var result = await provider.GetOhlcAsync("ssi", "1", from, to, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(0, fallback.OhlcCalls);
+        var localBars = await localMirror.GetOhlcBarsAsync("SSI", "1", from, to, CancellationToken.None);
+        Assert.Equal(2, localBars.Count);
+    }
+
+    [Fact]
+    public async Task GetOhlcAsync_WhenStateMissing_BackfillsSharedAndLocalFromFallback()
+    {
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var to = from.AddHours(1);
+        var fallback = new EmptyMarketDataProvider
+        {
+            OhlcBars = CreateBars("SSI", "1", from)
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+
+        var result = await provider.GetOhlcAsync("ssi", "1", from, to, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, fallback.OhlcCalls);
+        var sharedBars = await sharedState.GetOhlcBarsAsync("SSI", "1", from, to, CancellationToken.None);
+        var localBars = await localMirror.GetOhlcBarsAsync("SSI", "1", from, to, CancellationToken.None);
+        Assert.Equal(2, sharedBars.Count);
+        Assert.Equal(2, localBars.Count);
+    }
+
     private static MarketQuoteDto CreateQuote(string symbol, decimal referencePrice, decimal lastPrice)
     {
         var change = lastPrice - referencePrice;
@@ -83,20 +241,87 @@ public sealed class MarketStateBackedMarketDataProviderTests
             new DateTimeOffset(2026, 7, 8, 3, 29, 0, TimeSpan.Zero));
     }
 
+    private static SymbolDetailDto CreateDetail(string symbol, decimal referencePrice, decimal lastPrice)
+    {
+        var change = lastPrice - referencePrice;
+        return new SymbolDetailDto(
+            symbol,
+            "G1",
+            "STO",
+            symbol,
+            $"{symbol} Corporation",
+            "Stock",
+            $"VN000000{symbol}",
+            "STOCK",
+            "ST",
+            referencePrice,
+            referencePrice * 1.07m,
+            referencePrice * 0.93m,
+            lastPrice,
+            change,
+            Math.Round(change / referencePrice * 100m, 2, MidpointRounding.AwayFromZero),
+            100,
+            10_000,
+            271_000_000m,
+            10,
+            20,
+            100,
+            lastPrice,
+            lastPrice,
+            lastPrice,
+            [new PriceLevelDto(lastPrice - 0.1m, 100)],
+            [new PriceLevelDto(lastPrice + 0.1m, 100)],
+            "NO_HALT",
+            "NORMAL",
+            "NORMAL",
+            "NORMAL",
+            new DateTimeOffset(2020, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            null,
+            0,
+            new DateTimeOffset(2026, 7, 8, 3, 29, 0, TimeSpan.Zero));
+    }
+
+    private static IReadOnlyList<OhlcBarDto> CreateBars(string symbol, string resolution, DateTimeOffset from)
+    {
+        return
+        [
+            new(symbol, resolution, from.AddMinutes(1), 26.7m, 27.1m, 26.6m, 27m, 10_000),
+            new(symbol, resolution, from.AddMinutes(2), 27m, 27.2m, 26.9m, 27.1m, 12_000)
+        ];
+    }
+
     private sealed class EmptyMarketDataProvider : IMarketDataProvider
     {
         public int MarketBoardCalls { get; private set; }
+
+        public IReadOnlyList<string> LastMarketBoardSymbols { get; private set; } = [];
+
+        public IReadOnlyList<MarketQuoteDto> MarketBoardQuotes { get; init; } = [];
+
+        public int SymbolDetailCalls { get; private set; }
+
+        public int OhlcCalls { get; private set; }
+
+        public IReadOnlyList<OhlcBarDto> OhlcBars { get; init; } = [];
 
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
             MarketBoardQuery query,
             CancellationToken cancellationToken)
         {
             MarketBoardCalls++;
-            return Task.FromResult<IReadOnlyList<MarketQuoteDto>>([]);
+            LastMarketBoardSymbols = query.Symbols.ToArray();
+            var requestedSymbols = query.Symbols.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var quotes = requestedSymbols.Count == 0
+                ? MarketBoardQuotes
+                : MarketBoardQuotes
+                    .Where(quote => requestedSymbols.Contains(quote.Symbol))
+                    .ToArray();
+            return Task.FromResult<IReadOnlyList<MarketQuoteDto>>(quotes);
         }
 
         public Task<SymbolDetailDto?> GetSymbolDetailAsync(string symbol, string boardId, CancellationToken cancellationToken)
         {
+            SymbolDetailCalls++;
             return Task.FromResult<SymbolDetailDto?>(null);
         }
 
@@ -114,7 +339,8 @@ public sealed class MarketStateBackedMarketDataProviderTests
             DateTimeOffset? to,
             CancellationToken cancellationToken)
         {
-            return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+            OhlcCalls++;
+            return Task.FromResult(OhlcBars);
         }
 
         public Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcAsync(

@@ -9,6 +9,12 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
     private readonly ConcurrentDictionary<string, MarketQuoteDto> _quotes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, MarketIndexDto> _indices = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentQueue<MarketTradeDto>> _trades = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SymbolDetailDto> _symbolDetails = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, IReadOnlyList<OhlcBarDto>> _ohlcBars = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, IReadOnlyList<OhlcBarDto>> _indexOhlcBars = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _boardSymbols = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _marketSymbols = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _categorySymbols = new(StringComparer.Ordinal);
 
     public Task UpsertQuotesAsync(IReadOnlyCollection<MarketQuoteDto> quotes, CancellationToken cancellationToken)
     {
@@ -17,6 +23,8 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
             cancellationToken.ThrowIfCancellationRequested();
             var normalizedQuote = MarketStateMapper.NormalizeQuote(quote);
             _quotes[MarketStateMapper.QuoteKey(normalizedQuote.BoardId, normalizedQuote.Symbol)] = normalizedQuote;
+            AddMembership(_boardSymbols, normalizedQuote.BoardId, normalizedQuote.Symbol);
+            AddMembership(_marketSymbols, normalizedQuote.MarketId, normalizedQuote.Symbol);
         }
 
         return Task.CompletedTask;
@@ -103,6 +111,53 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         return Task.FromResult<IReadOnlyList<MarketQuoteDto>>(quotes);
     }
 
+    public Task UpsertSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        IReadOnlyCollection<string> symbols,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
+        var boardId = MarketStateMapper.NormalizeBoardId(query.BoardId);
+        var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
+        var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
+
+        foreach (var symbol in normalizedSymbols)
+        {
+            AddMembership(_boardSymbols, boardId, symbol);
+            AddMembership(_marketSymbols, marketId, symbol);
+            AddMembership(_categorySymbols, indexName, symbol);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyCollection<string>> GetSymbolMembershipsAsync(
+        MarketBoardQuery query,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var explicitSymbols = MarketStateMapper.NormalizeSymbols(query.Symbols);
+        if (explicitSymbols.Count > 0)
+        {
+            return Task.FromResult(explicitSymbols);
+        }
+
+        var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(indexName))
+        {
+            return Task.FromResult(GetMembership(_categorySymbols, indexName));
+        }
+
+        var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
+        if (!string.IsNullOrWhiteSpace(marketId))
+        {
+            return Task.FromResult(GetMembership(_marketSymbols, marketId));
+        }
+
+        return Task.FromResult(GetMembership(_boardSymbols, MarketStateMapper.NormalizeBoardId(query.BoardId)));
+    }
+
     public Task UpsertMarketIndicesAsync(IReadOnlyCollection<MarketIndexDto> indices, CancellationToken cancellationToken)
     {
         foreach (var index in indices)
@@ -131,6 +186,76 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         return Task.FromResult<IReadOnlyList<MarketIndexDto>>(indices.OrderBy(index => index.IndexName, StringComparer.Ordinal).ToArray());
     }
 
+    public Task UpsertSymbolDetailAsync(SymbolDetailDto detail, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var normalizedDetail = NormalizeDetail(detail);
+        _symbolDetails[MarketStateMapper.QuoteKey(normalizedDetail.BoardId, normalizedDetail.Symbol)] = normalizedDetail;
+        return Task.CompletedTask;
+    }
+
+    public Task<SymbolDetailDto?> GetSymbolDetailAsync(
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var key = MarketStateMapper.QuoteKey(boardId, symbol);
+        return Task.FromResult(_symbolDetails.TryGetValue(key, out var detail) ? detail : null);
+    }
+
+    public Task UpsertOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _ohlcBars[OhlcKey(symbol, resolution, from, to)] = NormalizeBars(bars);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<OhlcBarDto>> GetOhlcBarsAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_ohlcBars.TryGetValue(OhlcKey(symbol, resolution, from, to), out var bars)
+            ? bars
+            : []);
+    }
+
+    public Task UpsertIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        IReadOnlyCollection<OhlcBarDto> bars,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _indexOhlcBars[OhlcKey(indexName, resolution, from, to)] = NormalizeBars(bars);
+        return Task.CompletedTask;
+    }
+
+    public Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_indexOhlcBars.TryGetValue(OhlcKey(indexName, resolution, from, to), out var bars)
+            ? bars
+            : []);
+    }
+
     public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
         string boardId,
         string symbol,
@@ -151,5 +276,62 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
             .ToArray();
 
         return Task.FromResult<IReadOnlyList<MarketTradeDto>>(trades);
+    }
+
+    private static SymbolDetailDto NormalizeDetail(SymbolDetailDto detail)
+    {
+        return detail with
+        {
+            Symbol = MarketStateMapper.Normalize(detail.Symbol),
+            BoardId = MarketStateMapper.NormalizeBoardId(detail.BoardId),
+            MarketId = MarketStateMapper.Normalize(detail.MarketId)
+        };
+    }
+
+    private static IReadOnlyList<OhlcBarDto> NormalizeBars(IReadOnlyCollection<OhlcBarDto> bars)
+    {
+        return bars
+            .Select(bar => bar with
+            {
+                Symbol = MarketStateMapper.Normalize(bar.Symbol),
+                Resolution = NormalizeResolution(bar.Resolution)
+            })
+            .OrderBy(bar => bar.Time)
+            .ToArray();
+    }
+
+    private static string OhlcKey(string symbol, string resolution, DateTimeOffset? from, DateTimeOffset? to)
+    {
+        return $"{MarketStateMapper.Normalize(symbol)}:{NormalizeResolution(resolution)}:{from?.ToUnixTimeSeconds().ToString() ?? string.Empty}:{to?.ToUnixTimeSeconds().ToString() ?? string.Empty}";
+    }
+
+    private static string NormalizeResolution(string resolution)
+    {
+        return string.IsNullOrWhiteSpace(resolution) ? "1" : resolution.Trim().ToUpperInvariant();
+    }
+
+    private static void AddMembership(
+        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> memberships,
+        string key,
+        string symbol)
+    {
+        var normalizedKey = MarketStateMapper.Normalize(key);
+        var normalizedSymbol = MarketStateMapper.Normalize(symbol);
+        if (string.IsNullOrWhiteSpace(normalizedKey) || string.IsNullOrWhiteSpace(normalizedSymbol))
+        {
+            return;
+        }
+
+        memberships.GetOrAdd(normalizedKey, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal))[normalizedSymbol] = 0;
+    }
+
+    private static IReadOnlyCollection<string> GetMembership(
+        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> memberships,
+        string key)
+    {
+        var normalizedKey = MarketStateMapper.Normalize(key);
+        return memberships.TryGetValue(normalizedKey, out var symbols)
+            ? symbols.Keys.Order(StringComparer.Ordinal).ToArray()
+            : [];
     }
 }

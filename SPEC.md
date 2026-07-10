@@ -178,7 +178,6 @@ InvestView.Infrastructure
   DnseWebSocketClient
   Redis-backed latest market state
   Local in-memory market state mirror
-  CachedMarketDataProvider for REST/static data
   MockMarketDataProvider
         |
         v
@@ -316,7 +315,7 @@ Implementations:
 
 - `MockMarketDataProvider`: local demo without DNSE credentials.
 - `DnseMarketDataProvider`: REST adapter for DNSE market data.
-- `CachedMarketDataProvider`: caching decorator around market data provider.
+- `MarketStateBackedMarketDataProvider`: reads local mirror first, Redis second, then DNSE/mock provider only as fallback/backfill.
 - `DnseMarketDataStream`: inbound DNSE WebSocket client.
 
 ## Frontend Architecture
@@ -443,12 +442,12 @@ Market-board freshness is driven by WebSocket-maintained latest state, not by sh
 
 Production-grade market state uses:
 
-- Redis as the shared latest-state store for quotes, market depth, latest trades, and market indices.
+- Redis as the shared latest-state store for quotes, market depth, latest trades, symbol detail, OHLC bars, and market indices.
 - Redis Pub/Sub as the internal fan-out channel between API servers.
 - A local in-memory mirror on each API server for hot snapshot reads.
-- `IMemoryCache` only for REST/static or low-volatility data such as symbol metadata, security definitions, and historical OHLC ranges.
+- Redis-backed keys for any REST/static data that participates in market state. Do not use a process-local memory cache as the source of market data freshness.
 
-The runtime state path is always Redis-backed. `MarketData:State:RedisConnectionString` or `REDIS_CONNECTION_STRING` is required. In-memory state exists only as each API server's local hot mirror and as test infrastructure, not as a production fallback.
+The runtime state path is always Redis-backed. `MarketData:State:RedisConnectionString` or `REDIS_CONNECTION_STRING` is required. In-memory state exists only as each API server's local hot mirror and as test infrastructure, not as a production fallback or independent cache source.
 
 The accepted realtime distribution path is documented in `docs/decisions/ADR-004-redis-backed-market-state.md`:
 
@@ -466,6 +465,32 @@ Snapshot read order:
 1. local in-memory mirror,
 2. Redis latest-state,
 3. DNSE REST fallback/backfill only when state is missing.
+
+For market-board requests without explicit symbols, the backend resolves symbol membership from Redis before considering REST fallback:
+
+1. `indexName` resolves through `category:{indexName}:symbols`,
+2. `marketId` resolves through `market:{marketId}:symbols`,
+3. otherwise `boardId` resolves through `board:{boardId}:symbols`.
+
+If membership exists but only some quote aggregates are missing or unusable, DNSE REST is called only for the missing symbols. Refreshing a warmed board must not re-fetch all symbols or re-call per-symbol endpoints such as foreign trading.
+
+Redis data is organized by canonical market-data subject, not by UI screen:
+
+```text
+{prefix}:{env}:md:{version}:quote:{boardId:symbol}:state      # HASH, latest quote aggregate
+{prefix}:{env}:md:{version}:quote:{boardId:symbol}:trades     # LIST, latest matched trades
+{prefix}:{env}:md:{version}:security:{boardId:symbol}:detail  # HASH, REST symbol detail/security metadata
+{prefix}:{env}:md:{version}:ohlc:{symbol}:{resolution}        # ZSET, stock OHLC bars by timestamp
+{prefix}:{env}:md:{version}:index:{indexName}:state           # HASH, latest index aggregate
+{prefix}:{env}:md:{version}:index:{indexName}:ohlc:{resolution} # ZSET, index OHLC bars by timestamp
+{prefix}:{env}:md:{version}:board:{boardId}:symbols           # SET, board membership
+{prefix}:{env}:md:{version}:market:{marketId}:symbols         # SET, market membership
+{prefix}:{env}:md:{version}:category:{indexName}:symbols      # SET, category/index membership
+```
+
+Quote state is a Redis Hash with a canonical `payload` field plus materialized scalar fields such as `lastPrice`, `referencePrice`, `totalVolume`, `foreignRoom`, and group timestamps (`priceUpdatedAt`, `depthUpdatedAt`, `foreignUpdatedAt`, `statusUpdatedAt`). The hash shape keeps the app DTO stable while still allowing operational inspection and future field-level update optimization.
+
+OHLC data uses sorted sets and a range coverage key. A chart request is served from Redis only when the requested range has been backfilled before; otherwise DNSE REST backfills Redis and the local mirror before returning.
 
 Rules:
 
@@ -599,7 +624,7 @@ Backend:
   - execution creation,
   - portfolio value calculation.
 - Unit test market data adapters with mocked DNSE HTTP/WebSocket responses.
-- Unit test `CachedMarketDataProvider` TTL/hit/miss behavior.
+- Unit test Redis/local mirror merge, fallback, and stale-update behavior.
 - Integration test REST flows:
   - login,
   - get market board,
