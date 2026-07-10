@@ -139,6 +139,44 @@ public sealed class MarketStateBackedMarketDataProviderTests
     }
 
     [Fact]
+    public async Task GetMarketBoardAsync_WhenCategoryCacheExists_DoesNotTreatItAsCompleteMarketMembership()
+    {
+        var fallback = new EmptyMarketDataProvider
+        {
+            MarketBoardQuotes =
+            [
+                CreateQuote("AAM", referencePrice: 10m, lastPrice: 10.2m),
+                CreateQuote("HPG", referencePrice: 23.5m, lastPrice: 24.0m),
+                CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m),
+                CreateQuote("VCB", referencePrice: 58m, lastPrice: 58.5m)
+            ]
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+
+        var vn30Query = new MarketBoardQuery([], "G1", MarketId: "STO", IndexName: "VN30");
+        await sharedState.UpsertQuotesAsync(
+        [
+            CreateQuote("HPG", referencePrice: 23.5m, lastPrice: 24.0m),
+            CreateQuote("SSI", referencePrice: 26.7m, lastPrice: 27.1m),
+            CreateQuote("VCB", referencePrice: 58m, lastPrice: 58.5m)
+        ], CancellationToken.None);
+        await sharedState.UpsertSymbolMembershipsAsync(vn30Query, ["HPG", "SSI", "VCB"], CancellationToken.None);
+
+        var hoseQuery = new MarketBoardQuery([], "G1", MarketId: "STO", IndexName: null);
+        var quotes = await provider.GetMarketBoardAsync(hoseQuery, CancellationToken.None);
+
+        Assert.Equal(["AAM", "HPG", "SSI", "VCB"], quotes.Select(quote => quote.Symbol).ToArray());
+        Assert.Equal(1, fallback.MarketBoardCalls);
+        Assert.Empty(fallback.LastMarketBoardSymbols);
+    }
+
+    [Fact]
     public async Task GetSymbolDetailAsync_WhenSharedStateHasDetail_UsesSharedStateAndWarmsLocalMirror()
     {
         var fallback = new EmptyMarketDataProvider();

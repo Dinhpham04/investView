@@ -100,6 +100,11 @@ public sealed class MarketStateRedisSchema
         return $"{Prefix()}:category:{{{MarketStateMapper.Normalize(indexName)}}}:symbols";
     }
 
+    public RedisKey SymbolMembershipCoverageKey(RedisKey symbolsKey)
+    {
+        return $"{symbolsKey}:coverage";
+    }
+
     public RedisKey IndexNamesKey()
     {
         return $"{Prefix()}:index-names";

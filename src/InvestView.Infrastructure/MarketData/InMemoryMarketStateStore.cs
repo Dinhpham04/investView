@@ -18,6 +18,9 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _boardSymbols = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _marketSymbols = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _categorySymbols = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _completeBoardSymbolMemberships = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _completeMarketSymbolMemberships = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte> _completeCategorySymbolMemberships = new(StringComparer.Ordinal);
 
     public Task UpsertQuotesAsync(IReadOnlyCollection<MarketQuoteDto> quotes, CancellationToken cancellationToken)
     {
@@ -26,8 +29,6 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
             cancellationToken.ThrowIfCancellationRequested();
             var normalizedQuote = MarketStateMapper.NormalizeQuote(quote);
             _quotes[MarketStateMapper.QuoteKey(normalizedQuote.BoardId, normalizedQuote.Symbol)] = normalizedQuote;
-            AddMembership(_boardSymbols, normalizedQuote.BoardId, normalizedQuote.Symbol);
-            AddMembership(_marketSymbols, normalizedQuote.MarketId, normalizedQuote.Symbol);
         }
 
         return Task.CompletedTask;
@@ -145,16 +146,32 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
+        var explicitSymbols = MarketStateMapper.NormalizeSymbols(query.Symbols);
+        if (explicitSymbols.Count > 0)
+        {
+            return Task.CompletedTask;
+        }
+
         var boardId = MarketStateMapper.NormalizeBoardId(query.BoardId);
         var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
         var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
 
-        foreach (var symbol in normalizedSymbols)
+        if (!string.IsNullOrWhiteSpace(indexName))
         {
-            AddMembership(_boardSymbols, boardId, symbol);
-            AddMembership(_marketSymbols, marketId, symbol);
-            AddMembership(_categorySymbols, indexName, symbol);
+            ReplaceMembership(_categorySymbols, indexName, normalizedSymbols);
+            MarkMembershipComplete(_completeCategorySymbolMemberships, indexName);
+            return Task.CompletedTask;
         }
+
+        if (!string.IsNullOrWhiteSpace(marketId))
+        {
+            ReplaceMembership(_marketSymbols, marketId, normalizedSymbols);
+            MarkMembershipComplete(_completeMarketSymbolMemberships, marketId);
+            return Task.CompletedTask;
+        }
+
+        ReplaceMembership(_boardSymbols, boardId, normalizedSymbols);
+        MarkMembershipComplete(_completeBoardSymbolMemberships, boardId);
 
         return Task.CompletedTask;
     }
@@ -173,16 +190,26 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
         if (!string.IsNullOrWhiteSpace(indexName))
         {
-            return Task.FromResult(GetMembership(_categorySymbols, indexName));
+            return Task.FromResult(GetCompleteMembership(
+                _categorySymbols,
+                _completeCategorySymbolMemberships,
+                indexName));
         }
 
         var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
         if (!string.IsNullOrWhiteSpace(marketId))
         {
-            return Task.FromResult(GetMembership(_marketSymbols, marketId));
+            return Task.FromResult(GetCompleteMembership(
+                _marketSymbols,
+                _completeMarketSymbolMemberships,
+                marketId));
         }
 
-        return Task.FromResult(GetMembership(_boardSymbols, MarketStateMapper.NormalizeBoardId(query.BoardId)));
+        var boardId = MarketStateMapper.NormalizeBoardId(query.BoardId);
+        return Task.FromResult(GetCompleteMembership(
+            _boardSymbols,
+            _completeBoardSymbolMemberships,
+            boardId));
     }
 
     public Task UpsertMarketIndicesAsync(IReadOnlyCollection<MarketIndexDto> indices, CancellationToken cancellationToken)
@@ -395,26 +422,52 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         return string.IsNullOrWhiteSpace(resolution) ? "1" : resolution.Trim().ToUpperInvariant();
     }
 
-    private static void AddMembership(
+    private static void ReplaceMembership(
         ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> memberships,
         string key,
-        string symbol)
+        IReadOnlyCollection<string> symbols)
     {
         var normalizedKey = MarketStateMapper.Normalize(key);
-        var normalizedSymbol = MarketStateMapper.Normalize(symbol);
-        if (string.IsNullOrWhiteSpace(normalizedKey) || string.IsNullOrWhiteSpace(normalizedSymbol))
+        if (string.IsNullOrWhiteSpace(normalizedKey))
         {
             return;
         }
 
-        memberships.GetOrAdd(normalizedKey, _ => new ConcurrentDictionary<string, byte>(StringComparer.Ordinal))[normalizedSymbol] = 0;
+        var replacement = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
+        foreach (var symbol in symbols)
+        {
+            var normalizedSymbol = MarketStateMapper.Normalize(symbol);
+            if (!string.IsNullOrWhiteSpace(normalizedSymbol))
+            {
+                replacement[normalizedSymbol] = 0;
+            }
+        }
+
+        memberships[normalizedKey] = replacement;
     }
 
-    private static IReadOnlyCollection<string> GetMembership(
-        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> memberships,
+    private static void MarkMembershipComplete(
+        ConcurrentDictionary<string, byte> completeMemberships,
         string key)
     {
         var normalizedKey = MarketStateMapper.Normalize(key);
+        if (!string.IsNullOrWhiteSpace(normalizedKey))
+        {
+            completeMemberships[normalizedKey] = 0;
+        }
+    }
+
+    private static IReadOnlyCollection<string> GetCompleteMembership(
+        ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> memberships,
+        ConcurrentDictionary<string, byte> completeMemberships,
+        string key)
+    {
+        var normalizedKey = MarketStateMapper.Normalize(key);
+        if (!completeMemberships.ContainsKey(normalizedKey))
+        {
+            return [];
+        }
+
         return memberships.TryGetValue(normalizedKey, out var symbols)
             ? symbols.Keys.Order(StringComparer.Ordinal).ToArray()
             : [];

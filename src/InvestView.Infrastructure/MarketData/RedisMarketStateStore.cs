@@ -48,7 +48,6 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         await _database.HashSetAsync(key, _schema.ToQuoteHash(next, includeGroupTimestamps: false));
         await _database.HashSetAsync(key, _schema.ToQuoteGroupTimestampHash(normalizedUpdate));
         await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
-        await AddQuoteMembershipsAsync(next);
 
         return normalizedUpdate;
     }
@@ -150,23 +149,29 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         cancellationToken.ThrowIfCancellationRequested();
         var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
+        var explicitSymbols = MarketStateMapper.NormalizeSymbols(query.Symbols);
+        if (explicitSymbols.Count > 0)
+        {
+            return;
+        }
+
         var boardId = MarketStateMapper.NormalizeBoardId(query.BoardId);
         var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
         var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
 
-        foreach (var symbol in normalizedSymbols)
+        if (!string.IsNullOrWhiteSpace(indexName))
         {
-            await AddMembershipAsync(_schema.BoardSymbolsKey(boardId), symbol);
-            if (!string.IsNullOrWhiteSpace(marketId))
-            {
-                await AddMembershipAsync(_schema.MarketSymbolsKey(marketId), symbol);
-            }
-
-            if (!string.IsNullOrWhiteSpace(indexName))
-            {
-                await AddMembershipAsync(_schema.CategorySymbolsKey(indexName), symbol);
-            }
+            await ReplaceMembershipAsync(_schema.CategorySymbolsKey(indexName), normalizedSymbols);
+            return;
         }
+
+        if (!string.IsNullOrWhiteSpace(marketId))
+        {
+            await ReplaceMembershipAsync(_schema.MarketSymbolsKey(marketId), normalizedSymbols);
+            return;
+        }
+
+        await ReplaceMembershipAsync(_schema.BoardSymbolsKey(boardId), normalizedSymbols);
     }
 
     public async Task<IReadOnlyCollection<string>> GetSymbolMembershipsAsync(
@@ -183,16 +188,16 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         var indexName = MarketStateMapper.Normalize(query.IndexName ?? string.Empty);
         if (!string.IsNullOrWhiteSpace(indexName))
         {
-            return await GetMembershipAsync(_schema.CategorySymbolsKey(indexName));
+            return await GetCompleteMembershipAsync(_schema.CategorySymbolsKey(indexName));
         }
 
         var marketId = MarketStateMapper.Normalize(query.MarketId ?? string.Empty);
         if (!string.IsNullOrWhiteSpace(marketId))
         {
-            return await GetMembershipAsync(_schema.MarketSymbolsKey(marketId));
+            return await GetCompleteMembershipAsync(_schema.MarketSymbolsKey(marketId));
         }
 
-        return await GetMembershipAsync(_schema.BoardSymbolsKey(query.BoardId));
+        return await GetCompleteMembershipAsync(_schema.BoardSymbolsKey(query.BoardId));
     }
 
     public async Task UpsertMarketIndicesAsync(IReadOnlyCollection<MarketIndexDto> indices, CancellationToken cancellationToken)
@@ -354,33 +359,34 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         var key = _schema.QuoteStateKey(quote.BoardId, quote.Symbol);
         await _database.HashSetAsync(key, _schema.ToQuoteHash(quote, includeGroupTimestamps));
         await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
-        await AddQuoteMembershipsAsync(quote);
     }
 
-    private async Task AddQuoteMembershipsAsync(MarketQuoteDto quote)
+    private async Task ReplaceMembershipAsync(RedisKey key, IReadOnlyCollection<string> symbols)
     {
-        await AddMembershipAsync(_schema.BoardSymbolsKey(quote.BoardId), quote.Symbol);
+        var normalizedSymbols = MarketStateMapper.NormalizeSymbols(symbols);
+        var values = normalizedSymbols
+            .Select(symbol => (RedisValue)symbol)
+            .ToArray();
 
-        if (!string.IsNullOrWhiteSpace(quote.MarketId))
+        await _database.KeyDeleteAsync(key);
+        if (values.Length > 0)
         {
-            await AddMembershipAsync(_schema.MarketSymbolsKey(quote.MarketId), quote.Symbol);
-        }
-    }
-
-    private async Task AddMembershipAsync(RedisKey key, string symbol)
-    {
-        var normalizedSymbol = MarketStateMapper.Normalize(symbol);
-        if (string.IsNullOrWhiteSpace(normalizedSymbol))
-        {
-            return;
+            await _database.SetAddAsync(key, values);
+            await _database.KeyExpireAsync(key, _schema.MembershipTtl);
         }
 
-        await _database.SetAddAsync(key, normalizedSymbol);
-        await _database.KeyExpireAsync(key, _schema.MembershipTtl);
+        var coverageKey = _schema.SymbolMembershipCoverageKey(key);
+        await _database.StringSetAsync(coverageKey, "1", _schema.MembershipTtl);
     }
 
-    private async Task<IReadOnlyCollection<string>> GetMembershipAsync(RedisKey key)
+    private async Task<IReadOnlyCollection<string>> GetCompleteMembershipAsync(RedisKey key)
     {
+        var coverageKey = _schema.SymbolMembershipCoverageKey(key);
+        if (!await _database.KeyExistsAsync(coverageKey))
+        {
+            return [];
+        }
+
         var members = await _database.SetMembersAsync(key);
         return members
             .Select(member => MarketStateMapper.Normalize(member!))
