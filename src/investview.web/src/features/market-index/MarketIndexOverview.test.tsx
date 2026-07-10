@@ -1,7 +1,7 @@
-import { render } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { MiniIndexChart, createMiniChartGeometry } from './MarketIndexOverview';
-import type { OhlcBar } from '../../shared/types/market';
+import { MarketIndexTable, MiniIndexChart, createMiniChartGeometry } from './MarketIndexOverview';
+import type { MarketIndex, OhlcBar } from '../../shared/types/market';
 
 describe('market index mini chart geometry', () => {
   it('maps bars by Vietnam market time from 09h to 15h instead of by array index', () => {
@@ -62,6 +62,38 @@ describe('market index mini chart geometry', () => {
   });
 });
 
+describe('market index table layout', () => {
+  it('renders market breadth counts in a stable three-column cell', () => {
+    render(
+      <MarketIndexTable
+        indices={[
+          createIndex({
+            downCount: 138,
+            noChangeCount: 59,
+            upCount: 106,
+          }),
+        ]}
+        isError={false}
+        isLoading={false}
+      />,
+    );
+
+    const breadthCell = screen.getByTestId('market-index-breadth-VNINDEX');
+
+    expect(breadthCell).toHaveClass('grid-cols-[1fr_1fr_1fr]');
+    expect(Array.from(breadthCell.children)).toHaveLength(3);
+    Array.from(breadthCell.children).forEach((item) => {
+      expect(item).toHaveClass('grid-cols-[10px_minmax(0,1fr)]');
+    });
+    expect(within(breadthCell).getByText('↑')).toBeInTheDocument();
+    expect(within(breadthCell).getByText('106')).toBeInTheDocument();
+    expect(within(breadthCell).getByText('▬')).toBeInTheDocument();
+    expect(within(breadthCell).getByText('59')).toBeInTheDocument();
+    expect(within(breadthCell).getByText('↓')).toBeInTheDocument();
+    expect(within(breadthCell).getByText('138')).toBeInTheDocument();
+  });
+});
+
 function createBar(time: string, close: number): OhlcBar {
   return {
     close,
@@ -72,5 +104,28 @@ function createBar(time: string, close: number): OhlcBar {
     symbol: 'VNINDEX',
     time,
     volume: close * 1_000,
+  };
+}
+
+function createIndex(overrides: Partial<MarketIndex> = {}): MarketIndex {
+  return {
+    change: -2.58,
+    changePercent: -0.14,
+    ceilingCount: null,
+    downCount: 138,
+    floorCount: null,
+    highValue: 1844.21,
+    indexName: 'VNINDEX',
+    lowValue: 1835.5,
+    marketId: 'HOSE',
+    noChangeCount: 59,
+    referenceValue: 1840.7,
+    totalValue: 0,
+    totalVolume: 92_824_000,
+    tradingSessionId: 'LO',
+    upCount: 106,
+    updatedAt: '2026-07-10T08:00:00.000Z',
+    value: 1838.12,
+    ...overrides,
   };
 }

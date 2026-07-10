@@ -77,16 +77,16 @@ function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: M
   );
 }
 
-function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketIndex[]; isError: boolean; isLoading: boolean }) {
+export function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketIndex[]; isError: boolean; isLoading: boolean }) {
   return (
-    <div className="min-w-0 border border-[#2d2a38] bg-[#1d1a2a] text-[11px] font-semibold">
-      <div className="grid h-7 grid-cols-[1.15fr_0.9fr_0.95fr_1fr_1fr_1.1fr] items-center gap-2 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
-        <span>⚙ Chỉ số</span>
-        <span className="text-right">Điểm</span>
-        <span className="text-right">+ / -</span>
-        <span className="text-right">KLGD (Triệu)</span>
-        <span className="text-right">GTGD (Tỷ)</span>
-        <span className="text-right">CK Tăng/Giảm</span>
+    <div className="min-w-0 overflow-x-auto border border-[#2d2a38] bg-[#1d1a2a] text-[11px] font-semibold">
+      <div className="grid h-7 min-w-[462px] grid-cols-[84px_66px_46px_72px_46px_112px] items-center gap-1 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
+        <span className="truncate">⚙ Chỉ số</span>
+        <span className="truncate text-right">Điểm</span>
+        <span className="truncate text-right">+ / -</span>
+        <span className="truncate text-right">KLGD (Triệu)</span>
+        <span className="truncate text-right">GTGD (Tỷ)</span>
+        <span className="truncate text-right">CK Tăng/Giảm</span>
       </div>
       {isLoading ? <div className="px-3 py-8 text-center text-market-text-muted">Đang tải chỉ số</div> : null}
       {isError ? <div className="px-3 py-8 text-center text-state-error">Không tải được chỉ số</div> : null}
@@ -94,18 +94,30 @@ function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketInde
         <div>
           {indices.map((index) => (
             <div
-              className="grid h-[25px] grid-cols-[1.15fr_0.9fr_0.95fr_1fr_1fr_1.1fr] items-center gap-2 border-b border-[#282534] px-2 tabular-nums last:border-b-0"
+              className="grid h-[25px] min-w-[462px] grid-cols-[84px_66px_46px_72px_46px_112px] items-center gap-1 border-b border-[#282534] px-2 tabular-nums last:border-b-0"
               key={index.indexName}
             >
-              <span className="text-[#d7d4e3]">{index.indexName}</span>
-              <span className={`text-right ${classForChange(index.change)}`}>{formatIndexValue(index.value)}</span>
-              <span className={`text-right ${classForChange(index.change)}`}>{formatSigned(index.change)}</span>
-              <span className="text-right text-[#d7d4e3]">{formatMillion(index.totalVolume)}</span>
-              <span className="text-right text-[#d7d4e3]">{formatBillion(index.totalValue)}</span>
-              <span className="text-right">
-                <span className="text-price-up">↑ {formatCount(index.upCount)}</span>
-                <span className="px-1 text-price-ref">▬ {formatCount(index.noChangeCount)}</span>
-                <span className="text-price-down">↓ {formatCount(index.downCount)}</span>
+              <span className="truncate text-[#d7d4e3]">{index.indexName}</span>
+              <span className={`truncate text-right ${classForChange(index.change)}`}>{formatIndexValue(index.value)}</span>
+              <span className={`truncate text-right ${classForChange(index.change)}`}>{formatSigned(index.change)}</span>
+              <span className="truncate text-right text-[#d7d4e3]">{formatMillion(index.totalVolume)}</span>
+              <span className="truncate text-right text-[#d7d4e3]">{formatBillion(index.totalValue)}</span>
+              <span
+                className="grid min-w-0 grid-cols-[1fr_1fr_1fr] items-center gap-1 text-right"
+                data-testid={`market-index-breadth-${index.indexName}`}
+              >
+                <span className="grid min-w-0 grid-cols-[10px_minmax(0,1fr)] items-center gap-0.5 text-price-up">
+                  <span className="text-left">↑</span>
+                  <span className="truncate text-right">{formatCount(index.upCount)}</span>
+                </span>
+                <span className="grid min-w-0 grid-cols-[10px_minmax(0,1fr)] items-center gap-0.5 text-price-ref">
+                  <span className="text-left">▬</span>
+                  <span className="truncate text-right">{formatCount(index.noChangeCount)}</span>
+                </span>
+                <span className="grid min-w-0 grid-cols-[10px_minmax(0,1fr)] items-center gap-0.5 text-price-down">
+                  <span className="text-left">↓</span>
+                  <span className="truncate text-right">{formatCount(index.downCount)}</span>
+                </span>
               </span>
             </div>
           ))}
