@@ -33,6 +33,11 @@
 ## Milestone 4: Persistence, Watchlist, Portfolio, and Simulated Orders
 
 - [ ] Task 8: Add persistence and demo auth foundation
+  - [x] Task 8.1: Add EF Core SQL Server persistence foundation
+    - [x] Add core user, watchlist, cash, holding, order, and execution entities
+    - [x] Add `InvestViewDbContext`, SQL Server configuration, and initial migration
+    - [x] Keep market-data REST endpoints and quote hub public/anonymous
+  - [ ] Task 8.2: Add demo auth JWT and seed demo user/cash
 - [ ] Task 9: Add watchlist flow
 - [ ] Task 10: Add simulated order and portfolio flow
 - [ ] Checkpoint: Core investor workflow

@@ -441,21 +441,29 @@ Goal: add backend domain depth and the main investor workflow.
 
 ### Task 10: Add Persistence and Demo Auth Foundation
 
+**Status:** In Progress
+
 **Description:** Add EF Core SQL Server setup, initial entities, migrations, seed data, and demo JWT login.
+
+**Implementation slices:**
+
+- [x] Task 10.1 / Todo 8.1: Add EF Core SQL Server persistence foundation. This slice adds the core personal-data entities, `InvestViewDbContext`, SQL Server configuration, and initial migration. It intentionally does not add JWT/login behavior yet, and market-data REST endpoints plus `QuoteHub` remain public.
+- [ ] Task 10.2 / Todo 8.2: Add demo auth JWT, seed demo user/cash, and protect only personal-data APIs.
 
 **Acceptance criteria:**
 
-- [ ] SQL Server provider is configured.
-- [ ] Initial schema supports users, watchlists, cash accounts, holdings, orders, and executions.
+- [x] SQL Server provider is configured.
+- [x] Initial schema supports users, watchlists, cash accounts, holdings, orders, and executions.
 - [ ] Demo user can log in and receive JWT.
-- [ ] Secrets and connection strings are environment-based.
+- [x] Secrets and connection strings are environment-based.
+- [ ] Viewing the market board and quote realtime stream remains anonymous/public after auth is introduced.
 
 **Verification:**
 
-- [ ] EF mapping tests or integration tests cover important relationships.
+- [x] EF mapping tests or integration tests cover important relationships.
 - [ ] API test covers demo login.
-- [ ] `dotnet build`
-- [ ] `dotnet test`
+- [x] `dotnet build`
+- [x] `dotnet test`
 
 **Dependencies:** Task 1
 

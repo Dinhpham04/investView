@@ -1,8 +1,10 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Realtime;
+using InvestView.Infrastructure.Data;
 using InvestView.Infrastructure.Dnse;
 using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -66,6 +68,17 @@ public static class DependencyInjection
                 options.RedisConnectionString,
                 Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING"));
         });
+
+        var databaseConnectionString = FirstConfiguredValue(
+            configuration?.GetConnectionString("InvestViewDb") ?? string.Empty,
+            Environment.GetEnvironmentVariable("INVESTVIEW_DB_CONNECTION_STRING"));
+        if (string.IsNullOrWhiteSpace(databaseConnectionString))
+        {
+            databaseConnectionString = InvestViewDbContextFactory.DefaultConnectionString;
+        }
+
+        services.AddDbContext<InvestViewDbContext>(options =>
+            options.UseSqlServer(databaseConnectionString));
 
         services.AddSingleton<MockMarketDataProvider>();
         services.AddSingleton<DnseRestSigner>();
