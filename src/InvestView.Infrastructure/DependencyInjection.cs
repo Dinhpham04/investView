@@ -1,5 +1,7 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Realtime;
+using InvestView.Application.Abstractions.Auth;
+using InvestView.Infrastructure.Auth;
 using InvestView.Infrastructure.Data;
 using InvestView.Infrastructure.Dnse;
 using InvestView.Infrastructure.MarketData;
@@ -41,6 +43,7 @@ public static class DependencyInjection
             services.AddOptions<DnseMarketDataOptions>();
             services.AddOptions<MarketQuoteStreamOptions>();
             services.AddOptions<SecurityDefinitionWarmupOptions>();
+            services.AddOptions<DemoAuthOptions>();
         }
         else
         {
@@ -54,6 +57,8 @@ public static class DependencyInjection
                 configuration.GetSection(MarketQuoteStreamOptions.SectionName));
             services.Configure<SecurityDefinitionWarmupOptions>(
                 configuration.GetSection(SecurityDefinitionWarmupOptions.SectionName));
+            services.Configure<DemoAuthOptions>(
+                configuration.GetSection(DemoAuthOptions.SectionName));
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>
@@ -69,6 +74,8 @@ public static class DependencyInjection
                 Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING"));
         });
 
+        services.PostConfigure<DemoAuthOptions>(options => options.ApplyEnvironment());
+
         var databaseConnectionString = FirstConfiguredValue(
             configuration?.GetConnectionString("InvestViewDb") ?? string.Empty,
             Environment.GetEnvironmentVariable("INVESTVIEW_DB_CONNECTION_STRING"));
@@ -79,6 +86,9 @@ public static class DependencyInjection
 
         services.AddDbContext<InvestViewDbContext>(options =>
             options.UseSqlServer(databaseConnectionString));
+        services.AddSingleton<DemoPasswordHasher>();
+        services.AddScoped<IDemoAuthService, DemoAuthService>();
+        services.AddScoped<DemoDataSeeder>();
 
         services.AddSingleton<MockMarketDataProvider>();
         services.AddSingleton<DnseRestSigner>();

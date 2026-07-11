@@ -1,9 +1,12 @@
+using InvestView.Api.Auth;
 using InvestView.Api.Hubs;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Infrastructure;
+using InvestView.Infrastructure.Auth;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddInvestViewJwtAuthentication(builder.Configuration);
 builder.Services.AddControllers();
 builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
@@ -19,10 +22,13 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<QuoteHub>("/hubs/quotes");
+
+await app.Services.SeedDemoDataAsync(app.Lifetime.ApplicationStopping);
 
 app.Run();
 
