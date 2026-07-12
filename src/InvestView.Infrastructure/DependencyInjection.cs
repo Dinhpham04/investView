@@ -1,11 +1,13 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Application.Abstractions.Auth;
+using InvestView.Application.Abstractions.Watchlists;
 using InvestView.Infrastructure.Auth;
 using InvestView.Infrastructure.Data;
 using InvestView.Infrastructure.Dnse;
 using InvestView.Infrastructure.MarketData;
 using InvestView.Infrastructure.Realtime;
+using InvestView.Infrastructure.Trading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -88,6 +90,7 @@ public static class DependencyInjection
             options.UseSqlServer(databaseConnectionString));
         services.AddSingleton<DemoPasswordHasher>();
         services.AddScoped<IDemoAuthService, DemoAuthService>();
+        services.AddScoped<IWatchlistService, WatchlistService>();
         services.AddScoped<DemoDataSeeder>();
 
         services.AddSingleton<MockMarketDataProvider>();

@@ -481,21 +481,23 @@ Goal: add backend domain depth and the main investor workflow.
 
 ### Task 11: Add Watchlist Flow
 
+**Status:** Done
+
 **Description:** Implement watchlist REST endpoints and frontend watchlist interactions using authenticated demo user state.
 
 **Acceptance criteria:**
 
-- [ ] User can list watchlist symbols.
-- [ ] User can add a valid symbol.
-- [ ] User can remove a symbol.
-- [ ] Duplicate watchlist items are handled predictably.
-- [ ] Frontend can add/remove from market board or watchlist panel.
+- [x] User can list watchlist symbols.
+- [x] User can add a valid symbol.
+- [x] User can remove a symbol.
+- [x] Duplicate watchlist items are handled predictably.
+- [x] Frontend can add/remove from market board or watchlist panel.
 
 **Verification:**
 
-- [ ] API tests cover add/remove/list.
-- [ ] Frontend tests cover watchlist interactions.
-- [ ] `dotnet test`
+- [x] API tests cover add/remove/list.
+- [x] Frontend tests cover watchlist interactions.
+- [x] `dotnet test`
 - [ ] `npm run test`
 - [ ] Manual browser check.
 
@@ -510,6 +512,10 @@ Goal: add backend domain depth and the main investor workflow.
 - `src/investview.web/src/features/market-board/*`
 
 **Estimated scope:** Medium
+
+**Implemented notes:** Added protected `GET /api/watchlist`, `POST /api/watchlist`, and `DELETE /api/watchlist/{boardId}/{symbol}` endpoints backed by `WatchlistItems`. Adds are normalized, validated against the market data provider, and duplicate adds return the existing item instead of creating another row. The frontend exposes a watchlist panel under "Danh muc cua toi" that performs demo login, lists items, and adds/removes G1 symbols using the bearer token.
+
+**Verification notes:** `dotnet test InvestView.sln -c Release`, `npm run test -- WatchlistPanel.test.tsx`, and `npm run build` pass. Full `npm run test` is still open because existing dirty changes outside Task 11 make `MarketBoard.test.tsx` expect stale labels/buttons in `MarketIndexOverview.tsx` and `SymbolDetailPanel.tsx`.
 
 ### Task 12: Add Simulated Order and Portfolio Flow
 

@@ -9,6 +9,7 @@ import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './
 import { applyQuoteUpdate } from './marketBoardRealtime';
 import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
+import { WatchlistPanel } from '../watchlist/WatchlistPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketIndexUpdate, MarketQuote, MarketQuoteUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../../shared/types/market';
@@ -186,17 +187,7 @@ export function MarketBoard() {
           />
         </div>
 
-        <div className="group relative z-[100]">
-          <button
-            className="flex h-8 items-center gap-1.5 border border-transparent px-3 text-[12px] font-medium text-[#c8c6d4] hover:bg-market-surface-2 hover:text-market-text"
-            type="button"
-          >
-            Danh mục của tôi
-            <svg className="shrink-0" width="9" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+        <WatchlistPanel />
 
         <div className="group relative z-[100]">
           <button
