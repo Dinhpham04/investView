@@ -1,4 +1,6 @@
 using InvestView.Application.Abstractions.MarketData;
+using InvestView.Application.Abstractions.Orders;
+using InvestView.Application.Abstractions.Portfolio;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Application.Abstractions.Auth;
 using InvestView.Application.Abstractions.Watchlists;
@@ -91,6 +93,8 @@ public static class DependencyInjection
         services.AddSingleton<DemoPasswordHasher>();
         services.AddScoped<IDemoAuthService, DemoAuthService>();
         services.AddScoped<IWatchlistService, WatchlistService>();
+        services.AddScoped<ISimulatedOrderService, SimulatedOrderService>();
+        services.AddScoped<IPortfolioService, PortfolioService>();
         services.AddScoped<DemoDataSeeder>();
 
         services.AddSingleton<MockMarketDataProvider>();

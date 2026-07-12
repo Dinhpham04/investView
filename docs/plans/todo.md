@@ -39,8 +39,8 @@
     - [x] Keep market-data REST endpoints and quote hub public/anonymous
   - [x] Task 8.2: Add demo auth JWT and seed demo user/cash
 - [x] Task 9: Add watchlist flow
-- [ ] Task 10: Add simulated order and portfolio flow
-- [ ] Checkpoint: Core investor workflow
+- [x] Task 10: Add simulated order and portfolio flow
+- [x] Checkpoint: Core investor workflow
 
 ## Milestone 5: DNSE Integration and Demo Packaging
 

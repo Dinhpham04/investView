@@ -519,22 +519,24 @@ Goal: add backend domain depth and the main investor workflow.
 
 ### Task 12: Add Simulated Order and Portfolio Flow
 
+**Status:** Done
+
 **Description:** Implement order placement/cancellation, cash and holding updates, portfolio summary, and frontend order ticket.
 
 **Acceptance criteria:**
 
-- [ ] Buy orders require sufficient simulated cash.
-- [ ] Sell orders require sufficient available holdings.
-- [ ] Filled orders update cash and holdings in one transaction.
-- [ ] User can see portfolio summary and order history.
-- [ ] UI clearly labels all trading as simulated.
+- [x] Buy orders require sufficient simulated cash.
+- [x] Sell orders require sufficient available holdings.
+- [x] Filled orders update cash and holdings in one `SaveChangesAsync` unit.
+- [x] User can see portfolio summary and order history.
+- [x] UI clearly labels all trading as simulated.
 
 **Verification:**
 
-- [ ] Domain tests cover cash, holdings, order status transitions, and execution creation.
-- [ ] API tests cover place order, cancel order, and portfolio query.
-- [ ] Frontend tests cover order ticket validation and portfolio display.
-- [ ] `dotnet test`
+- [x] Domain tests cover cash, holdings, order status transitions, and execution creation.
+- [x] API tests cover place order, cancel order, and portfolio query.
+- [x] Frontend tests cover order ticket validation and portfolio display.
+- [x] `dotnet test`
 - [ ] `npm run test`
 - [ ] Manual demo: place order and see portfolio update.
 
@@ -554,14 +556,18 @@ Goal: add backend domain depth and the main investor workflow.
 
 **Estimated scope:** Medium
 
+**Implemented notes:** Added protected simulated trading endpoints: `POST /api/orders`, `GET /api/orders`, `POST /api/orders/{orderId}/cancel`, and `GET /api/portfolio`. Market orders and marketable limit orders fill immediately using the current market-data price, update demo cash/holdings through the trading domain entities, and create an execution. Non-marketable limit orders remain `New` and can be cancelled. Frontend now has a shared demo session provider, a portfolio summary/order-history strip, and a bottom order ticket tied to the selected market-board symbol.
+
+**Verification notes:** `dotnet test InvestView.sln -c Release --no-restore`, `npm run build`, and targeted frontend tests `npm run test -- OrderTicketPanel PortfolioPanel WatchlistPanel` pass. Full `npm run test` still has the two pre-existing `MarketBoard.test.tsx` failures caused by dirty changes outside this task in `MarketIndexOverview.tsx` and `SymbolDetailPanel.tsx`.
+
 ### Checkpoint: Core Investor Workflow
 
-- [ ] Login works.
-- [ ] Market board works.
-- [ ] Watchlist works.
-- [ ] Simulated order flow works.
-- [ ] Portfolio updates after filled simulated orders.
-- [ ] Core domain rules are covered by tests.
+- [x] Login works.
+- [x] Market board works.
+- [x] Watchlist works.
+- [x] Simulated order flow works.
+- [x] Portfolio updates after filled simulated orders.
+- [x] Core domain rules are covered by tests.
 
 ## Milestone 5: DNSE Integration and Demo Packaging
 

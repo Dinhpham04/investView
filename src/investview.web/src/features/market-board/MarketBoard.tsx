@@ -8,6 +8,7 @@ import { marketBoardTheme } from './marketBoardTheme';
 import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './marketLists';
 import { applyQuoteUpdate } from './marketBoardRealtime';
 import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
+import { OrderTicketPanel } from '../order-ticket/OrderTicketPanel';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import { WatchlistPanel } from '../watchlist/WatchlistPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
@@ -307,6 +308,11 @@ export function MarketBoard() {
         liveTrade={latestTradeUpdate}
         selection={selectedSymbol}
         onClose={() => setSelectedSymbol(null)}
+      />
+
+      <OrderTicketPanel
+        liveQuote={selectedLiveQuote}
+        selection={selectedSymbol}
       />
 
       <div className="border-t border-market-border bg-market-surface px-3 py-2 text-[11px] text-market-text-muted">

@@ -50,4 +50,33 @@ public sealed class CashAccount
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public UserAccount? User { get; private set; }
+
+    public void Debit(decimal amount, DateTimeOffset? updatedAt = null)
+    {
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Amount must be positive.");
+        }
+
+        if (amount > AvailableBalance)
+        {
+            throw new InvalidOperationException("Available cash balance is insufficient.");
+        }
+
+        Balance -= amount;
+        AvailableBalance -= amount;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void Credit(decimal amount, DateTimeOffset? updatedAt = null)
+    {
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Amount must be positive.");
+        }
+
+        Balance += amount;
+        AvailableBalance += amount;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
 }

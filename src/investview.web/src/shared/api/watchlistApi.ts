@@ -1,4 +1,5 @@
 import { deleteRequest, getJson, postJson } from './httpClient';
+import { authorizationHeaders } from './authorizationHeaders';
 import type { AddWatchlistItemRequest, WatchlistItem } from '../types/watchlist';
 
 export function getWatchlist(accessToken: string) {
@@ -23,10 +24,4 @@ export function removeWatchlistItem(
       headers: authorizationHeaders(accessToken),
     },
   );
-}
-
-function authorizationHeaders(accessToken: string) {
-  return {
-    Authorization: `Bearer ${accessToken}`,
-  };
 }

@@ -78,6 +78,46 @@ public sealed class SimulatedOrder
     public UserAccount? User { get; private set; }
 
     public IReadOnlyCollection<OrderExecution> Executions => _executions;
+
+    public void Fill(long quantity, decimal price, DateTimeOffset? updatedAt = null)
+    {
+        if (Status != OrderStatus.New)
+        {
+            throw new InvalidOperationException("Only new orders can be filled.");
+        }
+
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (quantity != Quantity)
+        {
+            throw new InvalidOperationException("Simulated orders must be filled in full.");
+        }
+
+        if (price <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(price), "Price must be positive.");
+        }
+
+        _executions.Add(new OrderExecution(Id, quantity, price, updatedAt));
+        FilledQuantity = quantity;
+        AverageFillPrice = price;
+        Status = OrderStatus.Filled;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void Cancel(DateTimeOffset? updatedAt = null)
+    {
+        if (Status != OrderStatus.New)
+        {
+            throw new InvalidOperationException("Only new orders can be cancelled.");
+        }
+
+        Status = OrderStatus.Cancelled;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
 }
 
 public enum OrderSide

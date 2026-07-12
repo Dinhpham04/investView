@@ -64,4 +64,48 @@ public sealed class Holding
     public DateTimeOffset UpdatedAt { get; private set; }
 
     public UserAccount? User { get; private set; }
+
+    public void ApplyBuy(long quantity, decimal price, DateTimeOffset? updatedAt = null)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (price <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(price), "Price must be positive.");
+        }
+
+        var currentCost = Quantity * AverageCost;
+        var addedCost = quantity * price;
+        var totalQuantity = Quantity + quantity;
+
+        Quantity = totalQuantity;
+        AvailableQuantity += quantity;
+        AverageCost = totalQuantity == 0 ? 0m : (currentCost + addedCost) / totalQuantity;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ApplySell(long quantity, DateTimeOffset? updatedAt = null)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (quantity > AvailableQuantity)
+        {
+            throw new InvalidOperationException("Available holding quantity is insufficient.");
+        }
+
+        Quantity -= quantity;
+        AvailableQuantity -= quantity;
+        if (Quantity == 0)
+        {
+            AverageCost = 0m;
+        }
+
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
 }
