@@ -22,7 +22,7 @@ public sealed class WatchlistService : IWatchlistService
         _timeProvider = timeProvider;
     }
 
-    public async Task<IReadOnlyList<WatchlistItemDto>> ListAsync(
+    public async Task<IReadOnlyList<WatchlistGroupDto>> ListAsync(
         Guid userId,
         CancellationToken cancellationToken)
     {
@@ -31,38 +31,98 @@ public sealed class WatchlistService : IWatchlistService
             return [];
         }
 
-        return await _dbContext.WatchlistItems
+        var groups = await _dbContext.WatchlistGroups
             .AsNoTracking()
-            .Where(item => item.UserId == userId)
-            .OrderBy(item => item.Symbol)
-            .ThenBy(item => item.BoardId)
-            .Select(item => new WatchlistItemDto(
-                item.Id,
-                item.Symbol,
-                item.BoardId,
-                item.CreatedAt))
+            .Include(group => group.Items)
+            .Where(group => group.UserId == userId)
+            .OrderBy(group => group.CreatedAt)
+            .ThenBy(group => group.Name)
             .ToArrayAsync(cancellationToken);
+
+        return groups.Select(ToDto).ToArray();
     }
 
-    public async Task<AddWatchlistItemResult> AddAsync(
+    public async Task<CreateWatchlistGroupResult> CreateGroupAsync(
         Guid userId,
-        string symbol,
-        string boardId,
+        string name,
         CancellationToken cancellationToken)
     {
-        if (!TryNormalize(symbol, boardId, out var normalizedSymbol, out var normalizedBoardId))
+        if (!TryNormalizeName(name, out var normalizedName))
         {
-            return new AddWatchlistItemResult(AddWatchlistItemStatus.InvalidInput, null);
+            return new CreateWatchlistGroupResult(CreateWatchlistGroupStatus.InvalidInput, null);
         }
 
         if (userId == Guid.Empty ||
             !await _dbContext.Users.AnyAsync(user => user.Id == userId, cancellationToken))
         {
+            return new CreateWatchlistGroupResult(CreateWatchlistGroupStatus.UserNotFound, null);
+        }
+
+        var existingGroup = await FindGroupByNameAsync(
+            userId,
+            normalizedName,
+            track: false,
+            cancellationToken);
+        if (existingGroup is not null)
+        {
+            return new CreateWatchlistGroupResult(CreateWatchlistGroupStatus.AlreadyExists, ToDto(existingGroup));
+        }
+
+        var group = new WatchlistGroup(userId, normalizedName, _timeProvider.GetUtcNow());
+        _dbContext.WatchlistGroups.Add(group);
+
+        try
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException)
+        {
+            var racedGroup = await FindGroupByNameAsync(
+                userId,
+                normalizedName,
+                track: false,
+                cancellationToken);
+            if (racedGroup is not null)
+            {
+                _dbContext.Entry(group).State = EntityState.Detached;
+                return new CreateWatchlistGroupResult(CreateWatchlistGroupStatus.AlreadyExists, ToDto(racedGroup));
+            }
+
+            throw;
+        }
+
+        return new CreateWatchlistGroupResult(CreateWatchlistGroupStatus.Created, ToDto(group));
+    }
+
+    public async Task<AddWatchlistItemResult> AddItemAsync(
+        Guid userId,
+        Guid groupId,
+        string symbol,
+        string boardId,
+        CancellationToken cancellationToken)
+    {
+        if (userId == Guid.Empty)
+        {
             return new AddWatchlistItemResult(AddWatchlistItemStatus.UserNotFound, null);
         }
 
-        var existingItem = await FindItemAsync(
+        if (!TryNormalize(symbol, boardId, out var normalizedSymbol, out var normalizedBoardId))
+        {
+            return new AddWatchlistItemResult(AddWatchlistItemStatus.InvalidInput, null);
+        }
+
+        var group = await FindGroupByIdAsync(
             userId,
+            groupId,
+            track: false,
+            cancellationToken);
+        if (group is null)
+        {
+            return new AddWatchlistItemResult(AddWatchlistItemStatus.GroupNotFound, null);
+        }
+
+        var existingItem = await FindItemAsync(
+            groupId,
             normalizedSymbol,
             normalizedBoardId,
             track: false,
@@ -82,7 +142,7 @@ public sealed class WatchlistService : IWatchlistService
         }
 
         var item = new WatchlistItem(
-            userId,
+            groupId,
             normalizedSymbol,
             normalizedBoardId,
             _timeProvider.GetUtcNow());
@@ -95,7 +155,7 @@ public sealed class WatchlistService : IWatchlistService
         catch (DbUpdateException)
         {
             var racedItem = await FindItemAsync(
-                userId,
+                groupId,
                 normalizedSymbol,
                 normalizedBoardId,
                 track: false,
@@ -112,8 +172,9 @@ public sealed class WatchlistService : IWatchlistService
         return new AddWatchlistItemResult(AddWatchlistItemStatus.Created, ToDto(item));
     }
 
-    public async Task<bool> RemoveAsync(
+    public async Task<bool> RemoveItemAsync(
         Guid userId,
+        Guid groupId,
         string symbol,
         string boardId,
         CancellationToken cancellationToken)
@@ -124,8 +185,18 @@ public sealed class WatchlistService : IWatchlistService
             return false;
         }
 
-        var item = await FindItemAsync(
+        var group = await FindGroupByIdAsync(
             userId,
+            groupId,
+            track: false,
+            cancellationToken);
+        if (group is null)
+        {
+            return false;
+        }
+
+        var item = await FindItemAsync(
+            groupId,
             normalizedSymbol,
             normalizedBoardId,
             track: true,
@@ -140,8 +211,43 @@ public sealed class WatchlistService : IWatchlistService
         return true;
     }
 
-    private async Task<WatchlistItem?> FindItemAsync(
+    private async Task<WatchlistGroup?> FindGroupByIdAsync(
         Guid userId,
+        Guid groupId,
+        bool track,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.WatchlistGroups
+            .Where(group => group.UserId == userId && group.Id == groupId);
+
+        if (!track)
+        {
+            query = query.AsNoTracking();
+        }
+
+        return await query.SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<WatchlistGroup?> FindGroupByNameAsync(
+        Guid userId,
+        string name,
+        bool track,
+        CancellationToken cancellationToken)
+    {
+        var query = _dbContext.WatchlistGroups
+            .Include(group => group.Items)
+            .Where(group => group.UserId == userId && group.Name == name);
+
+        if (!track)
+        {
+            query = query.AsNoTracking();
+        }
+
+        return await query.SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task<WatchlistItem?> FindItemAsync(
+        Guid groupId,
         string symbol,
         string boardId,
         bool track,
@@ -149,7 +255,7 @@ public sealed class WatchlistService : IWatchlistService
     {
         var query = _dbContext.WatchlistItems
             .Where(item =>
-                item.UserId == userId &&
+                item.GroupId == groupId &&
                 item.Symbol == symbol &&
                 item.BoardId == boardId);
 
@@ -181,10 +287,39 @@ public sealed class WatchlistService : IWatchlistService
         }
     }
 
+    private static bool TryNormalizeName(string name, out string normalizedName)
+    {
+        try
+        {
+            normalizedName = WatchlistGroup.NormalizeName(name);
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            normalizedName = string.Empty;
+            return false;
+        }
+    }
+
+    private static WatchlistGroupDto ToDto(WatchlistGroup group)
+    {
+        return new WatchlistGroupDto(
+            group.Id,
+            group.Name,
+            group.CreatedAt,
+            group.UpdatedAt,
+            group.Items
+                .OrderBy(item => item.Symbol)
+                .ThenBy(item => item.BoardId)
+                .Select(ToDto)
+                .ToArray());
+    }
+
     private static WatchlistItemDto ToDto(WatchlistItem item)
     {
         return new WatchlistItemDto(
             item.Id,
+            item.GroupId,
             item.Symbol,
             item.BoardId,
             item.CreatedAt);

@@ -10,13 +10,14 @@ describe('WatchlistPanel', () => {
     vi.unstubAllGlobals();
   });
 
-  it('logs in with the demo account and manages watchlist symbols', async () => {
+  it('logs in with the demo account and creates/selects watchlist groups', async () => {
     const fetchMock = vi.fn(createWatchlistFetch());
+    const onSelectGroup = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithQueryClient(<><DemoSessionControls /><WatchlistPanel /></>);
+    renderWithQueryClient(<><DemoSessionControls /><WatchlistPanel onSelectGroup={onSelectGroup} /></>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Danh muc cua toi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục của tôi' }));
     fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
 
     await waitFor(() =>
@@ -31,42 +32,116 @@ describe('WatchlistPanel', () => {
       ),
     );
 
-    fireEvent.change(screen.getByLabelText('Ma CK'), { target: { value: 'hpg' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Them' }));
+    expect(await screen.findByText('Chưa có danh mục')).toBeInTheDocument();
 
-    expect(await screen.findByText('HPG')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Tên danh mục'), { target: { value: 'TK H197731' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Tạo danh mục' }));
+
+    const groupButton = await screen.findByRole('button', { name: /TK H197731/ });
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
         '/api/watchlist',
         expect.objectContaining({
-          body: JSON.stringify({ symbol: 'hpg', boardId: 'G1' }),
+          body: JSON.stringify({ name: 'TK H197731' }),
           method: 'POST',
         }),
       ),
     );
+    expect(onSelectGroup).toHaveBeenCalledWith(expect.objectContaining({ name: 'TK H197731' }));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Xoa HPG G1' }));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/watchlist/G1/HPG',
-        expect.objectContaining({ method: 'DELETE' }),
-      ),
-    );
-    await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
+    fireEvent.click(groupButton);
+    expect(onSelectGroup).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'group-1', name: 'TK H197731' }));
   });
 
   it('keeps watchlist management gated behind the app-level login', () => {
     renderWithQueryClient(<WatchlistPanel />);
-    fireEvent.click(screen.getByRole('button', { name: 'Danh muc cua toi' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục của tôi' }));
 
     expect(screen.getByText('Đăng nhập ở góc trên bên phải để quản lý danh mục theo dõi.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Them' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tạo danh mục' })).not.toBeInTheDocument();
+  });
+
+  it('closes the dropdown when clicking outside', async () => {
+    const fetchMock = vi.fn(createWatchlistFetch([{
+      id: 'group-1',
+      name: 'TK H197731',
+      createdAt: '2026-07-12T09:00:00Z',
+      updatedAt: '2026-07-12T09:00:00Z',
+      items: [],
+    }]));
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(
+      <>
+        <button type="button">Bên ngoài</button>
+        <DemoSessionControls />
+        <WatchlistPanel />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục của tôi' }));
+
+    expect(await screen.findByRole('dialog', { name: 'Danh mục theo dõi' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Bên ngoài' }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Danh mục theo dõi' })).not.toBeInTheDocument(),
+    );
+  });
+
+  it('removes a symbol from the selected watchlist group', async () => {
+    const fetchMock = vi.fn(createWatchlistFetch([{
+      id: 'group-1',
+      name: 'TK H197731',
+      createdAt: '2026-07-12T09:00:00Z',
+      updatedAt: '2026-07-12T09:00:00Z',
+      items: [{
+        id: 'item-1',
+        groupId: 'group-1',
+        symbol: 'HPG',
+        boardId: 'G1',
+        createdAt: '2026-07-12T09:01:00Z',
+      }],
+    }]));
+    const onGroupChange = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(
+      <>
+        <DemoSessionControls />
+        <WatchlistPanel selectedGroupId="group-1" onGroupChange={onGroupChange} />
+      </>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    fireEvent.click(await screen.findByRole('button', { name: /TK H197731/ }));
+    expect(await screen.findByText('HPG')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Xóa HPG khỏi TK H197731' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/watchlist/group-1/items/G1/HPG',
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    );
+    await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
+    expect(onGroupChange).toHaveBeenLastCalledWith(expect.objectContaining({ id: 'group-1', items: [] }));
   });
 });
 
-function createWatchlistFetch() {
-  let items: Array<{ id: string; symbol: string; boardId: string; createdAt: string }> = [];
+type WatchlistGroupFixture = {
+    id: string;
+    name: string;
+    createdAt: string;
+    updatedAt: string;
+    items: Array<{ id: string; groupId: string; symbol: string; boardId: string; createdAt: string }>;
+  };
+
+function createWatchlistFetch(initialGroups: WatchlistGroupFixture[] = []) {
+  let groups = initialGroups;
 
   return (input: RequestInfo | URL, init?: RequestInit) => {
     const url = input.toString();
@@ -86,23 +161,33 @@ function createWatchlistFetch() {
     }
 
     if (url === '/api/watchlist' && method === 'GET') {
-      return Promise.resolve(jsonResponse(items));
+      return Promise.resolve(jsonResponse(groups));
     }
 
     if (url === '/api/watchlist' && method === 'POST') {
       const body = JSON.parse(String(init?.body));
-      const item = {
-        id: '0a8f1b4d-37e8-4d0e-9e5e-a0e8d28f86c1',
-        symbol: String(body.symbol).trim().toUpperCase(),
-        boardId: String(body.boardId).trim().toUpperCase(),
+      const group = {
+        id: 'group-1',
+        name: String(body.name).trim(),
         createdAt: '2026-07-12T09:00:00Z',
+        updatedAt: '2026-07-12T09:00:00Z',
+        items: [],
       };
-      items = [item];
-      return Promise.resolve(jsonResponse(item, { status: 201 }));
+      groups = [group];
+      return Promise.resolve(jsonResponse(group, { status: 201 }));
     }
 
-    if (url === '/api/watchlist/G1/HPG' && method === 'DELETE') {
-      items = [];
+    const deleteMatch = url.match(/^\/api\/watchlist\/([^/]+)\/items\/([^/]+)\/([^/]+)$/);
+    if (deleteMatch && method === 'DELETE') {
+      const [, groupId, boardId, symbol] = deleteMatch;
+      groups = groups.map((group) =>
+        group.id === groupId
+          ? {
+            ...group,
+            items: group.items.filter((item) => item.boardId !== boardId || item.symbol !== symbol),
+          }
+          : group,
+      );
       return Promise.resolve(new Response(null, { status: 204 }));
     }
 

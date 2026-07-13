@@ -2,7 +2,7 @@ namespace InvestView.Domain.Trading;
 
 public sealed class UserAccount
 {
-    private readonly List<WatchlistItem> _watchlistItems = [];
+    private readonly List<WatchlistGroup> _watchlistGroups = [];
     private readonly List<CashAccount> _cashAccounts = [];
     private readonly List<Holding> _holdings = [];
     private readonly List<SimulatedOrder> _orders = [];
@@ -33,7 +33,7 @@ public sealed class UserAccount
 
     public DateTimeOffset CreatedAt { get; private set; }
 
-    public IReadOnlyCollection<WatchlistItem> WatchlistItems => _watchlistItems;
+    public IReadOnlyCollection<WatchlistGroup> WatchlistGroups => _watchlistGroups;
 
     public IReadOnlyCollection<CashAccount> CashAccounts => _cashAccounts;
 

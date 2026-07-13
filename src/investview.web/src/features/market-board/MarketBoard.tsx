@@ -15,14 +15,24 @@ import { WatchlistPanel } from '../watchlist/WatchlistPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection, type QuoteHubConnectionStatus, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate } from '../../shared/types/market';
+import type { WatchlistGroup } from '../../shared/types/watchlist';
 
 type ActiveMarketFilter =
   | { kind: 'exchange'; list: SystemMarketList }
-  | { kind: 'index'; list: SystemMarketList };
+  | { kind: 'index'; list: SystemMarketList }
+  | { group: WatchlistGroup; kind: 'watchlist' };
 
 type MarketBoardProps = {
   onConnectionStatusChange?: (status: QuoteHubConnectionStatus) => void;
 };
+
+const userNavigationItems: Array<{ hasDropdown?: boolean; isActive?: boolean; label: string }> = [
+  { isActive: true, label: 'Bảng giá' },
+  { label: 'Đặt lệnh' },
+  { label: 'Sổ lệnh' },
+  { label: 'Danh mục nắm giữ' },
+  { hasDropdown: true, label: 'Quản lý tài sản' },
+];
 
 export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {}) {
   const gridApiRef = useRef<GridApi<MarketBoardRow> | null>(null);
@@ -45,15 +55,19 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const [latestMarketSessionUpdate, setLatestMarketSessionUpdate] = useState<MarketSessionUpdate | null>(null);
   const [latestTradeUpdate, setLatestTradeUpdate] = useState<MarketTradeUpdate | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
+  const isEmptyWatchlistFilter = activeFilter.kind === 'watchlist' && activeFilter.group.items.length === 0;
   const quotesQueryParams = useMemo(
     () => ({
       boardId: 'G1',
       marketId: activeFilter.kind === 'exchange' ? activeFilter.list.dnseMarketId : undefined,
       indexName: activeFilter.kind === 'index' ? activeFilter.list.dnseIndexName : undefined,
+      symbols: activeFilter.kind === 'watchlist'
+        ? activeFilter.group.items.map((item) => item.symbol)
+        : undefined,
     }),
     [activeFilter],
   );
-  const quotesQuery = useMarketQuotesQuery(quotesQueryParams);
+  const quotesQuery = useMarketQuotesQuery(quotesQueryParams, { enabled: !isEmptyWatchlistFilter });
   const marketSessionQueryParams = useMemo(
     () => ({
       boardId: 'G1',
@@ -151,14 +165,14 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   }, [marketSessionQueryParams]);
 
   useEffect(() => {
-    const nextQuotes = quotesQuery.data ?? [];
+    const nextQuotes = isEmptyWatchlistFilter ? [] : quotesQuery.data ?? [];
     Object.values(flashClearTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
     flashClearTimersRef.current = {};
     flashClassesByRowRef.current = {};
     setFlashClassesByRow({});
     quotesRef.current = nextQuotes;
     setQuotes(nextQuotes);
-  }, [quotesQuery.data]);
+  }, [isEmptyWatchlistFilter, quotesQuery.data]);
 
   useEffect(() => {
     if (selectedSymbol == null || quotes.some((quote) => getRowId(quote) === `${selectedSymbol.boardId}:${selectedSymbol.symbol}`)) {
@@ -202,6 +216,8 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
 
   return (
     <section className="flex min-h-[620px] min-w-0 flex-col border border-market-border bg-market-bg">
+      <UserFeatureNavigation />
+
       <MarketIndexOverview
         isMarketSessionLoading={marketSessionQuery.isPending}
         latestOhlcUpdate={latestOhlcUpdate}
@@ -209,7 +225,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
         marketSessionLabel={marketSession?.label ?? null}
       />
 
-      <div className="flex min-h-10 flex-wrap items-center gap-2 border-b border-market-border bg-market-surface px-2 py-1" data-testid="market-board-toolbar">
+      <div className="flex min-h-10 flex-wrap items-center gap-2 border-b border-market-border bg-market-surface px-2 py-1 !text-[12px] [&_button]:!text-[12px] [&_input]:!text-[12px]" data-testid="market-board-toolbar">
         <label className="sr-only" htmlFor="symbol-search">
           Search symbol
         </label>
@@ -221,7 +237,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
             </svg>
           </div>
           <input
-            className="h-8 w-56 rounded border border-market-border bg-market-surface-2 pl-9 pr-3 text-[12px] font-medium text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
+            className="h-8 w-56 rounded border border-market-border bg-market-surface-2 pl-9 pr-3 !text-[12px] font-medium text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
             id="symbol-search"
             onChange={(event) => setSymbolSearch(event.target.value)}
             placeholder="Tìm kiếm CK"
@@ -230,11 +246,19 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
           />
         </div>
 
-        <WatchlistPanel />
+        <WatchlistPanel
+          selectedGroupId={activeFilter.kind === 'watchlist' ? activeFilter.group.id : null}
+          onGroupChange={(group) => {
+            if (activeFilter.kind === 'watchlist' && activeFilter.group.id === group.id) {
+              setActiveFilter({ group, kind: 'watchlist' });
+            }
+          }}
+          onSelectGroup={(group) => setActiveFilter({ group, kind: 'watchlist' })}
+        />
 
         <div className="group relative z-[100]">
           <button
-            className={`flex h-8 items-center justify-between gap-1.5 border px-3 text-[12px] font-medium ${activeFilter.kind === 'index'
+            className={`flex h-8 items-center justify-between gap-1.5 border px-3 !text-[12px] font-medium ${activeFilter.kind === 'index'
               ? 'border-state-online border-x-0 border-b-0 border-t-2 text-market-text'
               : 'border-transparent text-[#c8c6d4] hover:bg-market-surface-2'
               }`}
@@ -254,7 +278,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
                 <button
                   key={marketList.id}
                   type="button"
-                  className={`block w-full text-left px-4 py-2.5 text-[12px] font-medium hover:bg-[#555162] ${selectedIndexCode === marketList.code ? 'bg-[#555162] text-white' : 'text-[#c8c6d4]'
+                  className={`block w-full text-left px-4 py-2.5 !text-[12px] font-medium hover:bg-[#555162] ${selectedIndexCode === marketList.code ? 'bg-[#555162] text-white' : 'text-[#c8c6d4]'
                     }`}
                   onClick={() => {
                     setSelectedIndexCode(marketList.code);
@@ -271,7 +295,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
         <div className="flex flex-wrap items-center gap-1" aria-label="Exchange filters">
           {systemExchangeLists.map((marketList) => (
             <button
-              className={`flex h-8 items-center justify-between gap-1.5 border px-3 text-[12px] font-medium ${activeFilter.kind === 'exchange' && marketList.code === activeFilter.list.code
+              className={`flex h-8 items-center justify-between gap-1.5 border px-3 !text-[12px] font-medium ${activeFilter.kind === 'exchange' && marketList.code === activeFilter.list.code
                 ? 'border-state-online border-x-0 border-b-0 border-t-2 text-market-text'
                 : 'border-transparent text-[#c8c6d4] hover:bg-market-surface-2 hover:text-market-text'
                 }`}
@@ -289,7 +313,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
           ))}
         </div>
         <button
-          className="ml-auto h-8 rounded-sm bg-[#16a77e] px-5 text-[12px] font-extrabold text-white hover:bg-[#1db98e]"
+          className="ml-auto h-8 rounded-sm bg-[#16a77e] px-5 !text-[12px] font-extrabold text-white hover:bg-[#1db98e]"
           type="button"
           onClick={() => setIsTradingDrawerOpen(true)}
         >
@@ -297,17 +321,19 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
         </button>
       </div>
 
-      {quotesQuery.isPending ? (
+      {!isEmptyWatchlistFilter && quotesQuery.isPending ? (
         <BoardState label="Loading market board" />
       ) : null}
 
-      {quotesQuery.isError ? (
+      {!isEmptyWatchlistFilter && quotesQuery.isError ? (
         <BoardState label={quotesQuery.error.message} tone="error" />
       ) : null}
 
-      {quotesQuery.isSuccess && rows.length === 0 ? <BoardState label="Không có mã cho bảng này" /> : null}
+      {isEmptyWatchlistFilter ? <BoardState label="Danh mục chưa có mã" /> : null}
 
-      {quotesQuery.isSuccess && rows.length > 0 ? (
+      {!isEmptyWatchlistFilter && quotesQuery.isSuccess && rows.length === 0 ? <BoardState label="Không có mã cho bảng này" /> : null}
+
+      {!isEmptyWatchlistFilter && quotesQuery.isSuccess && rows.length > 0 ? (
         <div className="min-h-0 flex-1" data-testid="market-board-grid">
           <AgGridReact
             autoSizeStrategy={{
@@ -354,6 +380,42 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
       />
 
     </section>
+  );
+}
+
+function UserFeatureNavigation() {
+  return (
+    <nav
+      aria-label="Chức năng người dùng"
+      className="min-h-7 overflow-x-auto border-x border-t border-market-border bg-[#1c1928]"
+    >
+      <div className="flex min-w-max items-stretch">
+        {userNavigationItems.map((item) => (
+          <button
+            aria-current={item.isActive ? 'page' : undefined}
+            className={`flex h-7 items-center gap-1.5 px-2.5 !text-xs font-bold whitespace-nowrap transition-colors ${
+              item.isActive
+                ? 'bg-[#5c566b] text-white'
+                : 'text-[#e0dce8] hover:bg-[#2a2637] hover:text-white'
+            }`}
+            key={item.label}
+            type="button"
+          >
+            <span className="!text-xs">{item.label}</span>
+            {item.hasDropdown ? (
+              <svg
+                aria-hidden="true"
+                className="size-2.5 shrink-0 text-[#b9b4c4]"
+                fill="none"
+                viewBox="0 0 10 6"
+              >
+                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+              </svg>
+            ) : null}
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 

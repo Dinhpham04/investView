@@ -37,7 +37,7 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
     }
 
     [Fact]
-    public async Task WatchlistFlow_WithValidSymbol_CanListAddDuplicateAndRemove()
+    public async Task WatchlistFlow_WithValidSymbol_CanCreateGroupListAddDuplicateAndRemove()
     {
         using var client = _factory.CreateClient();
         await AuthorizeAsDemoUserAsync(client);
@@ -46,12 +46,33 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
         Assert.Equal(JsonValueKind.Array, initialPayload.RootElement.ValueKind);
         Assert.Equal(0, initialPayload.RootElement.GetArrayLength());
 
-        var addResponse = await client.PostAsJsonAsync(
+        var createGroupResponse = await client.PostAsJsonAsync(
             "/api/watchlist",
+            new WatchlistGroupRequest(" TK H197731 "));
+        using var createGroupPayload = JsonDocument.Parse(await createGroupResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.Created, createGroupResponse.StatusCode);
+        Assert.Equal("TK H197731", createGroupPayload.RootElement.GetProperty("name").GetString());
+        Assert.Empty(createGroupPayload.RootElement.GetProperty("items").EnumerateArray());
+
+        var groupId = createGroupPayload.RootElement.GetProperty("id").GetGuid();
+        Assert.NotEqual(Guid.Empty, groupId);
+
+        var duplicateGroupResponse = await client.PostAsJsonAsync(
+            "/api/watchlist",
+            new WatchlistGroupRequest("TK H197731"));
+        using var duplicateGroupPayload = JsonDocument.Parse(await duplicateGroupResponse.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, duplicateGroupResponse.StatusCode);
+        Assert.Equal(groupId, duplicateGroupPayload.RootElement.GetProperty("id").GetGuid());
+
+        var addResponse = await client.PostAsJsonAsync(
+            $"/api/watchlist/{groupId}/items",
             new WatchlistItemRequest(" hpg ", " g1 "));
         using var addPayload = JsonDocument.Parse(await addResponse.Content.ReadAsStringAsync());
 
         Assert.Equal(HttpStatusCode.Created, addResponse.StatusCode);
+        Assert.Equal(groupId, addPayload.RootElement.GetProperty("groupId").GetGuid());
         Assert.Equal("HPG", addPayload.RootElement.GetProperty("symbol").GetString());
         Assert.Equal("G1", addPayload.RootElement.GetProperty("boardId").GetString());
 
@@ -59,7 +80,7 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
         Assert.NotEqual(Guid.Empty, itemId);
 
         var duplicateResponse = await client.PostAsJsonAsync(
-            "/api/watchlist",
+            $"/api/watchlist/{groupId}/items",
             new WatchlistItemRequest("HPG", "G1"));
         using var duplicatePayload = JsonDocument.Parse(await duplicateResponse.Content.ReadAsStringAsync());
 
@@ -67,17 +88,22 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
         Assert.Equal(itemId, duplicatePayload.RootElement.GetProperty("id").GetGuid());
 
         using var listPayload = JsonDocument.Parse(await (await client.GetAsync("/api/watchlist")).Content.ReadAsStringAsync());
-        var items = listPayload.RootElement.EnumerateArray().ToArray();
+        var groups = listPayload.RootElement.EnumerateArray().ToArray();
+        var group = Assert.Single(groups);
+        Assert.Equal(groupId, group.GetProperty("id").GetGuid());
+        Assert.Equal("TK H197731", group.GetProperty("name").GetString());
+        var items = group.GetProperty("items").EnumerateArray().ToArray();
         var item = Assert.Single(items);
         Assert.Equal(itemId, item.GetProperty("id").GetGuid());
         Assert.Equal("HPG", item.GetProperty("symbol").GetString());
         Assert.Equal("G1", item.GetProperty("boardId").GetString());
 
-        var deleteResponse = await client.DeleteAsync("/api/watchlist/G1/HPG");
+        var deleteResponse = await client.DeleteAsync($"/api/watchlist/{groupId}/items/G1/HPG");
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         using var emptyPayload = JsonDocument.Parse(await (await client.GetAsync("/api/watchlist")).Content.ReadAsStringAsync());
-        Assert.Equal(0, emptyPayload.RootElement.GetArrayLength());
+        var remainingGroup = Assert.Single(emptyPayload.RootElement.EnumerateArray());
+        Assert.Empty(remainingGroup.GetProperty("items").EnumerateArray());
     }
 
     [Fact]
@@ -86,8 +112,14 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
         using var client = _factory.CreateClient();
         await AuthorizeAsDemoUserAsync(client);
 
-        var response = await client.PostAsJsonAsync(
+        var groupResponse = await client.PostAsJsonAsync(
             "/api/watchlist",
+            new WatchlistGroupRequest("Theo dõi"));
+        using var groupPayload = JsonDocument.Parse(await groupResponse.Content.ReadAsStringAsync());
+        var groupId = groupPayload.RootElement.GetProperty("id").GetGuid();
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/watchlist/{groupId}/items",
             new WatchlistItemRequest("ZZZ", "G1"));
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -126,6 +158,8 @@ public sealed class WatchlistEndpointTests : IClassFixture<WebApplicationFactory
     }
 
     private sealed record DemoLoginRequest(string Email, string Password);
+
+    private sealed record WatchlistGroupRequest(string Name);
 
     private sealed record WatchlistItemRequest(string Symbol, string BoardId);
 }

@@ -1,7 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { addWatchlistItem, getWatchlist, removeWatchlistItem } from '../../shared/api/watchlistApi';
-import type { AddWatchlistItemRequest, WatchlistItem } from '../../shared/types/watchlist';
+import { addWatchlistItem, createWatchlistGroup, getWatchlist, removeWatchlistItem } from '../../shared/api/watchlistApi';
+import type { AddWatchlistItemRequest, CreateWatchlistGroupRequest, WatchlistGroup, WatchlistItem } from '../../shared/types/watchlist';
 import { useDemoSession } from '../auth/useDemoSession';
+
+export type AddWatchlistItemToGroupRequest = AddWatchlistItemRequest & {
+  groupId: string;
+};
+
+export type RemoveWatchlistItemFromGroupRequest = Pick<WatchlistItem, 'boardId' | 'symbol'> & {
+  groupId: string;
+};
 
 export function useWatchlist() {
   const queryClient = useQueryClient();
@@ -15,33 +23,62 @@ export function useWatchlist() {
     enabled: accessToken != null,
   });
 
-  const addMutation = useMutation({
-    mutationFn: (request: AddWatchlistItemRequest) => {
+  const createGroupMutation = useMutation({
+    mutationFn: (request: CreateWatchlistGroupRequest) => {
       if (accessToken == null) {
         throw new Error('Demo login is required.');
       }
 
-      return addWatchlistItem(accessToken, request);
+      return createWatchlistGroup(accessToken, request);
+    },
+    onSuccess: (group) => {
+      queryClient.setQueryData<WatchlistGroup[]>(queryKey, (existingGroups = []) =>
+        upsertWatchlistGroup(existingGroups, group),
+      );
+    },
+  });
+
+  const addMutation = useMutation({
+    mutationFn: (request: AddWatchlistItemToGroupRequest) => {
+      if (accessToken == null) {
+        throw new Error('Demo login is required.');
+      }
+
+      return addWatchlistItem(accessToken, request.groupId, {
+        boardId: request.boardId,
+        symbol: request.symbol,
+      });
     },
     onSuccess: (item) => {
-      queryClient.setQueryData<WatchlistItem[]>(queryKey, (existingItems = []) =>
-        upsertWatchlistItem(existingItems, item),
+      queryClient.setQueryData<WatchlistGroup[]>(queryKey, (existingGroups = []) =>
+        existingGroups.map((group) =>
+          group.id === item.groupId
+            ? { ...group, items: upsertWatchlistItem(group.items, item) }
+            : group,
+        ),
       );
     },
   });
 
   const removeMutation = useMutation({
-    mutationFn: (item: Pick<WatchlistItem, 'boardId' | 'symbol'>) => {
+    mutationFn: (item: RemoveWatchlistItemFromGroupRequest) => {
       if (accessToken == null) {
         throw new Error('Demo login is required.');
       }
 
-      return removeWatchlistItem(accessToken, item);
+      return removeWatchlistItem(accessToken, item.groupId, item);
     },
     onSuccess: (_, removedItem) => {
-      queryClient.setQueryData<WatchlistItem[]>(queryKey, (existingItems = []) =>
-        existingItems.filter((item) =>
-          item.boardId !== removedItem.boardId || item.symbol !== removedItem.symbol,
+      queryClient.setQueryData<WatchlistGroup[]>(queryKey, (existingGroups = []) =>
+        existingGroups.map((group) =>
+          group.id === removedItem.groupId
+            ? {
+              ...group,
+              items: group.items.filter((item) =>
+                item.boardId !== removedItem.boardId || item.symbol !== removedItem.symbol,
+              ),
+            }
+            : group,
         ),
       );
     },
@@ -49,15 +86,30 @@ export function useWatchlist() {
 
   return {
     addItem: addMutation.mutateAsync,
-    error: watchlistQuery.error ?? addMutation.error ?? removeMutation.error,
+    createGroup: createGroupMutation.mutateAsync,
+    error: watchlistQuery.error ?? createGroupMutation.error ?? addMutation.error ?? removeMutation.error,
+    groups: watchlistQuery.data ?? [],
     isAdding: addMutation.isPending,
+    isCreatingGroup: createGroupMutation.isPending,
     isLoading: accessToken != null && watchlistQuery.isPending,
     isRemoving: removeMutation.isPending,
-    items: watchlistQuery.data ?? [],
     removeItem: removeMutation.mutateAsync,
     session,
     status,
   };
+}
+
+function upsertWatchlistGroup(groups: WatchlistGroup[], nextGroup: WatchlistGroup) {
+  const existingIndex = groups.findIndex((group) => group.id === nextGroup.id);
+  if (existingIndex < 0) {
+    return [...groups, nextGroup].sort(compareWatchlistGroups);
+  }
+
+  return groups.map((group, index) => index === existingIndex ? nextGroup : group);
+}
+
+function compareWatchlistGroups(left: WatchlistGroup, right: WatchlistGroup) {
+  return left.name.localeCompare(right.name);
 }
 
 function upsertWatchlistItem(items: WatchlistItem[], nextItem: WatchlistItem) {

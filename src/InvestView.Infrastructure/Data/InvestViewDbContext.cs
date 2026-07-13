@@ -14,6 +14,8 @@ public sealed class InvestViewDbContext : DbContext
 
     public DbSet<WatchlistItem> WatchlistItems => Set<WatchlistItem>();
 
+    public DbSet<WatchlistGroup> WatchlistGroups => Set<WatchlistGroup>();
+
     public DbSet<CashAccount> CashAccounts => Set<CashAccount>();
 
     public DbSet<Holding> Holdings => Set<Holding>();
@@ -25,6 +27,7 @@ public sealed class InvestViewDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<UserAccount>(ConfigureUserAccount);
+        modelBuilder.Entity<WatchlistGroup>(ConfigureWatchlistGroup);
         modelBuilder.Entity<WatchlistItem>(ConfigureWatchlistItem);
         modelBuilder.Entity<CashAccount>(ConfigureCashAccount);
         modelBuilder.Entity<Holding>(ConfigureHolding);
@@ -51,12 +54,12 @@ public sealed class InvestViewDbContext : DbContext
             .HasMaxLength(512)
             .IsRequired();
 
-        entity.HasMany(user => user.WatchlistItems)
-            .WithOne(item => item.User)
-            .HasForeignKey(item => item.UserId)
+        entity.HasMany(user => user.WatchlistGroups)
+            .WithOne(group => group.User)
+            .HasForeignKey(group => group.UserId)
             .OnDelete(DeleteBehavior.Cascade);
-        entity.Navigation(user => user.WatchlistItems)
-            .HasField("_watchlistItems")
+        entity.Navigation(user => user.WatchlistGroups)
+            .HasField("_watchlistGroups")
             .UsePropertyAccessMode(PropertyAccessMode.Field);
 
         entity.HasMany(user => user.CashAccounts)
@@ -84,6 +87,27 @@ public sealed class InvestViewDbContext : DbContext
             .UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 
+    private static void ConfigureWatchlistGroup(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WatchlistGroup> entity)
+    {
+        entity.ToTable("WatchlistGroups");
+        entity.HasKey(group => group.Id);
+
+        entity.Property(group => group.Name)
+            .HasMaxLength(64)
+            .IsRequired();
+
+        entity.HasIndex(group => new { group.UserId, group.Name })
+            .IsUnique();
+
+        entity.HasMany(group => group.Items)
+            .WithOne(item => item.Group)
+            .HasForeignKey(item => item.GroupId)
+            .OnDelete(DeleteBehavior.Cascade);
+        entity.Navigation(group => group.Items)
+            .HasField("_items")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
+    }
+
     private static void ConfigureWatchlistItem(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<WatchlistItem> entity)
     {
         entity.ToTable("WatchlistItems");
@@ -96,7 +120,7 @@ public sealed class InvestViewDbContext : DbContext
             .HasMaxLength(8)
             .IsRequired();
 
-        entity.HasIndex(item => new { item.UserId, item.BoardId, item.Symbol })
+        entity.HasIndex(item => new { item.GroupId, item.BoardId, item.Symbol })
             .IsUnique();
     }
 

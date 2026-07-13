@@ -5,23 +5,34 @@ namespace InvestView.Domain.Tests.Trading;
 public sealed class UserAccountEntityTests
 {
     [Fact]
-    public void WatchlistItem_NormalizesSymbolAndBoard()
+    public void WatchlistGroup_NormalizesName()
     {
         var userId = Guid.NewGuid();
 
-        var item = new WatchlistItem(userId, " hpg ", " g1 ");
+        var group = new WatchlistGroup(userId, "  TK H197731  ");
+
+        Assert.Equal("TK H197731", group.Name);
+        Assert.Equal(userId, group.UserId);
+    }
+
+    [Fact]
+    public void WatchlistItem_NormalizesSymbolAndBoard()
+    {
+        var groupId = Guid.NewGuid();
+
+        var item = new WatchlistItem(groupId, " hpg ", " g1 ");
 
         Assert.Equal("HPG", item.Symbol);
         Assert.Equal("G1", item.BoardId);
-        Assert.Equal(userId, item.UserId);
+        Assert.Equal(groupId, item.GroupId);
     }
 
     [Fact]
     public void WatchlistItem_WhenSymbolContainsWhitespace_ShouldReject()
     {
-        var userId = Guid.NewGuid();
+        var groupId = Guid.NewGuid();
 
-        Assert.Throws<ArgumentException>(() => new WatchlistItem(userId, "HP G", "G1"));
+        Assert.Throws<ArgumentException>(() => new WatchlistItem(groupId, "HP G", "G1"));
     }
 
     [Fact]

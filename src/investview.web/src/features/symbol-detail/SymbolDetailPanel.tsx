@@ -18,6 +18,7 @@ import {
   type ChartTimeframe,
   type SymbolDetailSelection,
 } from './useSymbolDetailQueries';
+import { WatchlistSymbolPicker } from '../watchlist/WatchlistSymbolPicker';
 import type { SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketQuote, MarketTrade, MarketTradeUpdate, OhlcBar, PriceLevel, SymbolDetail } from '../../shared/types/market';
 
@@ -212,6 +213,10 @@ function SymbolOverlayHeader({
         </div>
 
         <div className="flex shrink-0 items-start gap-2">
+          <WatchlistSymbolPicker
+            boardId={selection.boardId}
+            symbol={selection.symbol}
+          />
           <button className="h-9 bg-[#16a77e] px-8 text-sm font-bold rounded-sm text-white hover:bg-[#1db98e]" type="button">
             Đặt lệnh
           </button>

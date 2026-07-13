@@ -211,6 +211,34 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.ToTable("Users", (string)null);
                 });
 
+            modelBuilder.Entity("InvestView.Domain.Trading.WatchlistGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("WatchlistGroups", (string)null);
+                });
+
             modelBuilder.Entity("InvestView.Domain.Trading.WatchlistItem", b =>
                 {
                     b.Property<Guid>("Id")
@@ -225,17 +253,17 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid>("GroupId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Symbol")
                         .IsRequired()
                         .HasMaxLength(16)
                         .HasColumnType("nvarchar(16)");
 
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uniqueidentifier");
-
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "BoardId", "Symbol")
+                    b.HasIndex("GroupId", "BoardId", "Symbol")
                         .IsUnique();
 
                     b.ToTable("WatchlistItems", (string)null);
@@ -285,15 +313,31 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("InvestView.Domain.Trading.WatchlistItem", b =>
+            modelBuilder.Entity("InvestView.Domain.Trading.WatchlistGroup", b =>
                 {
                     b.HasOne("InvestView.Domain.Trading.UserAccount", "User")
-                        .WithMany("WatchlistItems")
+                        .WithMany("WatchlistGroups")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("InvestView.Domain.Trading.WatchlistItem", b =>
+                {
+                    b.HasOne("InvestView.Domain.Trading.WatchlistGroup", "Group")
+                        .WithMany("Items")
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Group");
+                });
+
+            modelBuilder.Entity("InvestView.Domain.Trading.WatchlistGroup", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("InvestView.Domain.Trading.SimulatedOrder", b =>
@@ -309,7 +353,7 @@ namespace InvestView.Infrastructure.Data.Migrations
 
                     b.Navigation("Orders");
 
-                    b.Navigation("WatchlistItems");
+                    b.Navigation("WatchlistGroups");
                 });
 #pragma warning restore 612, 618
         }

@@ -15,6 +15,7 @@ public sealed class InvestViewDbContextTests
         using var dbContext = CreateDbContext();
 
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(UserAccount)));
+        Assert.NotNull(dbContext.Model.FindEntityType(typeof(WatchlistGroup)));
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(WatchlistItem)));
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(CashAccount)));
         Assert.NotNull(dbContext.Model.FindEntityType(typeof(Holding)));
@@ -28,9 +29,13 @@ public sealed class InvestViewDbContextTests
         using var dbContext = CreateDbContext();
 
         AssertHasUniqueIndex<UserAccount>(dbContext, nameof(UserAccount.Email));
+        AssertHasUniqueIndex<WatchlistGroup>(
+            dbContext,
+            nameof(WatchlistGroup.UserId),
+            nameof(WatchlistGroup.Name));
         AssertHasUniqueIndex<WatchlistItem>(
             dbContext,
-            nameof(WatchlistItem.UserId),
+            nameof(WatchlistItem.GroupId),
             nameof(WatchlistItem.BoardId),
             nameof(WatchlistItem.Symbol));
         AssertHasUniqueIndex<CashAccount>(
@@ -49,10 +54,14 @@ public sealed class InvestViewDbContextTests
     {
         using var dbContext = CreateDbContext();
 
-        AssertHasRequiredCascadeForeignKey<WatchlistItem>(
+        AssertHasRequiredCascadeForeignKey<WatchlistGroup>(
             dbContext,
             typeof(UserAccount),
-            nameof(WatchlistItem.UserId));
+            nameof(WatchlistGroup.UserId));
+        AssertHasRequiredCascadeForeignKey<WatchlistItem>(
+            dbContext,
+            typeof(WatchlistGroup),
+            nameof(WatchlistItem.GroupId));
         AssertHasRequiredCascadeForeignKey<CashAccount>(
             dbContext,
             typeof(UserAccount),
@@ -82,6 +91,14 @@ public sealed class InvestViewDbContextTests
         var dbContext = scope.ServiceProvider.GetRequiredService<InvestViewDbContext>();
 
         Assert.Equal("Microsoft.EntityFrameworkCore.SqlServer", dbContext.Database.ProviderName);
+    }
+
+    [Fact]
+    public void Migrations_IncludeWatchlistGroupsMigration()
+    {
+        using var dbContext = CreateDbContext();
+
+        Assert.Contains("20260713150000_AddWatchlistGroups", dbContext.Database.GetMigrations());
     }
 
     private static InvestViewDbContext CreateDbContext()

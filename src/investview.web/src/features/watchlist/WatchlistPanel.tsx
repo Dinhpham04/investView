@@ -1,49 +1,99 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useWatchlist } from './useWatchlist';
+import type { WatchlistGroup } from '../../shared/types/watchlist';
 
-const defaultBoardId = 'G1';
+type WatchlistPanelProps = {
+  onGroupChange?: (group: WatchlistGroup) => void;
+  selectedGroupId?: string | null;
+  onSelectGroup?: (group: WatchlistGroup) => void;
+};
 
-export function WatchlistPanel() {
+export function WatchlistPanel({ onGroupChange, selectedGroupId = null, onSelectGroup }: WatchlistPanelProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
-  const [symbol, setSymbol] = useState('');
+  const [groupName, setGroupName] = useState('');
   const {
-    addItem,
+    createGroup,
     error,
-    isAdding,
+    groups,
+    isCreatingGroup,
     isLoading,
     isRemoving,
-    items,
     removeItem,
     session,
     status,
   } = useWatchlist();
+  const selectedGroup = groups.find((group) => group.id === selectedGroupId) ?? null;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (!isOpen) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && rootRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isOpen]);
+
+  const handleCreateGroup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextSymbol = symbol.trim();
-    if (!nextSymbol) {
+    const nextName = groupName.trim();
+    if (!nextName) {
       return;
     }
 
     try {
-      await addItem({ symbol: nextSymbol, boardId: defaultBoardId });
-      setSymbol('');
+      const createdGroup = await createGroup({ name: nextName });
+      setGroupName('');
+      onSelectGroup?.(createdGroup);
+    } catch {
+      // The mutation exposes the error state in the panel.
+    }
+  };
+
+  const handleRemoveItem = async (symbol: string, boardId: string) => {
+    if (selectedGroup == null) {
+      return;
+    }
+
+    try {
+      await removeItem({
+        boardId,
+        groupId: selectedGroup.id,
+        symbol,
+      });
+      onGroupChange?.({
+        ...selectedGroup,
+        items: selectedGroup.items.filter((item) => item.boardId !== boardId || item.symbol !== symbol),
+      });
     } catch {
       // The mutation exposes the error state in the panel.
     }
   };
 
   return (
-    <div className="relative z-[100]">
+    <div className="relative z-[100]" ref={rootRef}>
       <button
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className="flex h-8 items-center gap-1.5 border border-transparent px-3 text-[12px] font-medium text-[#c8c6d4] hover:bg-market-surface-2 hover:text-market-text"
+        className={`flex h-8 items-center gap-1.5 border px-3 !text-[12px] font-medium hover:bg-market-surface-2 hover:text-market-text ${
+          selectedGroup == null
+            ? 'border-transparent text-[#c8c6d4]'
+            : 'border-state-online border-x-0 border-b-0 border-t-2 text-market-text'
+        }`}
         type="button"
         onClick={() => setIsOpen((value) => !value)}
       >
-        Danh muc cua toi
+        <span className="max-w-32 truncate">{selectedGroup?.name ?? 'Danh mục của tôi'}</span>
         <svg className="shrink-0" width="9" height="6" viewBox="0 0 10 6" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M1 1L5 5L9 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -51,12 +101,12 @@ export function WatchlistPanel() {
 
       {isOpen ? (
         <div
-          aria-label="Danh muc theo doi"
+          aria-label="Danh mục theo dõi"
           className="absolute left-0 top-full mt-1 w-[340px] border border-market-border bg-market-surface shadow-xl"
           role="dialog"
         >
           <div className="border-b border-market-border px-3 py-2">
-            <p className="text-[12px] font-bold text-market-text">Danh muc theo doi</p>
+            <p className="text-[12px] font-bold text-market-text">Danh mục của tôi</p>
             <p className="text-[11px] font-medium text-market-text-muted">
               {session?.user.displayName ?? 'Demo user'}
             </p>
@@ -71,58 +121,93 @@ export function WatchlistPanel() {
               </p>
             ) : (
               <>
-                <form className="flex items-end gap-2" onSubmit={handleSubmit}>
-                  <div className="min-w-0 flex-1">
-                    <label className="mb-1 block text-[11px] font-bold uppercase text-market-text-muted" htmlFor="watchlist-symbol">
-                      Ma CK
-                    </label>
-                    <input
-                      className="h-8 w-full rounded border border-market-border bg-market-surface-2 px-2 text-[12px] font-bold uppercase text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
-                      id="watchlist-symbol"
-                      onChange={(event) => setSymbol(event.target.value)}
-                      placeholder="HPG"
-                      type="text"
-                      value={symbol}
-                    />
-                  </div>
-                  <button
-                    className="h-8 border border-market-border-strong bg-market-surface-2 px-3 text-[12px] font-bold text-market-text hover:border-focus-ring disabled:text-market-text-subtle"
-                    disabled={isAdding || symbol.trim().length === 0}
-                    type="submit"
-                  >
-                    {isAdding ? 'Dang them' : 'Them'}
-                  </button>
-                </form>
-
-                <div className="max-h-64 overflow-y-auto border border-market-border bg-market-bg">
+                <div className="max-h-56 overflow-y-auto border border-market-border bg-market-bg">
                   {isLoading ? (
-                    <PanelState label="Dang tai danh muc" />
-                  ) : items.length === 0 ? (
-                    <PanelState label="Chua co ma theo doi" />
+                    <PanelState label="Đang tải danh mục" />
+                  ) : groups.length === 0 ? (
+                    <PanelState label="Chưa có danh mục" />
                   ) : (
                     <ul className="divide-y divide-market-border" role="list">
-                      {items.map((item) => (
-                        <li className="flex min-h-9 items-center justify-between gap-3 px-2 py-1.5" key={`${item.boardId}:${item.symbol}`}>
-                          <div className="min-w-0">
-                            <p className="truncate text-[12px] font-extrabold text-market-text">{item.symbol}</p>
-                            <p className="text-[11px] font-medium text-market-text-muted">{item.boardId}</p>
-                          </div>
+                      {groups.map((group) => (
+                        <li key={group.id}>
                           <button
-                            aria-label={`Xoa ${item.symbol} ${item.boardId}`}
-                            className="h-7 border border-market-border px-2 text-[11px] font-bold text-state-error hover:border-state-error disabled:text-market-text-subtle"
-                            disabled={isRemoving}
+                            aria-pressed={selectedGroupId === group.id}
+                            className={`flex min-h-10 w-full items-center justify-between gap-3 px-3 py-2 text-left text-[12px] font-bold hover:bg-[#312b40] ${
+                              selectedGroupId === group.id ? 'bg-[#3c354d] text-white' : 'text-[#c8c6d4]'
+                            }`}
                             type="button"
                             onClick={() => {
-                              void removeItem({ symbol: item.symbol, boardId: item.boardId }).catch(() => undefined);
+                              onSelectGroup?.(group);
+                              setIsOpen(false);
                             }}
                           >
-                            Xoa
+                            <span className="min-w-0 truncate">{group.name}</span>
+                            <span className="shrink-0 text-[11px] font-semibold text-market-text-muted">
+                              {group.items.length} mã
+                            </span>
                           </button>
                         </li>
                       ))}
                     </ul>
                   )}
                 </div>
+
+                {selectedGroup ? (
+                  <section className="border border-market-border bg-market-bg" aria-label={`Mã trong ${selectedGroup.name}`}>
+                    <div className="flex items-center justify-between border-b border-market-border px-3 py-2">
+                      <p className="text-[12px] font-bold text-market-text">{selectedGroup.name}</p>
+                      <span className="text-[11px] font-semibold text-market-text-muted">{selectedGroup.items.length} mã</span>
+                    </div>
+
+                    {selectedGroup.items.length === 0 ? (
+                      <PanelState label="Danh mục chưa có mã" />
+                    ) : (
+                      <ul className="max-h-44 divide-y divide-market-border overflow-y-auto" role="list">
+                        {selectedGroup.items.map((item) => (
+                          <li className="flex min-h-9 items-center justify-between gap-3 px-3 py-2" key={item.id}>
+                            <div className="min-w-0">
+                              <p className="truncate text-[12px] font-extrabold text-market-text">{item.symbol}</p>
+                              <p className="text-[11px] font-semibold text-market-text-muted">{item.boardId}</p>
+                            </div>
+                            <button
+                              aria-label={`Xóa ${item.symbol} khỏi ${selectedGroup.name}`}
+                              className="grid size-6 shrink-0 place-items-center rounded-sm border border-transparent text-sm font-bold text-market-text-muted hover:border-state-error hover:text-state-error disabled:opacity-50"
+                              disabled={isRemoving}
+                              type="button"
+                              onClick={() => {
+                                void handleRemoveItem(item.symbol, item.boardId);
+                              }}
+                            >
+                              ×
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+                ) : null}
+
+                <form className="flex items-center gap-2" onSubmit={handleCreateGroup}>
+                  <label className="sr-only" htmlFor="watchlist-group-name">
+                    Tên danh mục
+                  </label>
+                  <input
+                    className="h-8 min-w-0 flex-1 rounded border border-market-border bg-market-surface-2 px-2 text-[12px] font-bold text-market-text outline-none placeholder:text-market-text-subtle focus:border-focus-ring"
+                    id="watchlist-group-name"
+                    onChange={(event) => setGroupName(event.target.value)}
+                    placeholder="Tạo danh mục mới"
+                    type="text"
+                    value={groupName}
+                  />
+                  <button
+                    aria-label="Tạo danh mục"
+                    className="grid h-8 w-8 place-items-center border border-market-border-strong bg-market-surface-2 text-lg font-bold leading-none text-market-text hover:border-focus-ring disabled:text-market-text-subtle"
+                    disabled={isCreatingGroup || groupName.trim().length === 0}
+                    type="submit"
+                  >
+                    +
+                  </button>
+                </form>
               </>
             )}
 

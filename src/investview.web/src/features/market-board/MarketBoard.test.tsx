@@ -4,6 +4,7 @@ import { MarketBoard, MarketSessionBadge, selectMarketSession } from './MarketBo
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { formatChartPrice, formatCompactQuantity } from '../symbol-detail/symbolChartFormatters';
 import { aggregateOhlcBarsForTimeframe, chartTimeframes } from '../symbol-detail/useSymbolDetailQueries';
+import { DemoSessionControls } from '../auth/DemoSessionControls';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHubConnection';
 import type {
@@ -314,6 +315,7 @@ const indexOhlcBars: OhlcBar[] = [
 
 describe('MarketBoard', () => {
   afterEach(() => {
+    window.localStorage?.clear();
     vi.unstubAllGlobals();
     testRuntime.applyTransactionAsync.mockClear();
     testRuntime.gridReady = false;
@@ -350,6 +352,19 @@ describe('MarketBoard', () => {
     renderWithQueryClient(<MarketBoard />);
 
     expect(screen.getByText('Loading market board')).toBeInTheDocument();
+    const userNavigation = screen.getByRole('navigation', { name: 'Chức năng người dùng' });
+    const activeMarketBoardItem = within(userNavigation).getByRole('button', { name: 'Bảng giá' });
+    expect(activeMarketBoardItem).toHaveAttribute('aria-current', 'page');
+    expect(activeMarketBoardItem).toHaveClass('!text-xs');
+    expect(within(activeMarketBoardItem).getByText('Bảng giá')).toHaveClass('!text-xs');
+    expect(activeMarketBoardItem).not.toHaveClass('border-r');
+    expect(within(userNavigation).queryByRole('button', { name: 'Danh mục theo dõi' })).not.toBeInTheDocument();
+    expect(within(userNavigation).getByRole('button', { name: 'Đặt lệnh' })).toBeInTheDocument();
+    expect(within(userNavigation).getByRole('button', { name: 'Sổ lệnh' })).toBeInTheDocument();
+    expect(within(userNavigation).getByRole('button', { name: 'Danh mục nắm giữ' })).toBeInTheDocument();
+    expect(within(userNavigation).getByRole('button', { name: 'Quản lý tài sản' })).toBeInTheDocument();
+    expect(within(userNavigation).queryByRole('button', { name: 'Giao dịch phái sinh' })).not.toBeInTheDocument();
+    expect(within(userNavigation).queryByRole('button', { name: 'Margin - Vay ký quỹ' })).not.toBeInTheDocument();
     expect(await screen.findByRole('grid')).toBeInTheDocument();
     expect((await screen.findAllByText('Liên tục')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0);
@@ -363,7 +378,7 @@ describe('MarketBoard', () => {
     expect(screen.getByText('NN bán')).toBeInTheDocument();
     expect(screen.getByText('Room')).toBeInTheDocument();
     expect(screen.getByRole('searchbox')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Danh/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Danh mục của tôi' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'VN30' }).length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'HOSE' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'HNX' })).toBeInTheDocument();
@@ -418,7 +433,7 @@ describe('MarketBoard', () => {
     expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Phieu lenh mo phong')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Đặt lệnh' }));
+    fireEvent.click(within(toolbar).getByRole('button', { name: 'Đặt lệnh' }));
 
     expect(await screen.findByTestId('trading-drawer')).toBeInTheDocument();
     expect(screen.getByLabelText('Phieu lenh mo phong')).toBeInTheDocument();
@@ -499,6 +514,99 @@ describe('MarketBoard', () => {
 
     await waitFor(() =>
       expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&marketId=STX', expect.any(Object)),
+    );
+  });
+
+  it('requests market quotes by symbols when a watchlist group is selected', async () => {
+    const fetchMock = mockMarketBoardFetch([quote], [{
+      id: 'group-1',
+      name: 'TK H197731',
+      createdAt: '2026-07-12T09:00:00Z',
+      updatedAt: '2026-07-12T09:00:00Z',
+      items: [{
+        id: 'item-1',
+        groupId: 'group-1',
+        symbol: 'HPG',
+        boardId: 'G1',
+        createdAt: '2026-07-12T09:01:00Z',
+      }],
+    }]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục của tôi' }));
+    fireEvent.click(await screen.findByRole('button', { name: /TK H197731/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&symbols=HPG', expect.any(Object)),
+    );
+  });
+
+  it('adds the open symbol detail symbol to a selected watchlist group without changing the board filter', async () => {
+    const fetchMock = mockMarketBoardFetch([quote], [{
+      id: 'group-1',
+      name: 'TK H197731',
+      createdAt: '2026-07-12T09:00:00Z',
+      updatedAt: '2026-07-12T09:00:00Z',
+      items: [],
+    }]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+    const panel = await screen.findByTestId('symbol-detail-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Theo dõi HPG' }));
+    fireEvent.click(await within(panel).findByRole('button', { name: /TK H197731/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/watchlist/group-1/items',
+        expect.objectContaining({
+          body: JSON.stringify({ boardId: 'G1', symbol: 'HPG' }),
+          method: 'POST',
+        }),
+      ),
+    );
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/market/quotes?boardId=G1&symbols=HPG', expect.any(Object));
+  });
+
+  it('closes the symbol detail watchlist picker when clicking outside', async () => {
+    const fetchMock = mockMarketBoardFetch([quote], [{
+      id: 'group-1',
+      name: 'TK H197731',
+      createdAt: '2026-07-12T09:00:00Z',
+      updatedAt: '2026-07-12T09:00:00Z',
+      items: [],
+    }]);
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+    const panel = await screen.findByTestId('symbol-detail-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Theo dõi HPG' }));
+
+    expect(await within(panel).findByRole('dialog', { name: 'Chọn danh mục cho HPG' })).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByTestId('market-board-toolbar'));
+
+    await waitFor(() =>
+      expect(within(panel).queryByRole('dialog', { name: 'Chọn danh mục cho HPG' })).not.toBeInTheDocument(),
     );
   });
 
@@ -844,16 +952,100 @@ describe('MarketBoard', () => {
   });
 });
 
-function jsonResponse(body: unknown) {
+function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
-    status: 200,
+    status: init?.status ?? 200,
+    statusText: init?.statusText,
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
-function mockMarketBoardFetch(quotes: MarketQuote[] = [quote]) {
-  return vi.fn((input: RequestInfo | URL) => {
+function mockMarketBoardFetch(
+  quotes: MarketQuote[] = [quote],
+  watchlistGroups: unknown[] = [],
+) {
+  let groups = watchlistGroups as Array<{
+    id: string;
+    name: string;
+    createdAt: string;
+    updatedAt: string;
+    items: Array<{ id: string; groupId: string; symbol: string; boardId: string; createdAt: string }>;
+  }>;
+
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = input.toString();
+    const method = init?.method ?? 'GET';
+
+    if (url.startsWith('/api/auth/demo-login')) {
+      return Promise.resolve(jsonResponse({
+        accessToken: 'test-token',
+        tokenType: 'Bearer',
+        expiresAt: '2099-01-01T00:00:00Z',
+        user: {
+          id: '6b4e73e5-53f6-421c-bcec-24c2dfbcd4a5',
+          email: 'demo@investview.local',
+          displayName: 'InvestView Demo',
+        },
+      }));
+    }
+
+    if (url.startsWith('/api/me')) {
+      return Promise.resolve(jsonResponse({
+        id: '6b4e73e5-53f6-421c-bcec-24c2dfbcd4a5',
+        email: 'demo@investview.local',
+        displayName: 'InvestView Demo',
+        cashAccounts: [],
+      }));
+    }
+
+    if (url === '/api/watchlist' && method === 'GET') {
+      return Promise.resolve(jsonResponse(groups));
+    }
+
+    const addWatchlistItemMatch = url.match(/^\/api\/watchlist\/([^/]+)\/items$/);
+    if (addWatchlistItemMatch && method === 'POST') {
+      const groupId = decodeURIComponent(addWatchlistItemMatch[1]);
+      const body = JSON.parse(String(init?.body));
+      const item = {
+        id: 'item-1',
+        groupId,
+        symbol: String(body.symbol).trim().toUpperCase(),
+        boardId: String(body.boardId).trim().toUpperCase(),
+        createdAt: '2026-07-12T09:01:00Z',
+      };
+      groups = groups.map((group) =>
+        group.id === groupId
+          ? { ...group, items: [...group.items.filter((existing) => existing.symbol !== item.symbol || existing.boardId !== item.boardId), item] }
+          : group,
+      );
+      return Promise.resolve(jsonResponse(item, { status: 201 }));
+    }
+
+    const deleteWatchlistItemMatch = url.match(/^\/api\/watchlist\/([^/]+)\/items\/([^/]+)\/([^/]+)$/);
+    if (deleteWatchlistItemMatch && method === 'DELETE') {
+      const groupId = decodeURIComponent(deleteWatchlistItemMatch[1]);
+      const boardId = decodeURIComponent(deleteWatchlistItemMatch[2]);
+      const symbol = decodeURIComponent(deleteWatchlistItemMatch[3]);
+      groups = groups.map((group) =>
+        group.id === groupId
+          ? { ...group, items: group.items.filter((item) => item.boardId !== boardId || item.symbol !== symbol) }
+          : group,
+      );
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }
+
+    if (url.startsWith('/api/market/symbols/HPG/trades/latest')) {
+      return Promise.resolve(jsonResponse(latestTrades));
+    }
+
+    if (url.startsWith('/api/market/symbols/HPG/ohlc')) {
+      return Promise.resolve(jsonResponse(ohlcBars));
+    }
+
+    if (url.startsWith('/api/market/symbols/HPG?')) {
+      return Promise.resolve(jsonResponse(symbolDetail));
+    }
+
     if (url.startsWith('/api/market/session')) {
       return Promise.resolve(jsonResponse(marketSession));
     }

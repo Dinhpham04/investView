@@ -8,15 +8,15 @@ public sealed class WatchlistItem
         BoardId = string.Empty;
     }
 
-    public WatchlistItem(Guid userId, string symbol, string boardId, DateTimeOffset? createdAt = null)
+    public WatchlistItem(Guid groupId, string symbol, string boardId, DateTimeOffset? createdAt = null)
     {
-        if (userId == Guid.Empty)
+        if (groupId == Guid.Empty)
         {
-            throw new ArgumentException("User id is required.", nameof(userId));
+            throw new ArgumentException("Watchlist group id is required.", nameof(groupId));
         }
 
         Id = Guid.NewGuid();
-        UserId = userId;
+        GroupId = groupId;
         Symbol = MarketIdentity.NormalizeSymbol(symbol);
         BoardId = MarketIdentity.NormalizeBoardId(boardId);
         CreatedAt = createdAt ?? DateTimeOffset.UtcNow;
@@ -24,7 +24,7 @@ public sealed class WatchlistItem
 
     public Guid Id { get; private set; }
 
-    public Guid UserId { get; private set; }
+    public Guid GroupId { get; private set; }
 
     public string Symbol { get; private set; }
 
@@ -32,5 +32,5 @@ public sealed class WatchlistItem
 
     public DateTimeOffset CreatedAt { get; private set; }
 
-    public UserAccount? User { get; private set; }
+    public WatchlistGroup? Group { get; private set; }
 }
