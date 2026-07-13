@@ -13,14 +13,18 @@ import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import { TradingDrawer } from '../trading/TradingDrawer';
 import { WatchlistPanel } from '../watchlist/WatchlistPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
-import { useQuoteHubConnection, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
-import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate, QuoteStreamStatus } from '../../shared/types/market';
+import { useQuoteHubConnection, type QuoteHubConnectionStatus, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
+import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate } from '../../shared/types/market';
 
 type ActiveMarketFilter =
   | { kind: 'exchange'; list: SystemMarketList }
   | { kind: 'index'; list: SystemMarketList };
 
-export function MarketBoard() {
+type MarketBoardProps = {
+  onConnectionStatusChange?: (status: QuoteHubConnectionStatus) => void;
+};
+
+export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {}) {
   const gridApiRef = useRef<GridApi<MarketBoardRow> | null>(null);
   const quotesRef = useRef<MarketQuote[]>([]);
   const flashClassesByRowRef = useRef<Record<string, MarketBoardFlashClasses>>({});
@@ -40,7 +44,6 @@ export function MarketBoard() {
   const [latestOhlcUpdate, setLatestOhlcUpdate] = useState<MarketOhlcUpdate | null>(null);
   const [latestMarketSessionUpdate, setLatestMarketSessionUpdate] = useState<MarketSessionUpdate | null>(null);
   const [latestTradeUpdate, setLatestTradeUpdate] = useState<MarketTradeUpdate | null>(null);
-  const [streamStatus, setStreamStatus] = useState<QuoteStreamStatus | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
   const quotesQueryParams = useMemo(
     () => ({
@@ -117,8 +120,12 @@ export function MarketBoard() {
     onOhlcUpdate: setLatestOhlcUpdate,
     onQuoteUpdate: handleRealtimeQuoteUpdate,
     onTradeUpdate: setLatestTradeUpdate,
-    onStreamStatus: setStreamStatus,
   });
+
+  useEffect(() => {
+    onConnectionStatusChange?.(realtimeConnection.status);
+  }, [onConnectionStatusChange, realtimeConnection.status]);
+
   const handleGridReady = useCallback((event: GridReadyEvent<MarketBoardRow>) => {
     gridApiRef.current = event.api;
   }, []);
@@ -187,8 +194,6 @@ export function MarketBoard() {
 
     return quotes.find((quote) => getRowId(quote) === `${selectedSymbol.boardId}:${selectedSymbol.symbol}`) ?? null;
   }, [quotes, selectedSymbol]);
-  const realtimeLabel = getRealtimeLabel(realtimeConnection.status);
-  const realtimeToneClass = getRealtimeToneClass(realtimeConnection.status);
   const marketSession = selectMarketSession(
     latestMarketSessionUpdate,
     marketSessionQuery.data ?? null,
@@ -197,7 +202,12 @@ export function MarketBoard() {
 
   return (
     <section className="flex min-h-[620px] min-w-0 flex-col border border-market-border bg-market-bg">
-      <MarketIndexOverview latestOhlcUpdate={latestOhlcUpdate} latestUpdate={latestMarketIndexUpdate} />
+      <MarketIndexOverview
+        isMarketSessionLoading={marketSessionQuery.isPending}
+        latestOhlcUpdate={latestOhlcUpdate}
+        latestUpdate={latestMarketIndexUpdate}
+        marketSessionLabel={marketSession?.label ?? null}
+      />
 
       <div className="flex min-h-10 flex-wrap items-center gap-2 border-b border-market-border bg-market-surface px-2 py-1" data-testid="market-board-toolbar">
         <label className="sr-only" htmlFor="symbol-search">
@@ -343,20 +353,6 @@ export function MarketBoard() {
         selection={selectedSymbol}
       />
 
-      <div className="flex min-h-8 flex-wrap items-center gap-2 border-t border-market-border bg-market-surface px-3 py-1.5 text-[11px] text-market-text-muted" data-testid="market-board-status">
-        <span className="min-w-0 flex-1 truncate">
-          {streamStatus?.message ?? 'REST snapshot loaded; SignalR applies realtime quote updates.'}
-        </span>
-        <span className="font-medium">
-          {rows.length > 0 ? `${rows.length} mã · ${rows[0].updatedTime}` : 'Chưa có dữ liệu'}
-        </span>
-        <MarketSessionBadge isLoading={marketSessionQuery.isPending} session={marketSession} />
-        <span className="text-state-warning">REST snapshot</span>
-        <span className="inline-flex items-center gap-1 font-semibold">
-          <span className={`size-2 rounded-full ${realtimeToneClass}`} aria-hidden="true" />
-          {realtimeLabel}
-        </span>
-      </div>
     </section>
   );
 }
@@ -459,35 +455,4 @@ function normalizeMarketSessionToken(value: string) {
 function getMarketSessionUpdatedAt(session: MarketSessionUpdate) {
   const value = new Date(session.updatedAt).getTime();
   return Number.isNaN(value) ? 0 : value;
-}
-
-function getRealtimeLabel(status: ReturnType<typeof useQuoteHubConnection>['status']) {
-  switch (status) {
-    case 'connected':
-      return 'Realtime on';
-    case 'connecting':
-      return 'Realtime connecting';
-    case 'reconnecting':
-      return 'Realtime reconnecting';
-    case 'error':
-      return 'Realtime offline';
-    case 'disconnected':
-      return 'Realtime disconnected';
-    case 'idle':
-      return 'Realtime idle';
-  }
-}
-
-function getRealtimeToneClass(status: ReturnType<typeof useQuoteHubConnection>['status']) {
-  switch (status) {
-    case 'connected':
-      return 'bg-state-online';
-    case 'connecting':
-    case 'reconnecting':
-      return 'bg-state-warning';
-    case 'disconnected':
-    case 'error':
-    case 'idle':
-      return 'bg-state-error';
-  }
 }

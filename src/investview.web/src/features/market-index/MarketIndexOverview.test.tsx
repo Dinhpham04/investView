@@ -128,7 +128,38 @@ describe('market index table layout', () => {
     );
 
     expect(screen.getByText('92,824,000 CP')).toBeInTheDocument();
-    expect(screen.getByText('GTGD 12,345.678 tỷ')).toBeInTheDocument();
+    expect(screen.getByText('12,345.678 Tỷ')).toBeInTheDocument();
+    expect(screen.queryByText('GTGD 12,345.678 tỷ')).not.toBeInTheDocument();
+  });
+
+  it('keeps the index value and change in one compact headline', () => {
+    render(
+      <MarketIndexCard
+        bars={[]}
+        index={createIndex()}
+        isLoading={false}
+      />,
+    );
+
+    const headline = screen.getByText('↓1,838.12 (-2.58 -0.14%)');
+
+    expect(headline).toHaveClass('whitespace-nowrap');
+    expect(headline).toHaveClass('text-price-down');
+  });
+
+  it('renders the market session label on compact index cards', () => {
+    render(
+      <MarketIndexCard
+        bars={[]}
+        index={createIndex({ tradingSessionId: '99' })}
+        isLoading={false}
+        sessionLabel="Da dong cua"
+      />,
+    );
+
+    expect(screen.getByText('Da dong cua')).toBeInTheDocument();
+    expect(screen.queryByText('Phiên: Da dong cua')).not.toBeInTheDocument();
+    expect(screen.queryByText('99')).not.toBeInTheDocument();
   });
 
   it('renders table traded value without re-scaling values that are already in billions', () => {

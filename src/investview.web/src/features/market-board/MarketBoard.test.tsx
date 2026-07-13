@@ -351,12 +351,10 @@ describe('MarketBoard', () => {
 
     expect(screen.getByText('Loading market board')).toBeInTheDocument();
     expect(await screen.findByRole('grid')).toBeInTheDocument();
-    expect(screen.getByText('REST snapshot')).toBeInTheDocument();
-    expect(screen.getByText('Realtime on')).toBeInTheDocument();
-    expect(await screen.findByText(/Phiên: Liên tục/)).toBeInTheDocument();
+    expect((await screen.findAllByText('Liên tục')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0);
     expect(screen.getAllByText('VN30').length).toBeGreaterThan(0);
-    expect(screen.getByText('KLGD (Tr)')).toBeInTheDocument();
+    expect(screen.getByText(/KLGD/)).toBeInTheDocument();
     expect(screen.getByText('Bên mua')).toBeInTheDocument();
     expect(screen.getByText('Khớp lệnh')).toBeInTheDocument();
     expect(screen.getByText('Bên bán')).toBeInTheDocument();
@@ -391,7 +389,7 @@ describe('MarketBoard', () => {
 
     renderWithQueryClient(<MarketBoard />);
 
-    expect(await screen.findByText(/Phiên: Liên tục/)).toBeInTheDocument();
+    expect((await screen.findAllByText('Liên tục')).length).toBeGreaterThan(0);
     await act(async () => {
       testRuntime.realtimeOptions?.onMarketSessionUpdate?.({
         ...marketSession,
@@ -404,7 +402,7 @@ describe('MarketBoard', () => {
       });
     });
 
-    expect(screen.getByText(/Phiên: ATO/)).toBeInTheDocument();
+    expect(screen.getAllByText('ATO').length).toBeGreaterThan(0);
   });
 
   it('opens and closes the trading drawer from the market toolbar', async () => {
@@ -414,11 +412,9 @@ describe('MarketBoard', () => {
     expect(await screen.findByRole('grid')).toBeInTheDocument();
 
     const toolbar = screen.getByTestId('market-board-toolbar');
-    const status = screen.getByTestId('market-board-status');
     expect(within(toolbar).queryByText('REST snapshot')).not.toBeInTheDocument();
     expect(within(toolbar).queryByText('Realtime on')).not.toBeInTheDocument();
-    expect(within(status).getByText('REST snapshot')).toBeInTheDocument();
-    expect(within(status).getByText('Realtime on')).toBeInTheDocument();
+    expect(screen.queryByTestId('market-board-status')).not.toBeInTheDocument();
     expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Phieu lenh mo phong')).not.toBeInTheDocument();
 
@@ -487,7 +483,7 @@ describe('MarketBoard', () => {
     renderWithQueryClient(<MarketBoard />);
 
     expect(await screen.findByRole('grid')).toBeInTheDocument();
-    expect(screen.getByText('Realtime offline')).toBeInTheDocument();
+    expect(screen.queryByTestId('market-board-status')).not.toBeInTheDocument();
     expect(screen.getByText('HPG')).toBeInTheDocument();
   });
 
@@ -536,8 +532,7 @@ describe('MarketBoard', () => {
       });
     });
 
-    await waitFor(() => expect(screen.getAllByText('+10.00').length).toBeGreaterThan(0));
-    expect(screen.getByText((_, element) => element?.textContent === '+10.00 (+0.54%)')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('↑1,850.00 (+10.00 +0.54%)')).toBeInTheDocument());
   });
 
   it('opens the symbol detail panel from a market board row', async () => {
@@ -571,8 +566,7 @@ describe('MarketBoard', () => {
     expect(await screen.findByText('Giao dịch')).toBeInTheDocument();
     expect(await screen.findByText('Độ sâu thị trường')).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByText('Khớp lệnh').length).toBeGreaterThan(1));
-    expect(await screen.findByText('Phân tích cơ bản')).toBeInTheDocument();
-    expect(await screen.findByText('Đặt lệnh')).toBeInTheDocument();
+    expect((await screen.findAllByText('Đặt lệnh')).length).toBeGreaterThan(0);
     expect(await screen.findByTestId('symbol-price-chart')).toBeInTheDocument();
     const panel = await screen.findByTestId('symbol-detail-panel');
     await waitFor(() => expect(within(panel).getByText('14:45:00')).toBeInTheDocument());

@@ -9,11 +9,18 @@ import { mergeIndexOhlcUpdate } from './marketIndexOhlcRealtime';
 import type { MarketIndex, MarketIndexUpdate, MarketOhlcUpdate, OhlcBar } from '../../shared/types/market';
 
 type MarketIndexOverviewProps = {
+  isMarketSessionLoading?: boolean;
   latestOhlcUpdate?: MarketOhlcUpdate | null;
   latestUpdate?: MarketIndexUpdate | null;
+  marketSessionLabel?: string | null;
 };
 
-function MarketIndexOverviewComponent({ latestOhlcUpdate = null, latestUpdate = null }: MarketIndexOverviewProps) {
+function MarketIndexOverviewComponent({
+  isMarketSessionLoading = false,
+  latestOhlcUpdate = null,
+  latestUpdate = null,
+  marketSessionLabel = null,
+}: MarketIndexOverviewProps) {
   const { indicesQuery, isOhlcPending, ohlcByIndexName } = useMarketIndexQueries(defaultMarketIndexNames);
   const [liveIndices, setLiveIndices] = useState<MarketIndex[]>([]);
   const [realtimeOhlcByIndexName, setRealtimeOhlcByIndexName] = useState<Map<string, OhlcBar[]>>(() => new Map());
@@ -44,6 +51,7 @@ function MarketIndexOverviewComponent({ latestOhlcUpdate = null, latestUpdate = 
     () => mergeOhlcMaps(ohlcByIndexName, realtimeOhlcByIndexName),
     [ohlcByIndexName, realtimeOhlcByIndexName],
   );
+  const sessionLabel = marketSessionLabel?.trim() || (isMarketSessionLoading ? 'Đang xác định' : 'Chưa xác định');
 
   return (
     <section className="grid min-h-[132px] grid-cols-1 gap-1 border-x border-t border-market-border bg-[#12101b] lg:grid-cols-[minmax(0,1fr)_minmax(360px,470px)]">
@@ -54,6 +62,7 @@ function MarketIndexOverviewComponent({ latestOhlcUpdate = null, latestUpdate = 
             index={indicesByName.get(indexName) ?? emptyIndicesByName.get(indexName) ?? createEmptyIndex(indexName)}
             isLoading={indicesQuery.isPending || isOhlcPending}
             key={indexName}
+            sessionLabel={sessionLabel}
           />
         ))}
       </div>
@@ -64,32 +73,49 @@ function MarketIndexOverviewComponent({ latestOhlcUpdate = null, latestUpdate = 
 
 export const MarketIndexOverview = memo(MarketIndexOverviewComponent);
 
-export const MarketIndexCard = memo(function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: MarketIndex; isLoading: boolean }) {
+export const MarketIndexCard = memo(function MarketIndexCard({
+  bars,
+  index,
+  isLoading,
+  sessionLabel,
+}: {
+  bars: OhlcBar[];
+  index: MarketIndex;
+  isLoading: boolean;
+  sessionLabel?: string;
+}) {
   const toneClass = classForChange(index.change);
+  const headline = formatIndexHeadline(index, isLoading);
 
   return (
     <article className="min-w-0 border border-[#2d2a38] bg-[#1d1a2a]">
       <div className="h-[88px] border-b border-[#34313d] bg-[#070711]">
         <MiniIndexChart bars={bars} referenceValue={index.referenceValue} toneClass={toneClass} />
       </div>
-      <div className="grid grid-cols-[1fr_auto] gap-x-2 px-2 py-1.5 text-[11px] font-semibold leading-tight">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1 text-white">
+      <div className="space-y-0.5 px-2 py-1.5 text-[11px] font-semibold leading-tight">
+        <div className="flex min-w-0 items-center justify-between gap-1">
+          <div className="flex min-w-0 items-center gap-1 text-white">
             <span className="truncate">{index.indexName}</span>
-            <span className="text-[#9d99ad]">⌄</span>
           </div>
-          <div className="mt-0.5 text-[#d7d4e3]">{formatCompactVolume(index.totalVolume)} CP</div>
-          <div className="mt-0.5 text-[#d7d4e3]">GTGD {formatBillionValue(index.totalValue)} tỷ</div>
-          <div className="mt-0.5 flex gap-2">
+          <div className={`shrink-0 whitespace-nowrap text-right tabular-nums ${toneClass}`}>
+            {headline}
+          </div>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-between gap-2 text-[#d7d4e3]">
+          <span className="min-w-0 truncate">{formatCompactVolume(index.totalVolume)} CP</span>
+          <span className="shrink-0 whitespace-nowrap text-right tabular-nums">{formatBillionValue(index.totalValue)} Tỷ</span>
+        </div>
+
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 gap-3">
             <span className="text-price-up">↑ {formatCount(index.upCount)}</span>
             <span className="text-price-ref">▬ {formatCount(index.noChangeCount)}</span>
             <span className="text-price-down">↓ {formatCount(index.downCount)}</span>
           </div>
-        </div>
-        <div className="text-right tabular-nums">
-          <div className={toneClass}>{isLoading && index.value == null ? '...' : formatIndexValue(index.value)}</div>
-          <div className={toneClass}>{formatSigned(index.change)} ({formatPercent(index.changePercent)})</div>
-          <div className="mt-0.5 text-[#d7d4e3]">{index.tradingSessionId || '-'}</div>
+          <div className="max-w-[74px] shrink-0 truncate text-right text-[#d7d4e3]" title={sessionLabel || '-'}>
+            {sessionLabel || '-'}
+          </div>
         </div>
       </div>
     </article>
@@ -100,7 +126,7 @@ export const MarketIndexTable = memo(function MarketIndexTable({ indices, isErro
   return (
     <div className="min-w-0 overflow-x-auto border border-[#2d2a38] bg-[#1d1a2a] text-[11px] font-semibold">
       <div className="grid h-7 min-w-[462px] grid-cols-[72px_62px_42px_70px_52px_108px] items-center gap-2 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
-        <span className="truncate">⚙ Chỉ số</span>
+        <span className="truncate">Chỉ số</span>
         <span className="truncate text-right">Điểm</span>
         <span className="truncate text-right">+ / -</span>
         <span className="truncate text-right" title="KLGD (Triệu)">KLGD(triệu)</span>
@@ -425,6 +451,20 @@ function classForChange(value: number | null | undefined) {
 
 function formatIndexValue(value: number | null | undefined) {
   return value == null ? '-' : value.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+}
+
+function formatIndexHeadline(index: MarketIndex, isLoading: boolean) {
+  if (isLoading && index.value == null) {
+    return '...';
+  }
+
+  if (index.change == null && index.changePercent == null) {
+    return formatIndexValue(index.value);
+  }
+
+  const direction = index.change == null || index.change === 0 ? '' : index.change > 0 ? '↑' : '↓';
+
+  return `${direction}${formatIndexValue(index.value)} (${formatSigned(index.change)} ${formatPercent(index.changePercent)})`;
 }
 
 function formatSigned(value: number | null | undefined) {
