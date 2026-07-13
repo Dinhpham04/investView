@@ -64,7 +64,7 @@ internal static class MarketStateMapper
 
     public static MarketSessionUpdateDto NormalizeSessionUpdate(MarketSessionUpdateDto update)
     {
-        return update with
+        var normalized = update with
         {
             MarketId = Normalize(update.MarketId),
             BoardId = NormalizeBoardId(update.BoardId),
@@ -72,6 +72,8 @@ internal static class MarketStateMapper
             EventId = Normalize(update.EventId),
             TradingSessionId = Normalize(update.TradingSessionId)
         };
+
+        return MarketSessionResolver.Resolve(normalized);
     }
 
     public static IReadOnlyCollection<string> NormalizeSymbols(IReadOnlyCollection<string> symbols)

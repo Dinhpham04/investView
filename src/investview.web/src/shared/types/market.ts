@@ -56,6 +56,29 @@ export type OhlcBar = {
   volume: number | null;
 };
 
+export type MarketOhlcUpdate = OhlcBar & {
+  type: string;
+  isClosed: boolean;
+  updatedAt: string;
+};
+
+export type MarketSessionUpdate = {
+  marketId: string;
+  boardId: string;
+  productGroupId: string;
+  eventId: string;
+  tradingSessionId: string;
+  updatedAt: string;
+  phase: string;
+  label: string;
+  isOpen: boolean;
+  isAuction: boolean;
+  isContinuous: boolean;
+  isPutThrough: boolean;
+  isAfterHours: boolean;
+  source: string;
+};
+
 export type MarketTrade = {
   symbol: string;
   boardId: string;

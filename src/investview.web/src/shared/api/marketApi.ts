@@ -1,5 +1,5 @@
 import { getJson } from './httpClient';
-import type { MarketIndex, MarketQuote, MarketTrade, OhlcBar, SymbolDetail } from '../types/market';
+import type { MarketIndex, MarketQuote, MarketSessionUpdate, MarketTrade, OhlcBar, SymbolDetail } from '../types/market';
 
 export type GetMarketQuotesParams = {
   boardId?: string;
@@ -29,6 +29,31 @@ export function getMarketQuotes(params: GetMarketQuotesParams = {}) {
 
   const query = searchParams.toString();
   return getJson<MarketQuote[]>(`/api/market/quotes${query ? `?${query}` : ''}`);
+}
+
+export type GetMarketSessionParams = {
+  boardId?: string;
+  marketId?: string;
+  productGroupId?: string;
+};
+
+export function getMarketSession(params: GetMarketSessionParams = {}) {
+  const searchParams = new URLSearchParams();
+
+  if (params.boardId) {
+    searchParams.set('boardId', params.boardId);
+  }
+
+  if (params.marketId) {
+    searchParams.set('marketId', params.marketId);
+  }
+
+  if (params.productGroupId) {
+    searchParams.set('productGroupId', params.productGroupId);
+  }
+
+  const query = searchParams.toString();
+  return getJson<MarketSessionUpdate>(`/api/market/session${query ? `?${query}` : ''}`);
 }
 
 export type GetMarketIndicesParams = {

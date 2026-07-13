@@ -58,6 +58,13 @@ public interface IMarketStateStore
         DateTimeOffset? to,
         CancellationToken cancellationToken);
 
+    Task<bool> HasOhlcCoverageAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
     Task UpsertIndexOhlcBarsAsync(
         string indexName,
         string resolution,
@@ -67,6 +74,20 @@ public interface IMarketStateStore
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcBarsAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
+    Task<bool> HasIndexOhlcCoverageAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken);
+
+    Task<bool> HasIndexOhlcCoverageUntilAsync(
         string indexName,
         string resolution,
         DateTimeOffset? from,

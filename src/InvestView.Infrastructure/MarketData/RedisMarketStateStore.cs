@@ -2,11 +2,15 @@ using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Dtos.MarketData;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
+using System.Globalization;
 
 namespace InvestView.Infrastructure.MarketData;
 
 public sealed class RedisMarketStateStore : IMarketStateStore
 {
+    private const string CoverageFromField = "from";
+    private const string CoverageToField = "to";
+
     private readonly IDatabase _database;
     private readonly MarketStateRedisSchema _schema;
 
@@ -104,6 +108,14 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         await _database.SortedSetRemoveRangeByScoreAsync(barsKey, score, score);
         await _database.SortedSetAddAsync(barsKey, _schema.ToOhlcMember(bar), score);
         await _database.KeyExpireAsync(barsKey, _schema.OhlcTtl);
+        if (isIndex)
+        {
+            await ExtendOhlcCoverageRangeAsync(
+                _schema.IndexOhlcCoverageRangeKey(normalizedUpdate.Symbol, normalizedUpdate.Resolution),
+                bar.Time,
+                bar.Time,
+                createWhenMissing: false);
+        }
 
         return normalizedUpdate;
     }
@@ -292,6 +304,20 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             cancellationToken);
     }
 
+    public async Task<bool> HasOhlcCoverageAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        return await HasOhlcCoverageAsync(
+            _schema.OhlcCoverageKey(symbol, resolution),
+            from,
+            to,
+            cancellationToken);
+    }
+
     public async Task UpsertIndexOhlcBarsAsync(
         string indexName,
         string resolution,
@@ -307,6 +333,10 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             to,
             bars,
             cancellationToken);
+        await ExtendOhlcCoverageRangeAsync(
+            _schema.IndexOhlcCoverageRangeKey(indexName, resolution),
+            from ?? bars.OrderBy(bar => bar.Time).FirstOrDefault()?.Time,
+            to ?? bars.OrderBy(bar => bar.Time).LastOrDefault()?.Time);
     }
 
     public async Task<IReadOnlyList<OhlcBarDto>> GetIndexOhlcBarsAsync(
@@ -316,9 +346,47 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         DateTimeOffset? to,
         CancellationToken cancellationToken)
     {
-        return await GetOhlcBarsAsync(
-            _schema.IndexOhlcKey(indexName, resolution),
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!await HasIndexOhlcCoverageUntilAsync(indexName, resolution, from, to, cancellationToken))
+        {
+            return [];
+        }
+
+        return await ReadOhlcBarsAsync(_schema.IndexOhlcKey(indexName, resolution), from, to);
+    }
+
+    public async Task<bool> HasIndexOhlcCoverageAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        return await HasOhlcCoverageAsync(
             _schema.IndexOhlcCoverageKey(indexName, resolution),
+            from,
+            to,
+            cancellationToken);
+    }
+
+    public async Task<bool> HasIndexOhlcCoverageUntilAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        if (await HasOhlcCoverageAsync(
+                _schema.IndexOhlcCoverageKey(indexName, resolution),
+                from,
+                to,
+                cancellationToken))
+        {
+            return true;
+        }
+
+        return await HasOhlcCoverageRangeAsync(
+            _schema.IndexOhlcCoverageRangeKey(indexName, resolution),
             from,
             to,
             cancellationToken);
@@ -459,11 +527,19 @@ public sealed class RedisMarketStateStore : IMarketStateStore
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!await _database.SetContainsAsync(coverageKey, _schema.CoverageToken(from, to)))
+        if (!await HasOhlcCoverageAsync(coverageKey, from, to, cancellationToken))
         {
             return [];
         }
 
+        return await ReadOhlcBarsAsync(barsKey, from, to);
+    }
+
+    private async Task<IReadOnlyList<OhlcBarDto>> ReadOhlcBarsAsync(
+        RedisKey barsKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to)
+    {
         var values = await _database.SortedSetRangeByScoreAsync(
             barsKey,
             _schema.MinScore(from),
@@ -477,6 +553,123 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             .Select(bar => bar!)
             .OrderBy(bar => bar.Time)
             .ToArray();
+    }
+
+    private async Task<bool> HasOhlcCoverageAsync(
+        RedisKey coverageKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await _database.SetContainsAsync(coverageKey, _schema.CoverageToken(from, to));
+    }
+
+    private async Task ExtendOhlcCoverageRangeAsync(
+        RedisKey coverageRangeKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        bool createWhenMissing = true)
+    {
+        if (!from.HasValue && !to.HasValue)
+        {
+            return;
+        }
+
+        var entries = await _database.HashGetAllAsync(coverageRangeKey);
+        if (!createWhenMissing && entries.Length == 0)
+        {
+            return;
+        }
+
+        var currentFrom = ReadCoverageTimestamp(entries, CoverageFromField);
+        var currentTo = ReadCoverageTimestamp(entries, CoverageToField);
+        if (!createWhenMissing && (!currentFrom.HasValue || !currentTo.HasValue))
+        {
+            return;
+        }
+
+        var nextFrom = Min(currentFrom, from ?? to);
+        var nextTo = Max(currentTo, to ?? from);
+        var hashEntries = new List<HashEntry>(2);
+        if (nextFrom.HasValue)
+        {
+            hashEntries.Add(new HashEntry(
+                CoverageFromField,
+                nextFrom.Value.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (nextTo.HasValue)
+        {
+            hashEntries.Add(new HashEntry(
+                CoverageToField,
+                nextTo.Value.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture)));
+        }
+
+        if (hashEntries.Count == 0)
+        {
+            return;
+        }
+
+        await _database.HashSetAsync(coverageRangeKey, hashEntries.ToArray());
+        await _database.KeyExpireAsync(coverageRangeKey, _schema.OhlcTtl);
+    }
+
+    private async Task<bool> HasOhlcCoverageRangeAsync(
+        RedisKey coverageRangeKey,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var entries = await _database.HashGetAllAsync(coverageRangeKey);
+        var coveredFrom = ReadCoverageTimestamp(entries, CoverageFromField);
+        var coveredTo = ReadCoverageTimestamp(entries, CoverageToField);
+        var coversFrom = from is null || (coveredFrom.HasValue && coveredFrom.Value <= from.Value);
+        var coversTo = to is null || (coveredTo.HasValue && coveredTo.Value >= to.Value);
+        return coversFrom && coversTo;
+    }
+
+    private static DateTimeOffset? ReadCoverageTimestamp(HashEntry[] entries, string field)
+    {
+        var value = entries.FirstOrDefault(entry => entry.Name == field).Value;
+        if (!value.HasValue ||
+            !long.TryParse((string)value!, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unixSeconds))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.FromUnixTimeSeconds(unixSeconds);
+    }
+
+    private static DateTimeOffset? Min(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (!left.HasValue)
+        {
+            return right;
+        }
+
+        if (!right.HasValue)
+        {
+            return left;
+        }
+
+        return left.Value <= right.Value ? left : right;
+    }
+
+    private static DateTimeOffset? Max(DateTimeOffset? left, DateTimeOffset? right)
+    {
+        if (!left.HasValue)
+        {
+            return right;
+        }
+
+        if (!right.HasValue)
+        {
+            return left;
+        }
+
+        return left.Value >= right.Value ? left : right;
     }
 
     private static SymbolDetailDto NormalizeDetail(SymbolDetailDto detail)

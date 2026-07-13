@@ -1,6 +1,6 @@
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MarketBoard } from './MarketBoard';
+import { MarketBoard, MarketSessionBadge, selectMarketSession } from './MarketBoard';
 import { defaultMarketBoardColumnDef, marketBoardColumnDefs } from './marketBoardColumns';
 import { formatChartPrice, formatCompactQuantity } from '../symbol-detail/symbolChartFormatters';
 import { aggregateOhlcBarsForTimeframe, chartTimeframes } from '../symbol-detail/useSymbolDetailQueries';
@@ -9,7 +9,9 @@ import type { QuoteHubConnectionStatus } from '../../shared/realtime/useQuoteHub
 import type {
   MarketQuote,
   MarketIndexUpdate,
+  MarketOhlcUpdate,
   MarketQuoteUpdate,
+  MarketSessionUpdate,
   MarketTrade,
   MarketTradeUpdate,
   OhlcBar,
@@ -27,6 +29,8 @@ const testRuntime = vi.hoisted(() => ({
           symbols: string[];
         };
         onMarketIndexUpdate?: (update: MarketIndexUpdate) => void;
+        onMarketSessionUpdate?: (update: MarketSessionUpdate) => void;
+        onOhlcUpdate?: (update: MarketOhlcUpdate) => void;
         onQuoteUpdate: (update: MarketQuoteUpdate) => void;
         onTradeUpdate?: (update: MarketTradeUpdate) => void;
         onStreamStatus?: (status: QuoteStreamStatus) => void;
@@ -225,6 +229,35 @@ const latestTrades: MarketTrade[] = [
   },
 ];
 
+const marketSession: MarketSessionUpdate = {
+  boardId: 'G1',
+  eventId: 'AB2',
+  isAfterHours: false,
+  isAuction: false,
+  isContinuous: true,
+  isOpen: true,
+  isPutThrough: false,
+  label: 'Liên tục',
+  marketId: 'HOSE',
+  phase: 'CONTINUOUS',
+  productGroupId: 'STO',
+  source: 'REALTIME',
+  tradingSessionId: '40',
+  updatedAt: '2026-07-13T02:20:00.000Z',
+};
+
+const lunchBreakMarketSession: MarketSessionUpdate = {
+  ...marketSession,
+  eventId: '',
+  isContinuous: false,
+  isOpen: false,
+  label: 'Nghỉ trưa',
+  phase: 'LUNCH_BREAK',
+  source: 'SCHEDULE_FALLBACK',
+  tradingSessionId: '',
+  updatedAt: '2026-07-13T05:05:00.000Z',
+};
+
 const marketIndices = [
   {
     indexName: 'VNINDEX',
@@ -235,7 +268,7 @@ const marketIndices = [
     highValue: 1857,
     lowValue: 1831.25,
     totalVolume: 585_707_000,
-    totalValue: 14_603_675_000_000,
+    totalValue: 14_603.675,
     upCount: 92,
     downCount: 206,
     noChangeCount: 66,
@@ -254,7 +287,7 @@ const marketIndices = [
     highValue: 2001.12,
     lowValue: 1977.64,
     totalVolume: 226_301_000,
-    totalValue: 7_232_900_000_000,
+    totalValue: 7_232.9,
     upCount: 7,
     downCount: 19,
     noChangeCount: 4,
@@ -291,6 +324,26 @@ describe('MarketBoard', () => {
     testRuntime.visibleLogicalRangeHandler = undefined;
   });
 
+  it('renders the market session badge', () => {
+    render(<MarketSessionBadge isLoading={false} session={marketSession} />);
+
+    expect(screen.getByText(/Phiên: Liên tục/)).toBeInTheDocument();
+    expect(screen.getByText(/Phiên: Liên tục/).getAttribute('title')).toContain('REALTIME');
+  });
+
+  it('prefers a newer REST session fallback over a stale realtime session', () => {
+    const selectedSession = selectMarketSession(
+      marketSession,
+      lunchBreakMarketSession,
+      { boardId: 'G1', productGroupId: 'STO' },
+    );
+
+    expect(selectedSession).toMatchObject({
+      phase: 'LUNCH_BREAK',
+      source: 'SCHEDULE_FALLBACK',
+    });
+  });
+
   it('renders loading and then the REST snapshot board', async () => {
     vi.stubGlobal('fetch', mockMarketBoardFetch());
 
@@ -300,6 +353,7 @@ describe('MarketBoard', () => {
     expect(await screen.findByRole('grid')).toBeInTheDocument();
     expect(screen.getByText('REST snapshot')).toBeInTheDocument();
     expect(screen.getByText('Realtime on')).toBeInTheDocument();
+    expect(await screen.findByText(/Phiên: Liên tục/)).toBeInTheDocument();
     expect(screen.getAllByText('VNINDEX').length).toBeGreaterThan(0);
     expect(screen.getAllByText('VN30').length).toBeGreaterThan(0);
     expect(screen.getByText('KLGD (Tr)')).toBeInTheDocument();
@@ -332,6 +386,51 @@ describe('MarketBoard', () => {
     expect(fetch).toHaveBeenCalledWith('/api/market/quotes?boardId=G1&indexName=VN30', expect.any(Object));
   });
 
+  it('updates the market session badge from realtime session updates', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+
+    expect(await screen.findByText(/Phiên: Liên tục/)).toBeInTheDocument();
+    await act(async () => {
+      testRuntime.realtimeOptions?.onMarketSessionUpdate?.({
+        ...marketSession,
+        isAuction: true,
+        isContinuous: false,
+        label: 'ATO',
+        phase: 'ATO',
+        source: 'REALTIME',
+        tradingSessionId: '20',
+      });
+    });
+
+    expect(screen.getByText(/Phiên: ATO/)).toBeInTheDocument();
+  });
+
+  it('opens and closes the trading drawer from the market toolbar', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+
+    const toolbar = screen.getByTestId('market-board-toolbar');
+    const status = screen.getByTestId('market-board-status');
+    expect(within(toolbar).queryByText('REST snapshot')).not.toBeInTheDocument();
+    expect(within(toolbar).queryByText('Realtime on')).not.toBeInTheDocument();
+    expect(within(status).getByText('REST snapshot')).toBeInTheDocument();
+    expect(within(status).getByText('Realtime on')).toBeInTheDocument();
+    expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Phieu lenh mo phong')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đặt lệnh' }));
+
+    expect(await screen.findByTestId('trading-drawer')).toBeInTheDocument();
+    expect(screen.getByLabelText('Phieu lenh mo phong')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đóng bảng đặt lệnh' }));
+    expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
+  });
+
   it('applies realtime quote updates to the matching grid row', async () => {
     vi.stubGlobal('fetch', mockMarketBoardFetch());
 
@@ -339,6 +438,13 @@ describe('MarketBoard', () => {
 
     expect(await screen.findByRole('grid')).toBeInTheDocument();
     await waitFor(() => expect(testRuntime.gridReady).toBe(true));
+    await waitFor(() =>
+      expect(testRuntime.realtimeOptions?.marketBoardSubscription).toMatchObject({
+        boardId: 'G1',
+        symbols: ['HPG'],
+      }),
+    );
+    const initialMarketBoardSubscription = testRuntime.realtimeOptions?.marketBoardSubscription;
 
     const realtimeUpdate: MarketQuoteUpdate = {
       symbol: 'HPG',
@@ -363,6 +469,7 @@ describe('MarketBoard', () => {
     });
 
     await waitFor(() => expect(screen.getByText('28.35')).toBeInTheDocument());
+    expect(testRuntime.realtimeOptions?.marketBoardSubscription).toBe(initialMarketBoardSubscription);
     expect(testRuntime.applyTransactionAsync).toHaveBeenCalledWith({
       update: [expect.objectContaining({
         id: 'G1:HPG',
@@ -417,7 +524,7 @@ describe('MarketBoard', () => {
         highValue: 1851,
         lowValue: 1830,
         totalVolume: 600_000_000,
-        totalValue: 15_000_000_000_000,
+        totalValue: 15_000,
         upCount: 100,
         downCount: 150,
         noChangeCount: 70,
@@ -446,6 +553,10 @@ describe('MarketBoard', () => {
 
       if (url.startsWith('/api/market/symbols/HPG?')) {
         return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      if (url.startsWith('/api/market/session')) {
+        return Promise.resolve(jsonResponse(marketSession));
       }
 
       return Promise.resolve(jsonResponse([quote]));
@@ -499,6 +610,10 @@ describe('MarketBoard', () => {
 
       if (url.startsWith('/api/market/symbols/HPG?')) {
         return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      if (url.startsWith('/api/market/session')) {
+        return Promise.resolve(jsonResponse(marketSession));
       }
 
       return Promise.resolve(jsonResponse([quote]));
@@ -593,6 +708,10 @@ describe('MarketBoard', () => {
 
       if (url.startsWith('/api/market/symbols/HPG?')) {
         return Promise.resolve(jsonResponse(symbolDetail));
+      }
+
+      if (url.startsWith('/api/market/session')) {
+        return Promise.resolve(jsonResponse(marketSession));
       }
 
       return Promise.resolve(jsonResponse([quote]));
@@ -741,6 +860,10 @@ function jsonResponse(body: unknown) {
 function mockMarketBoardFetch(quotes: MarketQuote[] = [quote]) {
   return vi.fn((input: RequestInfo | URL) => {
     const url = input.toString();
+    if (url.startsWith('/api/market/session')) {
+      return Promise.resolve(jsonResponse(marketSession));
+    }
+
     if (url.startsWith('/api/market/indices/') && url.includes('/ohlc')) {
       return Promise.resolve(jsonResponse(indexOhlcBars));
     }

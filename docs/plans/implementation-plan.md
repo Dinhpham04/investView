@@ -857,6 +857,8 @@ Goal: add real provider integration behind stable contracts and package the demo
 
 **Implemented notes:** The WebSocket stream now subscribes to expected auction price, open/closed OHLC for configured resolutions, estimated market indices, and session state. These updates are normalized into app-owned DTOs, written through the shared market-state abstraction, published as internal market events, and then applied by local mirrors. Realtime OHLC bars are upserted into sorted sets, but OHLC range coverage still comes from REST backfill so chart APIs do not treat partial realtime history as a full cache hit.
 
+**Follow-up note:** Market session state now resolves app-owned semantic phases (`ATO`, `CONTINUOUS`, `ATC`, `PLO`, `PUT_THROUGH`, `LUNCH_BREAK`, `PRE_OPEN`, `CLOSED`) on the backend. `GET /api/market/session` returns the latest Redis session or a schedule fallback, and the market-board status bar updates from both the REST fallback and `ReceiveMarketSessionUpdate` SignalR events.
+
 ### Task 20: Add Proactive Security Definition Warmup
 
 **Status:** Done

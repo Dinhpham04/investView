@@ -151,6 +151,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
 
         await AuthenticateAsync(webSocket, cancellationToken);
         var activeSubscriptions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var activeOhlcSubscriptions = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
         var activeSessionSubscriptions = new HashSet<string>(StringComparer.Ordinal);
         var marketIndicesSubscribed = false;
         var estimatedMarketIndicesSubscribed = false;
@@ -159,6 +160,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             webSocket,
             subscriptionSnapshot,
             activeSubscriptions,
+            activeOhlcSubscriptions,
             activeSessionSubscriptions,
             marketIndicesSubscribed,
             estimatedMarketIndicesSubscribed,
@@ -217,6 +219,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 webSocket,
                 subscriptionSnapshot,
                 activeSubscriptions,
+                activeOhlcSubscriptions,
                 activeSessionSubscriptions,
                 marketIndicesSubscribed,
                 estimatedMarketIndicesSubscribed,
@@ -260,15 +263,16 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         ClientWebSocket webSocket,
         MarketQuoteSubscriptionSnapshot snapshot,
         Dictionary<string, HashSet<string>> activeSubscriptions,
+        Dictionary<string, HashSet<string>> activeOhlcSubscriptions,
         HashSet<string> activeSessionSubscriptions,
         bool marketIndicesSubscribed,
         bool estimatedMarketIndicesSubscribed,
         CancellationToken cancellationToken)
     {
-        if (snapshot.Boards.Count == 0)
+        if (snapshot.Boards.Count == 0 && snapshot.OhlcSubscriptions.Count == 0)
         {
-            _logger.LogInformation("DNSE websocket is connected and waiting for active market-board subscriptions.");
-            await BroadcastStatusAsync(true, "DNSE websocket connected; waiting for market-board subscriptions.", cancellationToken);
+            _logger.LogInformation("DNSE websocket is connected and waiting for active market-board or OHLC subscriptions.");
+            await BroadcastStatusAsync(true, "DNSE websocket connected; waiting for active market-board or OHLC subscriptions.", cancellationToken);
             return (marketIndicesSubscribed, estimatedMarketIndicesSubscribed);
         }
 
@@ -297,7 +301,6 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                 MarketBoardChannels);
 
             await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
-            await SendOhlcSubscriptionsAsync(webSocket, newSymbols, cancellationToken);
 
             foreach (var symbol in newSymbols)
             {
@@ -327,7 +330,9 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             }
         }
 
-        if (!marketIndicesSubscribed)
+        await ApplyOhlcSubscriptionsAsync(webSocket, snapshot.OhlcSubscriptions, activeOhlcSubscriptions, cancellationToken);
+
+        if (snapshot.Boards.Count > 0 && !marketIndicesSubscribed)
         {
             var indexNames = _dnseOptions.DefaultMarketIndices
                 .Select(indexName => indexName.Trim().ToUpperInvariant())
@@ -341,7 +346,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
                     _dnseOptions.WebSocketEncoding);
 
                 await SendJsonAsync(webSocket, subscribePayload, cancellationToken);
-                await SendOhlcSubscriptionsAsync(webSocket, indexNames, cancellationToken);
+                await SendMarketIndexOhlcSubscriptionsAsync(webSocket, indexNames, cancellationToken);
                 marketIndicesSubscribed = true;
 
                 _logger.LogInformation(
@@ -350,7 +355,7 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             }
         }
 
-        if (!estimatedMarketIndicesSubscribed)
+        if (snapshot.Boards.Count > 0 && !estimatedMarketIndicesSubscribed)
         {
             var indexNames = _dnseOptions.DefaultMarketIndices
                 .Select(indexName => indexName.Trim().ToUpperInvariant())
@@ -375,29 +380,136 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
         return (marketIndicesSubscribed, estimatedMarketIndicesSubscribed);
     }
 
+    private async Task ApplyOhlcSubscriptionsAsync(
+        ClientWebSocket webSocket,
+        IReadOnlyList<MarketOhlcSubscription> desiredSubscriptions,
+        Dictionary<string, HashSet<string>> activeSubscriptions,
+        CancellationToken cancellationToken)
+    {
+        var desired = desiredSubscriptions.ToDictionary(
+            subscription => subscription.Symbol,
+            subscription => new HashSet<string>(subscription.Resolutions, StringComparer.Ordinal),
+            StringComparer.Ordinal);
+        var subscribeByResolution = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        var unsubscribeByResolution = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+
+        foreach (var desiredSubscription in desired)
+        {
+            activeSubscriptions.TryGetValue(desiredSubscription.Key, out var activeResolutions);
+            foreach (var resolution in desiredSubscription.Value)
+            {
+                if (activeResolutions is null || !activeResolutions.Contains(resolution))
+                {
+                    AddOhlcBatch(subscribeByResolution, resolution, desiredSubscription.Key);
+                }
+            }
+        }
+
+        foreach (var activeSubscription in activeSubscriptions)
+        {
+            desired.TryGetValue(activeSubscription.Key, out var desiredResolutions);
+            foreach (var resolution in activeSubscription.Value)
+            {
+                if (desiredResolutions is null || !desiredResolutions.Contains(resolution))
+                {
+                    AddOhlcBatch(unsubscribeByResolution, resolution, activeSubscription.Key);
+                }
+            }
+        }
+
+        foreach (var batch in unsubscribeByResolution.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            await SendOhlcUnsubscriptionsAsync(webSocket, batch.Value, [batch.Key], cancellationToken);
+            foreach (var symbol in batch.Value)
+            {
+                if (!activeSubscriptions.TryGetValue(symbol, out var activeResolutions))
+                {
+                    continue;
+                }
+
+                activeResolutions.Remove(batch.Key);
+                if (activeResolutions.Count == 0)
+                {
+                    activeSubscriptions.Remove(symbol);
+                }
+            }
+        }
+
+        foreach (var batch in subscribeByResolution.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            await SendOhlcSubscriptionsAsync(webSocket, batch.Value, [batch.Key], cancellationToken);
+            foreach (var symbol in batch.Value)
+            {
+                if (!activeSubscriptions.TryGetValue(symbol, out var activeResolutions))
+                {
+                    activeResolutions = new HashSet<string>(StringComparer.Ordinal);
+                    activeSubscriptions[symbol] = activeResolutions;
+                }
+
+                activeResolutions.Add(batch.Key);
+            }
+        }
+    }
+
     private async Task SendOhlcSubscriptionsAsync(
         ClientWebSocket webSocket,
         IReadOnlyCollection<string> instruments,
         CancellationToken cancellationToken)
     {
-        var resolutions = _dnseOptions.WebSocketOhlcResolutions
-            .Select(resolution => resolution.Trim().ToUpperInvariant())
-            .Where(resolution => !string.IsNullOrWhiteSpace(resolution))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (resolutions.Length == 0)
+        await SendOhlcSubscriptionsAsync(webSocket, instruments, _dnseOptions.WebSocketOhlcResolutions, cancellationToken);
+    }
+
+    private async Task SendMarketIndexOhlcSubscriptionsAsync(
+        ClientWebSocket webSocket,
+        IReadOnlyCollection<string> indexNames,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIndexNames = NormalizeTokens(indexNames);
+        if (normalizedIndexNames.Length == 0)
+        {
+            return;
+        }
+
+        var openPayload = DnseWebSocketSubscriptionBuilder.BuildMarketIndexOhlcSubscribePayload(
+            normalizedIndexNames,
+            _dnseOptions.WebSocketEncoding,
+            closed: false);
+        var closedPayload = DnseWebSocketSubscriptionBuilder.BuildMarketIndexOhlcSubscribePayload(
+            normalizedIndexNames,
+            _dnseOptions.WebSocketEncoding,
+            closed: true);
+
+        await SendJsonAsync(webSocket, openPayload, cancellationToken);
+        await SendJsonAsync(webSocket, closedPayload, cancellationToken);
+
+        _logger.LogInformation(
+            "Subscribed DNSE websocket market index OHLC channels {OpenChannels} and closed channels {ClosedChannels} for instruments {Instruments}.",
+            string.Join(", ", openPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", closedPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", normalizedIndexNames));
+    }
+
+    private async Task SendOhlcSubscriptionsAsync(
+        ClientWebSocket webSocket,
+        IReadOnlyCollection<string> instruments,
+        IReadOnlyCollection<string> resolutions,
+        CancellationToken cancellationToken)
+    {
+        var normalizedInstruments = NormalizeTokens(instruments);
+        var normalizedResolutions = NormalizeTokens(resolutions);
+        if (normalizedInstruments.Length == 0 || normalizedResolutions.Length == 0)
         {
             return;
         }
 
         var openPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcSubscribePayload(
-            instruments,
-            resolutions,
+            normalizedInstruments,
+            normalizedResolutions,
             _dnseOptions.WebSocketEncoding,
             closed: false);
         var closedPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcSubscribePayload(
-            instruments,
-            resolutions,
+            normalizedInstruments,
+            normalizedResolutions,
             _dnseOptions.WebSocketEncoding,
             closed: true);
 
@@ -408,7 +520,64 @@ public sealed class DnseWebSocketQuoteStreamService : BackgroundService
             "Subscribed DNSE websocket OHLC channels {OpenChannels} and closed channels {ClosedChannels} for instruments {Instruments}.",
             string.Join(", ", openPayload.Channels.Select(channel => channel.Name)),
             string.Join(", ", closedPayload.Channels.Select(channel => channel.Name)),
-            string.Join(", ", instruments));
+            string.Join(", ", normalizedInstruments));
+    }
+
+    private async Task SendOhlcUnsubscriptionsAsync(
+        ClientWebSocket webSocket,
+        IReadOnlyCollection<string> instruments,
+        IReadOnlyCollection<string> resolutions,
+        CancellationToken cancellationToken)
+    {
+        var normalizedInstruments = NormalizeTokens(instruments);
+        var normalizedResolutions = NormalizeTokens(resolutions);
+        if (normalizedInstruments.Length == 0 || normalizedResolutions.Length == 0)
+        {
+            return;
+        }
+
+        var openPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcUnsubscribePayload(
+            normalizedInstruments,
+            normalizedResolutions,
+            _dnseOptions.WebSocketEncoding,
+            closed: false);
+        var closedPayload = DnseWebSocketSubscriptionBuilder.BuildOhlcUnsubscribePayload(
+            normalizedInstruments,
+            normalizedResolutions,
+            _dnseOptions.WebSocketEncoding,
+            closed: true);
+
+        await SendJsonAsync(webSocket, openPayload, cancellationToken);
+        await SendJsonAsync(webSocket, closedPayload, cancellationToken);
+
+        _logger.LogInformation(
+            "Unsubscribed DNSE websocket OHLC channels {OpenChannels} and closed channels {ClosedChannels} for instruments {Instruments}.",
+            string.Join(", ", openPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", closedPayload.Channels.Select(channel => channel.Name)),
+            string.Join(", ", normalizedInstruments));
+    }
+
+    private static void AddOhlcBatch(
+        Dictionary<string, List<string>> batches,
+        string resolution,
+        string instrument)
+    {
+        if (!batches.TryGetValue(resolution, out var instruments))
+        {
+            instruments = [];
+            batches[resolution] = instruments;
+        }
+
+        instruments.Add(instrument);
+    }
+
+    private static string[] NormalizeTokens(IReadOnlyCollection<string> values)
+    {
+        return values
+            .Select(resolution => resolution.Trim().ToUpperInvariant())
+            .Where(resolution => !string.IsNullOrWhiteSpace(resolution))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     private async Task HandleMessageAsync(ClientWebSocket webSocket, string json, CancellationToken cancellationToken)

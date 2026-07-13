@@ -11,5 +11,9 @@ public interface IQuoteClient
 
     Task ReceiveMarketIndexUpdate(MarketIndexUpdateDto update);
 
+    Task ReceiveOhlcUpdate(MarketOhlcUpdateDto update);
+
+    Task ReceiveMarketSessionUpdate(MarketSessionUpdateDto update);
+
     Task ReceiveStreamStatus(QuoteStreamStatusDto status);
 }

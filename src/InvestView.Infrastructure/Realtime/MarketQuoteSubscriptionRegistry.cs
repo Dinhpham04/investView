@@ -7,6 +7,7 @@ public sealed class MarketQuoteSubscriptionRegistry : IMarketQuoteSubscriptionRe
     private const string DefaultBoardId = "G1";
     private readonly object _syncRoot = new();
     private readonly Dictionary<string, ConnectionSubscription> _connections = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ConnectionOhlcSubscription> _ohlcConnections = new(StringComparer.Ordinal);
     private TaskCompletionSource<MarketQuoteSubscriptionSnapshot> _changeSignal =
         NewChangeSignal();
     private long _version;
@@ -55,13 +56,51 @@ public sealed class MarketQuoteSubscriptionRegistry : IMarketQuoteSubscriptionRe
         }
     }
 
+    public MarketQuoteSubscriptionSnapshot SetConnectionOhlcSubscription(
+        string connectionId,
+        string? symbol,
+        IReadOnlyCollection<string>? resolutions)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
+
+        lock (_syncRoot)
+        {
+            var normalizedSymbol = NormalizeSymbol(symbol);
+            var normalizedResolutions = NormalizeResolutions(resolutions);
+            _ohlcConnections.TryGetValue(connectionId, out var previous);
+
+            if (previous is not null
+                && previous.Symbol == normalizedSymbol
+                && previous.Resolutions.SequenceEqual(normalizedResolutions, StringComparer.Ordinal))
+            {
+                return CreateSnapshot();
+            }
+
+            if (string.IsNullOrWhiteSpace(normalizedSymbol) || normalizedResolutions.Count == 0)
+            {
+                if (!_ohlcConnections.Remove(connectionId))
+                {
+                    return CreateSnapshot();
+                }
+            }
+            else
+            {
+                _ohlcConnections[connectionId] = new ConnectionOhlcSubscription(normalizedSymbol, normalizedResolutions);
+            }
+
+            return PublishChange();
+        }
+    }
+
     public MarketQuoteSubscriptionSnapshot RemoveConnection(string connectionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
 
         lock (_syncRoot)
         {
-            if (!_connections.Remove(connectionId))
+            var removedBoardSubscription = _connections.Remove(connectionId);
+            var removedOhlcSubscription = _ohlcConnections.Remove(connectionId);
+            if (!removedBoardSubscription && !removedOhlcSubscription)
             {
                 return CreateSnapshot();
             }
@@ -122,7 +161,21 @@ public sealed class MarketQuoteSubscriptionRegistry : IMarketQuoteSubscriptionRe
             .OrderBy(board => board.BoardId, StringComparer.Ordinal)
             .ToArray();
 
-        return new MarketQuoteSubscriptionSnapshot(boards, _version);
+        var ohlcSubscriptions = _ohlcConnections
+            .Values
+            .GroupBy(subscription => subscription.Symbol, StringComparer.Ordinal)
+            .Select(group => new MarketOhlcSubscription(
+                group.Key,
+                group
+                    .SelectMany(subscription => subscription.Resolutions)
+                    .Distinct(StringComparer.Ordinal)
+                    .Order(StringComparer.Ordinal)
+                    .ToArray()))
+            .Where(subscription => subscription.Resolutions.Count > 0)
+            .OrderBy(subscription => subscription.Symbol, StringComparer.Ordinal)
+            .ToArray();
+
+        return new MarketQuoteSubscriptionSnapshot(boards, ohlcSubscriptions, _version);
     }
 
     private static string NormalizeBoardId(string? boardId)
@@ -145,6 +198,25 @@ public sealed class MarketQuoteSubscriptionRegistry : IMarketQuoteSubscriptionRe
                 .ToArray();
     }
 
+    private static string NormalizeSymbol(string? symbol)
+    {
+        return string.IsNullOrWhiteSpace(symbol)
+            ? string.Empty
+            : symbol.Trim().ToUpperInvariant();
+    }
+
+    private static IReadOnlyList<string> NormalizeResolutions(IReadOnlyCollection<string>? resolutions)
+    {
+        return resolutions is null
+            ? []
+            : resolutions
+                .Select(resolution => resolution.Trim().ToUpperInvariant())
+                .Where(resolution => !string.IsNullOrWhiteSpace(resolution))
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)
+                .ToArray();
+    }
+
     private static TaskCompletionSource<MarketQuoteSubscriptionSnapshot> NewChangeSignal()
     {
         return new TaskCompletionSource<MarketQuoteSubscriptionSnapshot>(
@@ -154,4 +226,8 @@ public sealed class MarketQuoteSubscriptionRegistry : IMarketQuoteSubscriptionRe
     private sealed record ConnectionSubscription(
         string BoardId,
         IReadOnlyList<string> Symbols);
+
+    private sealed record ConnectionOhlcSubscription(
+        string Symbol,
+        IReadOnlyList<string> Resolutions);
 }

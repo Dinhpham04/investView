@@ -49,10 +49,17 @@ public sealed class MarketStateEventSubscriber : IMarketStateEventHandler
                 await _broadcaster.BroadcastMarketIndexUpdateAsync(indexUpdate, cancellationToken);
                 break;
             case MarketStateEventKind.OhlcUpdate when marketEvent.OhlcUpdate is not null:
-                await _localMirror.ApplyOhlcUpdateAsync(marketEvent.OhlcUpdate, cancellationToken);
+                var ohlcUpdate = await _localMirror.ApplyOhlcUpdateAsync(marketEvent.OhlcUpdate, cancellationToken);
+                if (ohlcUpdate.Type.Equals("INDEX", StringComparison.Ordinal)
+                    && ohlcUpdate.Resolution.Equals("1", StringComparison.Ordinal))
+                {
+                    await _broadcaster.BroadcastOhlcUpdateAsync(ohlcUpdate, cancellationToken);
+                }
+
                 break;
             case MarketStateEventKind.MarketSessionUpdate when marketEvent.MarketSessionUpdate is not null:
-                await _localMirror.ApplyMarketSessionUpdateAsync(marketEvent.MarketSessionUpdate, cancellationToken);
+                var sessionUpdate = await _localMirror.ApplyMarketSessionUpdateAsync(marketEvent.MarketSessionUpdate, cancellationToken);
+                await _broadcaster.BroadcastMarketSessionUpdateAsync(sessionUpdate, cancellationToken);
                 break;
             default:
                 _logger.LogDebug("Ignored market state event kind {Kind}.", marketEvent.Kind);

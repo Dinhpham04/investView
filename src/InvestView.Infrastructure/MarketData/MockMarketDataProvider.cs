@@ -118,11 +118,11 @@ public sealed class MockMarketDataProvider : IMarketDataProvider, ISymbolMetadat
 
     private static readonly IReadOnlyList<MarketIndexDto> Indices =
     [
-        new("VNINDEX", 1840.70m, -13.00m, -0.70m, 1853.70m, 1857.00m, 1831.25m, 585_707_000, 14_603_675_000_000m, 92, 206, 66, 1, 3, "STO", "Continuous", SnapshotTime),
-        new("VN30", 1987.11m, -11.33m, -0.57m, 1998.44m, 2001.12m, 1977.64m, 226_301_000, 7_232_900_000_000m, 7, 19, 4, 0, 0, "STO", "Continuous", SnapshotTime),
-        new("HNX30", 514.73m, -2.25m, -0.44m, 516.98m, 518.41m, 511.82m, 42_094_000, 933_109_000_000m, 9, 14, 7, 0, 0, "STX", "Continuous", SnapshotTime),
-        new("HNX", 306.67m, 6.28m, 2.09m, 300.39m, 307.42m, 299.96m, 56_859_000, 1_096_426_000_000m, 47, 76, 50, 2, 3, "STX", "PLO", SnapshotTime),
-        new("UPCOM", 128.68m, 0.67m, 0.52m, 128.01m, 129.04m, 127.85m, 23_428_000, 281_722_000_000m, 85, 101, 79, 0, 1, "UPX", "Continuous", SnapshotTime)
+        new("VNINDEX", 1840.70m, -13.00m, -0.70m, 1853.70m, 1857.00m, 1831.25m, 585_707_000, 14_603.675m, 92, 206, 66, 1, 3, "STO", "Continuous", SnapshotTime),
+        new("VN30", 1987.11m, -11.33m, -0.57m, 1998.44m, 2001.12m, 1977.64m, 226_301_000, 7_232.9m, 7, 19, 4, 0, 0, "STO", "Continuous", SnapshotTime),
+        new("HNX30", 514.73m, -2.25m, -0.44m, 516.98m, 518.41m, 511.82m, 42_094_000, 933.109m, 9, 14, 7, 0, 0, "STX", "Continuous", SnapshotTime),
+        new("HNX", 306.67m, 6.28m, 2.09m, 300.39m, 307.42m, 299.96m, 56_859_000, 1_096.426m, 47, 76, 50, 2, 3, "STX", "PLO", SnapshotTime),
+        new("UPCOM", 128.68m, 0.67m, 0.52m, 128.01m, 129.04m, 127.85m, 23_428_000, 281.722m, 85, 101, 79, 0, 1, "UPX", "Continuous", SnapshotTime)
     ];
 
     public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(

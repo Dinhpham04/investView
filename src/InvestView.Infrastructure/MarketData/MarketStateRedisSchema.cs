@@ -85,6 +85,11 @@ public sealed class MarketStateRedisSchema
         return $"{IndexOhlcKey(indexName, resolution)}:coverage";
     }
 
+    public RedisKey IndexOhlcCoverageRangeKey(string indexName, string resolution)
+    {
+        return $"{IndexOhlcKey(indexName, resolution)}:coverage-range";
+    }
+
     public RedisKey BoardSymbolsKey(string boardId)
     {
         return $"{Prefix()}:board:{{{MarketStateMapper.NormalizeBoardId(boardId)}}}:symbols";

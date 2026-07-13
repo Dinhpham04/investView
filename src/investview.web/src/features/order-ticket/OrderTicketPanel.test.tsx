@@ -1,8 +1,9 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OrderTicketPanel } from './OrderTicketPanel';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
 import type { MarketQuote } from '../../shared/types/market';
+import { DemoSessionControls } from '../auth/DemoSessionControls';
 
 describe('OrderTicketPanel', () => {
   afterEach(() => {
@@ -14,12 +15,12 @@ describe('OrderTicketPanel', () => {
     const fetchMock = vi.fn(createOrderTicketFetch());
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithQueryClient(<OrderTicketPanel liveQuote={quote} selection={{ symbol: 'HPG', boardId: 'G1' }} />);
+    renderWithQueryClient(<><DemoSessionControls /><OrderTicketPanel liveQuote={quote} selection={{ symbol: 'HPG', boardId: 'G1' }} /></>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dang nhap demo' }));
-    await screen.findByRole('button', { name: 'Dat lenh mo phong' });
-    fireEvent.change(screen.getByLabelText('Khoi luong'), { target: { value: '100' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Dat lenh mo phong' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    await screen.findByRole('button', { name: 'Mua' });
+    fireEvent.change(screen.getByLabelText('Khối lượng'), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Mua' }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -37,20 +38,84 @@ describe('OrderTicketPanel', () => {
         }),
       ),
     );
-    expect(await screen.findByText(/HPG Filled 100 @ 29,150.00/)).toBeInTheDocument();
+    expect(await screen.findByRole('row', { name: 'HPG Mua Đã khớp' })).toBeInTheDocument();
   });
 
   it('disables submit when quantity is invalid', async () => {
     vi.stubGlobal('fetch', vi.fn(createOrderTicketFetch()));
 
+    renderWithQueryClient(<><DemoSessionControls /><OrderTicketPanel liveQuote={quote} selection={{ symbol: 'HPG', boardId: 'G1' }} /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    await screen.findByRole('button', { name: 'Mua' });
+    fireEvent.change(screen.getByLabelText('Khối lượng'), { target: { value: '0' } });
+
+    expect(screen.getByText('Khối lượng phải là số nguyên dương.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mua' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Bán' })).toBeDisabled();
+  });
+
+  it('renders the reference ticket structure and keeps order entry gated behind login', () => {
     renderWithQueryClient(<OrderTicketPanel liveQuote={quote} selection={{ symbol: 'HPG', boardId: 'G1' }} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dang nhap demo' }));
-    await screen.findByRole('button', { name: 'Dat lenh mo phong' });
-    fireEvent.change(screen.getByLabelText('Khoi luong'), { target: { value: '0' } });
+    expect(screen.getByText('HPG')).toBeInTheDocument();
+    expect(screen.getByText('(HOSE)')).toBeInTheDocument();
+    expect(screen.getByText('Tài khoản đặt lệnh')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Tài khoản đặt lệnh' })).toHaveAttribute('data-slot', 'select-trigger');
+    expect(screen.getByText('Sức mua')).toBeInTheDocument();
+    expect(screen.getByText('Giá tự động')).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: 'Giá tự động' })).toHaveAttribute('data-slot', 'switch');
+    expect(screen.getByText('Giá (x1000 VNĐ)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Khối lượng')).toHaveAttribute('data-slot', 'input-group-control');
+    expect(screen.getByLabelText('Khối lượng')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Khối lượng')).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.getByLabelText('Khối lượng').closest('[data-slot="input-group"]')).toBeInTheDocument();
+    expect(screen.getByLabelText('Giá (x1000 VNĐ)')).toHaveAttribute('data-slot', 'input-group-control');
+    expect(screen.getByLabelText('Giá (x1000 VNĐ)')).toHaveAttribute('type', 'text');
+    expect(screen.getByLabelText('Giá (x1000 VNĐ)')).toHaveAttribute('inputmode', 'decimal');
+    expect(screen.getByRole('button', { name: 'MTL' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ATO' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ATC' })).toBeInTheDocument();
+    expect(screen.getByText('Kiểu xác thực')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Lưu xác thực' })).toHaveAttribute('data-slot', 'checkbox');
+    expect(screen.getByRole('tab', { name: 'Sổ lệnh' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('tab', { name: 'Sổ lệnh điều kiện' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Danh mục' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Tài sản' })).toBeInTheDocument();
+    expect(screen.getByText('Đăng nhập ở góc trên bên phải để đặt lệnh mô phỏng.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mua' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Mua' })).toHaveAttribute('data-slot', 'button');
+    expect(screen.getByRole('button', { name: 'Bán' })).toBeDisabled();
+    expect(screen.getByText('Không tìm thấy lệnh nào')).toBeInTheDocument();
 
-    expect(screen.getByText('Khoi luong phai la so nguyen duong.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dat lenh mo phong' })).toBeDisabled();
+    const conditionalOrdersTab = screen.getByRole('tab', { name: 'Sổ lệnh điều kiện' });
+    fireEvent.mouseDown(conditionalOrdersTab, { button: 0, ctrlKey: false });
+    fireEvent.click(conditionalOrdersTab);
+    expect(screen.getByText('Chưa có lệnh điều kiện')).toBeInTheDocument();
+  });
+
+  it('renders portfolio assets as a compact account dashboard', async () => {
+    vi.stubGlobal('fetch', vi.fn(createOrderTicketFetch()));
+
+    renderWithQueryClient(<><DemoSessionControls /><OrderTicketPanel liveQuote={quote} selection={{ symbol: 'HPG', boardId: 'G1' }} /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    const assetsTab = await screen.findByRole('tab', { name: 'Tài sản' });
+    fireEvent.mouseDown(assetsTab, { button: 0, ctrlKey: false });
+    fireEvent.click(assetsTab);
+
+    const assetsRegion = await screen.findByRole('region', { name: 'Tài sản tài khoản mô phỏng' });
+    expect(within(assetsRegion).getByText('InvestView Demo')).toBeInTheDocument();
+    expect(within(assetsRegion).getByText('Tổng tài sản')).toBeInTheDocument();
+    expect(within(assetsRegion).getByText('100,000,000 VND')).toBeInTheDocument();
+    expect(within(assetsRegion).getAllByText('Tiền mặt').length).toBeGreaterThan(0);
+    expect(within(assetsRegion).getAllByText('97,085,000 VND').length).toBeGreaterThan(0);
+    expect(within(assetsRegion).getByText('Giá trị CK')).toBeInTheDocument();
+    expect(within(assetsRegion).getAllByText('2,915,000 VND').length).toBeGreaterThan(0);
+    expect(within(assetsRegion).getByText('Lãi/lỗ tạm tính')).toBeInTheDocument();
+    expect(within(assetsRegion).getByText('Danh mục nắm giữ')).toBeInTheDocument();
+    expect(within(assetsRegion).getByText('HPG')).toBeInTheDocument();
+    expect(within(assetsRegion).getByText(/100 cp/)).toBeInTheDocument();
   });
 });
 
@@ -110,6 +175,39 @@ function createOrderTicketFetch() {
           executedAt: '2026-07-12T09:00:00Z',
         }],
       }, { status: 201 }));
+    }
+
+    if (url === '/api/orders' && method === 'GET') {
+      return Promise.resolve(jsonResponse([]));
+    }
+
+    if (url === '/api/portfolio' && method === 'GET') {
+      return Promise.resolve(jsonResponse({
+        cashAccounts: [{
+          currency: 'VND',
+          balance: 97_085_000,
+          availableBalance: 97_085_000,
+          updatedAt: '2026-07-12T09:00:00Z',
+        }],
+        holdings: [{
+          symbol: 'HPG',
+          boardId: 'G1',
+          quantity: 100,
+          availableQuantity: 100,
+          averageCost: 29_150,
+          lastPrice: 29_150,
+          marketValue: 2_915_000,
+          costValue: 2_915_000,
+          unrealizedPnL: 0,
+          updatedAt: '2026-07-12T09:00:00Z',
+        }],
+        totalCash: 97_085_000,
+        totalAvailableCash: 97_085_000,
+        totalMarketValue: 2_915_000,
+        totalEquity: 100_000_000,
+        totalUnrealizedPnL: 0,
+        updatedAt: '2026-07-12T09:00:00Z',
+      }));
     }
 
     return Promise.resolve(new Response('Not found', { status: 404, statusText: 'Not Found' }));

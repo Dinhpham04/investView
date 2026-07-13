@@ -40,6 +40,16 @@ public sealed class QuoteHub : Hub<IQuoteClient>
         }
     }
 
+    public Task SubscribeSymbolOhlc(SymbolOhlcSubscriptionDto subscription)
+    {
+        _subscriptionRegistry.SetConnectionOhlcSubscription(
+            Context.ConnectionId,
+            subscription.Symbol,
+            subscription.Resolutions);
+
+        return Task.CompletedTask;
+    }
+
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _subscriptionRegistry.RemoveConnection(Context.ConnectionId);

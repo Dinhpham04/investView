@@ -325,6 +325,133 @@ public sealed class MarketStateBackedMarketDataProviderTests
         Assert.Equal(2, localBars.Count);
     }
 
+    [Fact]
+    public async Task GetOhlcAsync_WhenFallbackReturnsEmpty_MarksCoverageAndDoesNotBackfillSameRangeAgain()
+    {
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var to = from.AddHours(1);
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+
+        var firstResult = await provider.GetOhlcAsync("ssi", "1", from, to, CancellationToken.None);
+        var secondResult = await provider.GetOhlcAsync("ssi", "1", from, to, CancellationToken.None);
+
+        Assert.Empty(firstResult);
+        Assert.Empty(secondResult);
+        Assert.Equal(1, fallback.OhlcCalls);
+    }
+
+    [Fact]
+    public async Task GetIndexOhlcAsync_WhenLocalMirrorHasRealtimePartialRange_BackfillsFromFallback()
+    {
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var to = from.AddHours(6);
+        var fallback = new EmptyMarketDataProvider
+        {
+            IndexOhlcBars = CreateBars("VNINDEX", "1", from)
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+        await localMirror.ApplyOhlcUpdateAsync(
+            new MarketOhlcUpdateDto(
+                "vnindex",
+                "1",
+                from.AddHours(3),
+                1840m,
+                1842m,
+                1838m,
+                1841m,
+                10_000,
+                "index",
+                false,
+                from.AddHours(3)),
+            CancellationToken.None);
+
+        var result = await provider.GetIndexOhlcAsync("vnindex", "1", from, to, CancellationToken.None);
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal(1, fallback.IndexOhlcCalls);
+        var sharedBars = await sharedState.GetIndexOhlcBarsAsync("VNINDEX", "1", from, to, CancellationToken.None);
+        var localBars = await localMirror.GetIndexOhlcBarsAsync("VNINDEX", "1", from, to, CancellationToken.None);
+        Assert.Equal(2, sharedBars.Count);
+        Assert.Equal(2, localBars.Count);
+    }
+
+    [Fact]
+    public async Task GetIndexOhlcAsync_WhenFallbackReturnsEmpty_MarksCoverageAndDoesNotBackfillSameRangeAgain()
+    {
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var to = from.AddHours(1);
+        var fallback = new EmptyMarketDataProvider();
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+
+        var firstResult = await provider.GetIndexOhlcAsync("vnindex", "1", from, to, CancellationToken.None);
+        var secondResult = await provider.GetIndexOhlcAsync("vnindex", "1", from, to, CancellationToken.None);
+
+        Assert.Empty(firstResult);
+        Assert.Empty(secondResult);
+        Assert.Equal(1, fallback.IndexOhlcCalls);
+    }
+
+    [Fact]
+    public async Task GetIndexOhlcAsync_WhenRealtimeExtendsCachedRange_DoesNotBackfillNextMinute()
+    {
+        var from = new DateTimeOffset(2026, 7, 8, 2, 0, 0, TimeSpan.Zero);
+        var firstTo = from.AddMinutes(30);
+        var nextTo = firstTo.AddMinutes(1);
+        var fallback = new EmptyMarketDataProvider
+        {
+            IndexOhlcBars = CreateBars("VNINDEX", "1", from)
+        };
+        var localMirror = new InMemoryMarketStateStore();
+        var sharedState = new InMemoryMarketStateStore();
+        var provider = new MarketStateBackedMarketDataProvider(
+            fallback,
+            localMirror,
+            sharedState,
+            NullLogger<MarketStateBackedMarketDataProvider>.Instance);
+
+        var firstResult = await provider.GetIndexOhlcAsync("vnindex", "1", from, firstTo, CancellationToken.None);
+        await sharedState.ApplyOhlcUpdateAsync(
+            new MarketOhlcUpdateDto(
+                "vnindex",
+                "1",
+                nextTo,
+                1840m,
+                1843m,
+                1839m,
+                1842m,
+                14_000,
+                "index",
+                false,
+                nextTo),
+            CancellationToken.None);
+
+        var secondResult = await provider.GetIndexOhlcAsync("vnindex", "1", from, nextTo, CancellationToken.None);
+
+        Assert.Equal(2, firstResult.Count);
+        Assert.Equal(1, fallback.IndexOhlcCalls);
+        Assert.Equal(3, secondResult.Count);
+        Assert.Contains(secondResult, bar => bar.Time == nextTo && bar.Close == 1842m);
+    }
+
     private static MarketQuoteDto CreateQuote(string symbol, decimal referencePrice, decimal lastPrice)
     {
         var change = lastPrice - referencePrice;
@@ -443,6 +570,10 @@ public sealed class MarketStateBackedMarketDataProviderTests
 
         public IReadOnlyList<OhlcBarDto> OhlcBars { get; init; } = [];
 
+        public int IndexOhlcCalls { get; private set; }
+
+        public IReadOnlyList<OhlcBarDto> IndexOhlcBars { get; init; } = [];
+
         public Task<IReadOnlyList<MarketQuoteDto>> GetMarketBoardAsync(
             MarketBoardQuery query,
             CancellationToken cancellationToken)
@@ -498,7 +629,8 @@ public sealed class MarketStateBackedMarketDataProviderTests
             DateTimeOffset? to,
             CancellationToken cancellationToken)
         {
-            return Task.FromResult<IReadOnlyList<OhlcBarDto>>([]);
+            IndexOhlcCalls++;
+            return Task.FromResult(IndexOhlcBars);
         }
 
         public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(

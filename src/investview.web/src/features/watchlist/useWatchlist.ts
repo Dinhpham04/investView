@@ -5,12 +5,7 @@ import { useDemoSession } from '../auth/useDemoSession';
 
 export function useWatchlist() {
   const queryClient = useQueryClient();
-  const {
-    error: loginError,
-    isLoggingIn,
-    login,
-    session,
-  } = useDemoSession();
+  const { session, status } = useDemoSession();
   const accessToken = session?.accessToken ?? null;
   const queryKey = ['watchlist', accessToken];
 
@@ -54,15 +49,14 @@ export function useWatchlist() {
 
   return {
     addItem: addMutation.mutateAsync,
-    error: watchlistQuery.error ?? loginError ?? addMutation.error ?? removeMutation.error,
+    error: watchlistQuery.error ?? addMutation.error ?? removeMutation.error,
     isAdding: addMutation.isPending,
     isLoading: accessToken != null && watchlistQuery.isPending,
-    isLoggingIn,
     isRemoving: removeMutation.isPending,
     items: watchlistQuery.data ?? [],
-    login,
     removeItem: removeMutation.mutateAsync,
     session,
+    status,
   };
 }
 

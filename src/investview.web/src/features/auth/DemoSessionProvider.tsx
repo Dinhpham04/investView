@@ -1,19 +1,30 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { demoLogin, type DemoSession } from '../../shared/api/authApi';
+import { demoLogin, getDemoProfile, type DemoSession } from '../../shared/api/authApi';
+import { subscribeToUnauthorized } from '../../shared/api/httpClient';
 import { DemoSessionContext } from './demoSessionContext';
-import type { DemoSessionContextValue } from './demoSessionContext';
+import type { DemoSessionContextValue, DemoSessionStatus } from './demoSessionContext';
 
 const demoSessionStorageKey = 'investview.demoSession';
 
 export function DemoSessionProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const [session, setSession] = useState<DemoSession | null>(readStoredDemoSession);
+  const [storedSession, setStoredSession] = useState<DemoSession | null>(readStoredDemoSession);
+  const [status, setStatus] = useState<DemoSessionStatus>(() => storedSession == null ? 'guest' : 'checking');
+  const logout = useCallback(() => {
+    setStoredSession(null);
+    setStatus('guest');
+    removeStoredDemoSession();
+    queryClient.removeQueries({ queryKey: ['watchlist'] });
+    queryClient.removeQueries({ queryKey: ['portfolio'] });
+    queryClient.removeQueries({ queryKey: ['orders'] });
+  }, [queryClient]);
   const loginMutation = useMutation({
     mutationFn: demoLogin,
     onSuccess: (nextSession) => {
-      setSession(nextSession);
+      setStoredSession(nextSession);
+      setStatus('authenticated');
       storeDemoSession(nextSession);
       void queryClient.invalidateQueries({ queryKey: ['watchlist'] });
       void queryClient.invalidateQueries({ queryKey: ['portfolio'] });
@@ -21,12 +32,57 @@ export function DemoSessionProvider({ children }: { children: ReactNode }) {
     },
   });
 
+  useEffect(() => subscribeToUnauthorized(logout), [logout]);
+
+  useEffect(() => {
+    if (status !== 'checking' || storedSession == null) {
+      return undefined;
+    }
+
+    let disposed = false;
+    const controller = new AbortController();
+
+    void getDemoProfile(storedSession.accessToken, controller.signal).then(
+      (profile) => {
+        if (disposed) {
+          return;
+        }
+
+        const validatedSession: DemoSession = {
+          ...storedSession,
+          user: {
+            id: profile.id,
+            email: profile.email,
+            displayName: profile.displayName,
+          },
+        };
+        setStoredSession(validatedSession);
+        setStatus('authenticated');
+        storeDemoSession(validatedSession);
+      },
+      () => {
+        if (!disposed) {
+          logout();
+        }
+      },
+    );
+
+    return () => {
+      disposed = true;
+      controller.abort();
+    };
+  }, [logout, status, storedSession]);
+
+  const session = status === 'authenticated' ? storedSession : null;
+
   const value = useMemo<DemoSessionContextValue>(() => ({
     error: loginMutation.error,
-    isLoggingIn: loginMutation.isPending,
+    isLoggingIn: loginMutation.isPending || status === 'checking',
     login: loginMutation.mutateAsync,
+    logout,
     session,
-  }), [loginMutation.error, loginMutation.isPending, loginMutation.mutateAsync, session]);
+    status,
+  }), [loginMutation.error, loginMutation.isPending, loginMutation.mutateAsync, logout, session, status]);
 
   return (
     <DemoSessionContext.Provider value={value}>
@@ -70,6 +126,19 @@ function storeDemoSession(session: DemoSession) {
     storage.setItem(demoSessionStorageKey, JSON.stringify(session));
   } catch {
     // Ignore storage failures; the in-memory session remains usable.
+  }
+}
+
+function removeStoredDemoSession() {
+  const storage = getLocalStorage();
+  if (storage == null) {
+    return;
+  }
+
+  try {
+    storage.removeItem(demoSessionStorageKey);
+  } catch {
+    // Ignore storage failures; the in-memory session is still cleared.
   }
 }
 

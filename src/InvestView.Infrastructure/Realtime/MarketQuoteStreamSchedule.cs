@@ -25,7 +25,7 @@ public sealed class MarketQuoteStreamSchedule
             return new MarketQuoteStreamConnectionDecision(
                 ShouldConnect: false,
                 recheckAfter,
-                "DNSE websocket waiting for active market-board subscriptions.");
+                "DNSE websocket waiting for active market-board or OHLC subscriptions.");
         }
 
         if (!schedule.Enabled)
@@ -62,7 +62,8 @@ public sealed class MarketQuoteStreamSchedule
 
     private static bool HasActiveSymbols(MarketQuoteSubscriptionSnapshot snapshot)
     {
-        return snapshot.Boards.Any(board => board.Symbols.Count > 0);
+        return snapshot.Boards.Any(board => board.Symbols.Count > 0)
+            || snapshot.OhlcSubscriptions.Any(subscription => subscription.Resolutions.Count > 0);
     }
 
     private static TimeSpan GetRecheckInterval(MarketQuoteStreamScheduleOptions schedule)

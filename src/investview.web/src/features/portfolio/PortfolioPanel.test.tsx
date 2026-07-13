@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PortfolioPanel } from './PortfolioPanel';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
+import { DemoSessionControls } from '../auth/DemoSessionControls';
 
 describe('PortfolioPanel', () => {
   afterEach(() => {
@@ -13,9 +14,9 @@ describe('PortfolioPanel', () => {
     const fetchMock = vi.fn(createPortfolioFetch());
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithQueryClient(<PortfolioPanel />);
+    renderWithQueryClient(<><DemoSessionControls /><PortfolioPanel /></>);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Dang nhap demo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
 
     expect(await screen.findByText('97,085,000 VND')).toBeInTheDocument();
     expect(screen.getByText('2,915,000 VND')).toBeInTheDocument();
@@ -35,6 +36,47 @@ describe('PortfolioPanel', () => {
         headers: expect.objectContaining({ Authorization: 'Bearer test-token' }),
       }),
     );
+  });
+
+  it('does not present missing portfolio data as zero money', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input.toString();
+      if (url === '/api/auth/demo-login') {
+        return Promise.resolve(jsonResponse({
+          accessToken: 'test-token',
+          tokenType: 'Bearer',
+          expiresAt: '2027-07-12T10:00:00Z',
+          user: {
+            id: '6b4e73e5-53f6-421c-bcec-24c2dfbcd4a5',
+            email: 'demo@investview.local',
+            displayName: 'InvestView Demo',
+          },
+        }));
+      }
+
+      if (url === '/api/portfolio') {
+        return Promise.resolve(new Response(null, { status: 500, statusText: 'Server Error' }));
+      }
+
+      if (url === '/api/orders' && (init?.method ?? 'GET') === 'GET') {
+        return Promise.resolve(jsonResponse([]));
+      }
+
+      return Promise.resolve(new Response(null, { status: 404, statusText: 'Not Found' }));
+    }));
+
+    renderWithQueryClient(<><DemoSessionControls /><PortfolioPanel /></>);
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Request failed: 500 Server Error');
+    expect(screen.queryAllByText('0 VND')).toHaveLength(0);
+  });
+
+  it('directs guests to the app-level login instead of rendering another login button', () => {
+    renderWithQueryClient(<PortfolioPanel />);
+
+    expect(screen.getByText('Đăng nhập ở góc trên bên phải để xem tài khoản mô phỏng.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /dang nhap demo/i })).not.toBeInTheDocument();
   });
 });
 

@@ -1,19 +1,22 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import {
-  createVietnamMarketSessionRange,
+  createVietnamFullMarketSessionRange,
   filterVietnamMarketSessionBars,
   useMarketIndexQueries,
 } from './useMarketIndexQueries';
 import { defaultMarketIndexNames } from './marketIndexLists';
-import type { MarketIndex, MarketIndexUpdate, OhlcBar } from '../../shared/types/market';
+import { mergeIndexOhlcUpdate } from './marketIndexOhlcRealtime';
+import type { MarketIndex, MarketIndexUpdate, MarketOhlcUpdate, OhlcBar } from '../../shared/types/market';
 
 type MarketIndexOverviewProps = {
+  latestOhlcUpdate?: MarketOhlcUpdate | null;
   latestUpdate?: MarketIndexUpdate | null;
 };
 
-export function MarketIndexOverview({ latestUpdate = null }: MarketIndexOverviewProps) {
+export function MarketIndexOverview({ latestOhlcUpdate = null, latestUpdate = null }: MarketIndexOverviewProps) {
   const { indicesQuery, isOhlcPending, ohlcByIndexName } = useMarketIndexQueries(defaultMarketIndexNames);
   const [liveIndices, setLiveIndices] = useState<MarketIndex[]>([]);
+  const [realtimeOhlcByIndexName, setRealtimeOhlcByIndexName] = useState<Map<string, OhlcBar[]>>(() => new Map());
 
   useEffect(() => {
     setLiveIndices(indicesQuery.data ?? []);
@@ -27,14 +30,26 @@ export function MarketIndexOverview({ latestUpdate = null }: MarketIndexOverview
     setLiveIndices((currentIndices) => mergeIndexUpdate(currentIndices, latestUpdate));
   }, [latestUpdate]);
 
+  useEffect(() => {
+    if (!isRealtimeIndexOhlcUpdate(latestOhlcUpdate)) {
+      return;
+    }
+
+    setRealtimeOhlcByIndexName((currentBars) => mergeIndexOhlcUpdate(currentBars, latestOhlcUpdate));
+  }, [latestOhlcUpdate]);
+
   const indices = useMemo(() => orderIndices(liveIndices), [liveIndices]);
+  const displayedOhlcByIndexName = useMemo(
+    () => mergeOhlcMaps(ohlcByIndexName, realtimeOhlcByIndexName),
+    [ohlcByIndexName, realtimeOhlcByIndexName],
+  );
 
   return (
     <section className="grid min-h-[132px] grid-cols-1 gap-1 border-x border-t border-market-border bg-[#12101b] lg:grid-cols-[minmax(0,1fr)_minmax(360px,470px)]">
       <div className="grid min-w-0 grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-5">
         {defaultMarketIndexNames.map((indexName) => (
           <MarketIndexCard
-            bars={ohlcByIndexName.get(indexName) ?? []}
+            bars={displayedOhlcByIndexName.get(indexName) ?? []}
             index={indices.find((item) => item.indexName === indexName) ?? createEmptyIndex(indexName)}
             isLoading={indicesQuery.isPending || isOhlcPending}
             key={indexName}
@@ -46,7 +61,7 @@ export function MarketIndexOverview({ latestUpdate = null }: MarketIndexOverview
   );
 }
 
-function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: MarketIndex; isLoading: boolean }) {
+export function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: MarketIndex; isLoading: boolean }) {
   const toneClass = classForChange(index.change);
 
   return (
@@ -61,6 +76,7 @@ function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: M
             <span className="text-[#9d99ad]">⌄</span>
           </div>
           <div className="mt-0.5 text-[#d7d4e3]">{formatCompactVolume(index.totalVolume)} CP</div>
+          <div className="mt-0.5 text-[#d7d4e3]">GTGD {formatBillionValue(index.totalValue)} tỷ</div>
           <div className="mt-0.5 flex gap-2">
             <span className="text-price-up">↑ {formatCount(index.upCount)}</span>
             <span className="text-price-ref">▬ {formatCount(index.noChangeCount)}</span>
@@ -84,9 +100,9 @@ export function MarketIndexTable({ indices, isError, isLoading }: { indices: Mar
         <span className="truncate">⚙ Chỉ số</span>
         <span className="truncate text-right">Điểm</span>
         <span className="truncate text-right">+ / -</span>
-        <span className="truncate text-right" title="KLGD (Triệu)">KLGD (Tr)</span>
-        <span className="truncate text-right">GTGD (Tỷ)</span>
-        <span className="truncate text-right" title="CK Tăng/Giảm">CK T/G</span>
+        <span className="truncate text-right" title="KLGD (Triệu)">KLGD(triệu)</span>
+        <span className="truncate text-right">GTGD(tỷ)</span>
+        <span className="truncate text-right" title="CK Tăng/Giảm">CK Tăng/Giảm</span>
       </div>
       {isLoading ? <div className="px-3 py-8 text-center text-market-text-muted">Đang tải chỉ số</div> : null}
       {isError ? <div className="px-3 py-8 text-center text-state-error">Không tải được chỉ số</div> : null}
@@ -101,7 +117,7 @@ export function MarketIndexTable({ indices, isError, isLoading }: { indices: Mar
               <span className={`truncate text-right ${classForChange(index.change)}`}>{formatIndexValue(index.value)}</span>
               <span className={`truncate text-right ${classForChange(index.change)}`}>{formatSigned(index.change)}</span>
               <span className="truncate text-right text-[#d7d4e3]">{formatMillion(index.totalVolume)}</span>
-              <span className="truncate text-right text-[#d7d4e3]">{formatBillion(index.totalValue)}</span>
+              <span className="truncate text-right text-[#d7d4e3]">{formatBillionValue(index.totalValue)}</span>
               <span
                 className="grid min-w-0 grid-cols-[1fr_1fr_1fr] items-center gap-1 text-right"
                 data-testid={`market-index-breadth-${index.indexName}`}
@@ -222,6 +238,8 @@ const miniChart = {
   width: 240,
 } as const;
 
+const realtimeIndexNames = new Set<string>(defaultMarketIndexNames);
+
 type MiniChartPoint = {
   x: number;
   y: number;
@@ -255,19 +273,19 @@ export type MiniChartGeometry = {
 };
 
 export function createMiniChartGeometry(bars: OhlcBar[], referenceValue: number | null | undefined): MiniChartGeometry | null {
+  const reference = typeof referenceValue === 'number' && Number.isFinite(referenceValue) ? referenceValue : null;
   const sessionBars = filterVietnamMarketSessionBars(bars).filter(
     (bar): bar is OhlcBar & { close: number } => typeof bar.close === 'number' && Number.isFinite(bar.close),
-  );
+  ).filter((bar) => isPlausibleIndexClose(bar.close, reference));
 
   if (sessionBars.length === 0) {
     return null;
   }
 
-  const sessionRange = createVietnamMarketSessionRange(new Date(sessionBars[0].time));
+  const sessionRange = createVietnamFullMarketSessionRange(new Date(sessionBars[0].time));
   const sessionStart = sessionRange.from.getTime();
   const sessionEnd = sessionRange.to.getTime();
   const plotWidth = miniChart.width - miniChart.left * 2;
-  const reference = typeof referenceValue === 'number' && Number.isFinite(referenceValue) ? referenceValue : null;
   const closes = sessionBars.map((bar) => bar.close);
   const priceValues = reference == null ? closes : [...closes, reference];
   const min = Math.min(...priceValues);
@@ -327,6 +345,14 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function isPlausibleIndexClose(close: number, reference: number | null) {
+  if (reference == null || reference <= 0) {
+    return true;
+  }
+
+  return close >= reference * 0.5 && close <= reference * 1.5;
+}
+
 function mergeIndexUpdate(indices: MarketIndex[], update: MarketIndexUpdate) {
   const current = new Map(indices.map((index) => [index.indexName, index]));
   current.set(update.indexName, { ...(current.get(update.indexName) ?? createEmptyIndex(update.indexName)), ...update });
@@ -336,6 +362,29 @@ function mergeIndexUpdate(indices: MarketIndex[], update: MarketIndexUpdate) {
 function orderIndices(indices: MarketIndex[]) {
   const byName = new Map(indices.map((index) => [index.indexName, index]));
   return defaultMarketIndexNames.map((indexName) => byName.get(indexName) ?? createEmptyIndex(indexName));
+}
+
+function mergeOhlcMaps(baseOhlcByIndexName: Map<string, OhlcBar[]>, realtimeOhlcByIndexName: Map<string, OhlcBar[]>) {
+  let merged = new Map(Array.from(baseOhlcByIndexName, ([indexName, bars]) => [indexName, [...bars]]));
+  for (const realtimeBars of realtimeOhlcByIndexName.values()) {
+    for (const realtimeBar of realtimeBars) {
+      merged = mergeIndexOhlcUpdate(merged, {
+        ...realtimeBar,
+        isClosed: false,
+        type: 'INDEX',
+        updatedAt: realtimeBar.time,
+      });
+    }
+  }
+
+  return merged;
+}
+
+function isRealtimeIndexOhlcUpdate(update: MarketOhlcUpdate | null): update is MarketOhlcUpdate {
+  return update != null
+    && update.type.trim().toUpperCase() === 'INDEX'
+    && update.resolution.trim().toUpperCase() === '1'
+    && realtimeIndexNames.has(update.symbol.trim().toUpperCase());
 }
 
 function createEmptyIndex(indexName: string): MarketIndex {
@@ -404,6 +453,6 @@ function formatMillion(value: number | null | undefined) {
   return value == null ? '-' : (value / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 3 });
 }
 
-function formatBillion(value: number | null | undefined) {
-  return value == null ? '-' : (value / 1_000_000_000).toLocaleString('en-US', { maximumFractionDigits: 3 });
+function formatBillionValue(value: number | null | undefined) {
+  return value == null ? '-' : value.toLocaleString('en-US', { maximumFractionDigits: 3 });
 }

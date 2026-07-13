@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WatchlistPanel } from './WatchlistPanel';
 import { renderWithQueryClient } from '../../test/renderWithQueryClient';
+import { DemoSessionControls } from '../auth/DemoSessionControls';
 
 describe('WatchlistPanel', () => {
   afterEach(() => {
@@ -13,10 +14,10 @@ describe('WatchlistPanel', () => {
     const fetchMock = vi.fn(createWatchlistFetch());
     vi.stubGlobal('fetch', fetchMock);
 
-    renderWithQueryClient(<WatchlistPanel />);
+    renderWithQueryClient(<><DemoSessionControls /><WatchlistPanel /></>);
 
     fireEvent.click(screen.getByRole('button', { name: 'Danh muc cua toi' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Dang nhap demo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/auth/demo-login', expect.objectContaining({ method: 'POST' })),
@@ -53,6 +54,14 @@ describe('WatchlistPanel', () => {
       ),
     );
     await waitFor(() => expect(screen.queryByText('HPG')).not.toBeInTheDocument());
+  });
+
+  it('keeps watchlist management gated behind the app-level login', () => {
+    renderWithQueryClient(<WatchlistPanel />);
+    fireEvent.click(screen.getByRole('button', { name: 'Danh muc cua toi' }));
+
+    expect(screen.getByText('Đăng nhập ở góc trên bên phải để quản lý danh mục theo dõi.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Them' })).not.toBeInTheDocument();
   });
 });
 

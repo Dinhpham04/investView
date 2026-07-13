@@ -18,12 +18,14 @@ import {
   type ChartTimeframe,
   type SymbolDetailSelection,
 } from './useSymbolDetailQueries';
+import type { SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketQuote, MarketTrade, MarketTradeUpdate, OhlcBar, PriceLevel, SymbolDetail } from '../../shared/types/market';
 
 type SymbolDetailPanelProps = {
   liveQuote?: MarketQuote | null;
   liveTrade?: MarketTradeUpdate | null;
   onClose: () => void;
+  onOhlcSubscriptionChange?: (subscription: SymbolOhlcSubscription | null) => void;
   selection: SymbolDetailSelection | null;
 };
 
@@ -36,7 +38,13 @@ type LatestTradeRow = MarketTrade & {
 
 type PriceBand = Pick<SymbolDetail, 'ceilingPrice' | 'floorPrice' | 'referencePrice'>;
 
-export function SymbolDetailPanel({ liveQuote = null, liveTrade = null, onClose, selection }: SymbolDetailPanelProps) {
+export function SymbolDetailPanel({
+  liveQuote = null,
+  liveTrade = null,
+  onClose,
+  onOhlcSubscriptionChange,
+  selection,
+}: SymbolDetailPanelProps) {
   const [chartTimeframe, setChartTimeframe] = useState<ChartTimeframe>(defaultChartTimeframe);
   const [realtimeTrades, setRealtimeTrades] = useState<MarketTrade[]>([]);
   const lastRealtimeTradeKeyRef = useRef<string | null>(null);
@@ -49,6 +57,22 @@ export function SymbolDetailPanel({ liveQuote = null, liveTrade = null, onClose,
     () => mergeLatestTrades(realtimeTrades, latestTradesQuery.data ?? []),
     [latestTradesQuery.data, realtimeTrades],
   );
+
+  useEffect(() => {
+    if (selection == null) {
+      onOhlcSubscriptionChange?.(null);
+      return undefined;
+    }
+
+    onOhlcSubscriptionChange?.({
+      resolutions: [chartTimeframe.resolution],
+      symbol: selection.symbol,
+    });
+
+    return () => {
+      onOhlcSubscriptionChange?.(null);
+    };
+  }, [chartTimeframe.resolution, onOhlcSubscriptionChange, selection]);
 
   useEffect(() => {
     lastRealtimeTradeKeyRef.current = null;
@@ -76,7 +100,7 @@ export function SymbolDetailPanel({ liveQuote = null, liveTrade = null, onClose,
 
   return (
     <aside
-      className="fixed inset-x-3 top-[calc(50%-12px)] z-50 flex h-[min(760px,calc(100vh-96px))] min-h-0 -translate-y-1/2 flex-col overflow-hidden border border-[#363341] bg-[#1c1928] text-white shadow-2xl"
+      className="fixed inset-x-3 top-[calc(50%-12px)] z-150 flex h-[min(760px,calc(100vh-96px))] min-h-0 -translate-y-1/2 flex-col overflow-hidden border border-[#363341] bg-[#1c1928] text-white shadow-2xl"
       data-testid="symbol-detail-panel"
     >
       <SymbolOverlayHeader
@@ -146,9 +170,6 @@ function SymbolOverlayHeader({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex min-w-0 items-center gap-2">
-            <button className="grid size-8 place-items-center border border-[#4b4658] bg-[#242133] text-lg text-white" type="button" title="Tìm mã">
-              ⌕
-            </button>
             <h3 className="truncate text-xl font-extrabold tracking-wide text-white">
               {selection.symbol}
               {detail ? <span className="ml-4 text-sm font-bold">({detail.marketId}) {displayName}</span> : null}
@@ -157,45 +178,45 @@ function SymbolOverlayHeader({
             {isError ? <span className="text-xs font-semibold text-state-error">Lỗi dữ liệu</span> : null}
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(260px,360px)_1fr]">
-            <div>
-              <div className={`text-5xl font-light leading-none tabular-nums ${priceTone}`}>{formatPrice(detail?.lastPrice)}</div>
-              <div className={`mt-1 flex items-center gap-3 text-sm font-bold tabular-nums ${classForChange(detail?.change)}`}>
-                <span>{formatChange(detail?.change, detail?.referencePrice)}</span>
-                <span>{formatPercent(detail?.changePercent)}</span>
-              </div>
-              <div className="mt-2 text-sm font-bold">
-                <span className="text-white">MỞ CỬA/Trung bình:</span>
-                <span className={`ml-2 ${detail ? classForPrice(detail.openPrice, detail) : 'text-[#c8c6d4]'}`}>{formatPrice(detail?.openPrice)}</span>
-                <span className={`ml-1 ${detail ? classForPrice(detail.lastPrice, detail) : 'text-[#c8c6d4]'}`}>/{formatPrice(detail?.lastPrice)}</span>
+          <div className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-2 lg:grid-cols-[280px_minmax(200px,1fr)_minmax(360px,430px)] lg:grid-rows-[36px_20px]">
+            <div className="flex min-w-0 items-start gap-4 tabular-nums lg:col-start-1 lg:row-start-1">
+              <div className={`text-4xl font-light leading-none ${priceTone}`}>{formatPrice(detail?.lastPrice)}</div>
+              <div className={`text-sm leading-[18px] ${classForChange(detail?.change)}`}>
+                <div>{formatChange(detail?.change, detail?.referencePrice)}</div>
+                <div>{formatPercent(detail?.changePercent)}</div>
               </div>
             </div>
 
-            <div className="grid content-end gap-3 md:grid-cols-[minmax(180px,1fr)_360px]">
-              <div className="self-end text-sm font-bold">
-                <span className="text-white">THẤP/CAO:</span>
-                <span className={`ml-3 ${detail ? classForPrice(detail.lowPrice, detail) : 'text-[#c8c6d4]'}`}>{formatPrice(detail?.lowPrice)}</span>
-                <span className={`ml-1 ${detail ? classForPrice(detail.highPrice, detail) : 'text-[#c8c6d4]'}`}>/{formatPrice(detail?.highPrice)}</span>
-              </div>
-              <div className="grid grid-cols-4 gap-5 text-center text-sm font-bold">
-                <HeaderMetric label="Trần" value={formatPrice(detail?.ceilingPrice)} valueClass="text-price-ceiling" />
-                <HeaderMetric label="Sàn" value={formatPrice(detail?.floorPrice)} valueClass="text-price-floor" />
-                <HeaderMetric label="Tham chiếu" value={formatPrice(detail?.referencePrice)} valueClass="text-price-ref" />
-                <HeaderMetric label="TỔNG KL:" value={formatQuantity(detail?.totalVolume)} valueClass="text-white" />
+            <div className="text-sm leading-5 lg:col-start-1 lg:row-start-2">
+              <span className="text-[#c8c6d4]">MỞ CỬA/Trung bình:</span>
+              <span className={`ml-2 ${detail ? classForPrice(detail.openPrice, detail) : 'text-[#c8c6d4]'}`}>{formatPrice(detail?.openPrice)}</span>
+              <span className={`ml-1 ${detail ? classForPrice(detail.lastPrice, detail) : 'text-[#c8c6d4]'}`}>/{formatPrice(detail?.lastPrice)}</span>
+            </div>
+
+            <div className="text-sm leading-5 lg:col-start-2 lg:row-start-2">
+              <span className="text-[#c8c6d4]">Thấp/Cao:</span>
+              <span className={`ml-3 ${detail ? classForPrice(detail.lowPrice, detail) : 'text-[#c8c6d4]'}`}>{formatPrice(detail?.lowPrice)}</span>
+              <span className={`ml-1 ${detail ? classForPrice(detail.highPrice, detail) : 'text-[#c8c6d4]'}`}>/{formatPrice(detail?.highPrice)}</span>
+            </div>
+
+            <div className="grid grid-cols-[repeat(3,minmax(76px,1fr))] grid-rows-[36px_20px] gap-x-4 gap-y-2 text-center text-sm lg:col-start-3 lg:row-span-2 lg:row-start-1">
+              <HeaderMetric label="Trần" value={formatPrice(detail?.ceilingPrice)} valueClass="text-price-ceiling" />
+              <HeaderMetric label="Sàn" value={formatPrice(detail?.floorPrice)} valueClass="text-price-floor" />
+              <HeaderMetric label="Tham chiếu" value={formatPrice(detail?.referencePrice)} valueClass="text-price-ref" />
+              <div className="col-span-3 flex items-center justify-end gap-7 text-left leading-5">
+                <span className="text-[#c8c6d4]">TỔNG KL:</span>
+                <span className="min-w-[96px] text-right tabular-nums text-white">{formatQuantity(detail?.totalVolume)}</span>
               </div>
             </div>
           </div>
         </div>
 
         <div className="flex shrink-0 items-start gap-2">
-          <button className="h-9 bg-[#353244] px-4 text-sm font-bold text-white hover:bg-[#454257]" type="button">
-            Phân tích cơ bản
-          </button>
-          <button className="h-9 bg-[#16a77e] px-8 text-sm font-bold text-white hover:bg-[#1db98e]" type="button">
+          <button className="h-9 bg-[#16a77e] px-8 text-sm font-bold rounded-sm text-white hover:bg-[#1db98e]" type="button">
             Đặt lệnh
           </button>
           <button className="grid size-9 place-items-center text-3xl leading-none text-[#c8c6d4] hover:text-white" type="button" onClick={onClose} aria-label="Đóng">
-            ×
+            X
           </button>
         </div>
       </div>
@@ -205,7 +226,7 @@ function SymbolOverlayHeader({
 
 function HeaderMetric({ label, value, valueClass }: { label: string; value: string; valueClass: string }) {
   return (
-    <div>
+    <div className="leading-4 flex flex-col items-end">
       <div className="text-[#f2f2f6]">{label}</div>
       <div className={`mt-1 tabular-nums ${valueClass}`}>{value}</div>
     </div>
@@ -267,7 +288,7 @@ function MarketDepthPanel({ detail }: { detail: SymbolDetail }) {
           <div className="bg-[#00b98a]" style={{ width: `${bidPercent}%` }} />
           <div className="bg-[#e01f3b]" style={{ width: `${100 - bidPercent}%` }} />
         </div>
-        <div className="flex h-[52px] items-center justify-between px-2 text-sm font-bold">
+        <div className="flex h-[52px] items-center justify-between px-2 text-sm">
           <span>Dư mua: {formatQuantity(bidTotal)}</span>
           <span>Dư bán: {formatQuantity(askTotal)}</span>
         </div>
@@ -382,7 +403,7 @@ function LatestTradesPanel({
           </button>
         }
       />
-      <div className="grid h-9 grid-cols-3 items-center gap-2 border-b border-[#32303d] px-2 text-sm font-bold tabular-nums">
+      <div className="grid h-9 grid-cols-3 items-center gap-2 border-b border-[#32303d] px-2 text-sm tabular-nums">
         <span>KL: {formatCompactQuantity(detail.totalVolume)}</span>
         <span className="text-price-up">M: {formatCompactQuantity(totals.buy)}</span>
         <span className="text-price-down">B: {formatCompactQuantity(totals.sell)}</span>

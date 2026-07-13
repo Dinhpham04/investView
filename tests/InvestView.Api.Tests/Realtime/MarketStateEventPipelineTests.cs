@@ -204,11 +204,49 @@ public sealed class MarketStateEventPipelineTests
         Assert.Empty(broadcaster.QuoteUpdates);
         Assert.Empty(broadcaster.TradeUpdates);
         Assert.Empty(broadcaster.MarketIndexUpdates);
+        Assert.Empty(broadcaster.OhlcUpdates);
 
         var localBars = await localMirror.GetOhlcBarsAsync("SSI", "1", barTime.AddMinutes(-1), barTime.AddMinutes(1), CancellationToken.None);
         var sharedBars = await sharedStore.GetOhlcBarsAsync("SSI", "1", barTime.AddMinutes(-1), barTime.AddMinutes(1), CancellationToken.None);
         Assert.Equal(27m, Assert.Single(localBars).Close);
         Assert.Equal(27m, Assert.Single(sharedBars).Close);
+    }
+
+    [Fact]
+    public async Task PublishOhlcUpdateAsync_WhenIndexUpdate_BroadcastsIndexOhlc()
+    {
+        var sharedStore = new InMemoryMarketStateStore();
+        var localMirror = new InMemoryMarketStateStore();
+        var broadcaster = new RecordingQuoteBroadcaster();
+        var subscriber = new MarketStateEventSubscriber(
+            localMirror,
+            sharedStore,
+            broadcaster,
+            NullLogger<MarketStateEventSubscriber>.Instance);
+        var publisher = new MarketStateEventPublisher(
+            sharedStore,
+            new InProcessMarketStateEventBus([subscriber]));
+        var barTime = new DateTimeOffset(2026, 7, 8, 3, 30, 0, TimeSpan.Zero);
+        var update = new MarketOhlcUpdateDto(
+            "vnindex",
+            "1",
+            barTime,
+            Open: 1830m,
+            High: 1835m,
+            Low: 1829m,
+            Close: 1834m,
+            Volume: 1_000_000,
+            Type: "index",
+            IsClosed: false,
+            UpdatedAt: barTime);
+
+        await publisher.PublishOhlcUpdateAsync(update, CancellationToken.None);
+
+        var broadcast = Assert.Single(broadcaster.OhlcUpdates);
+        Assert.Equal("VNINDEX", broadcast.Symbol);
+        Assert.Equal("INDEX", broadcast.Type);
+        Assert.Equal("1", broadcast.Resolution);
+        Assert.Equal(1834m, broadcast.Close);
     }
 
     [Fact]
@@ -238,6 +276,10 @@ public sealed class MarketStateEventPipelineTests
         Assert.Equal("DVX", localSession.MarketId);
         Assert.Equal("DVX", sharedSession.MarketId);
         Assert.Equal("40", localSession.TradingSessionId);
+        var broadcast = Assert.Single(broadcaster.MarketSessionUpdates);
+        Assert.Equal("G1", broadcast.BoardId);
+        Assert.Equal(MarketSessionPhases.Continuous, broadcast.Phase);
+        Assert.Equal(MarketSessionSources.Realtime, broadcast.Source);
     }
 
     [Fact]
@@ -368,6 +410,8 @@ public sealed class MarketStateEventPipelineTests
         public List<MarketQuoteUpdateDto> QuoteUpdates { get; } = [];
         public List<MarketTradeUpdateDto> TradeUpdates { get; } = [];
         public List<MarketIndexUpdateDto> MarketIndexUpdates { get; } = [];
+        public List<MarketOhlcUpdateDto> OhlcUpdates { get; } = [];
+        public List<MarketSessionUpdateDto> MarketSessionUpdates { get; } = [];
 
         public Task BroadcastQuoteUpdateAsync(MarketQuoteUpdateDto update, CancellationToken cancellationToken)
         {
@@ -384,6 +428,18 @@ public sealed class MarketStateEventPipelineTests
         public Task BroadcastMarketIndexUpdateAsync(MarketIndexUpdateDto update, CancellationToken cancellationToken)
         {
             MarketIndexUpdates.Add(update);
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastOhlcUpdateAsync(MarketOhlcUpdateDto update, CancellationToken cancellationToken)
+        {
+            OhlcUpdates.Add(update);
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastMarketSessionUpdateAsync(MarketSessionUpdateDto update, CancellationToken cancellationToken)
+        {
+            MarketSessionUpdates.Add(update);
             return Task.CompletedTask;
         }
 

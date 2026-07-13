@@ -279,6 +279,16 @@ public sealed class MockQuoteStreamPublisherTests
             return Task.CompletedTask;
         }
 
+        public Task BroadcastOhlcUpdateAsync(MarketOhlcUpdateDto update, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task BroadcastMarketSessionUpdateAsync(MarketSessionUpdateDto update, CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task BroadcastStreamStatusAsync(QuoteStreamStatusDto status, CancellationToken cancellationToken)
         {
             Statuses.Add(status);

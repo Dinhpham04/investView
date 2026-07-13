@@ -7,6 +7,11 @@ public interface IMarketQuoteSubscriptionRegistry
         string? boardId,
         IReadOnlyCollection<string>? symbols);
 
+    MarketQuoteSubscriptionSnapshot SetConnectionOhlcSubscription(
+        string connectionId,
+        string? symbol,
+        IReadOnlyCollection<string>? resolutions);
+
     MarketQuoteSubscriptionSnapshot RemoveConnection(string connectionId);
 
     MarketQuoteSubscriptionSnapshot GetSnapshot();
@@ -25,11 +30,16 @@ public sealed record MarketQuoteConnectionSubscriptionChange(
 
 public sealed record MarketQuoteSubscriptionSnapshot(
     IReadOnlyList<MarketQuoteBoardSubscription> Boards,
+    IReadOnlyList<MarketOhlcSubscription> OhlcSubscriptions,
     long Version)
 {
-    public static MarketQuoteSubscriptionSnapshot Empty { get; } = new([], 0);
+    public static MarketQuoteSubscriptionSnapshot Empty { get; } = new([], [], 0);
 }
 
 public sealed record MarketQuoteBoardSubscription(
     string BoardId,
     IReadOnlyList<string> Symbols);
+
+public sealed record MarketOhlcSubscription(
+    string Symbol,
+    IReadOnlyList<string> Resolutions);

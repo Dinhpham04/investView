@@ -145,25 +145,24 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
         var normalizedSymbol = NormalizeToken(symbol, string.Empty);
         var normalizedResolution = NormalizeToken(resolution, "1");
 
-        var localBars = await _localMirror.GetOhlcBarsAsync(
-            normalizedSymbol,
-            normalizedResolution,
-            from,
-            to,
-            cancellationToken);
-        if (localBars.Count > 0)
+        if (await _localMirror.HasOhlcCoverageAsync(normalizedSymbol, normalizedResolution, from, to, cancellationToken))
         {
-            return localBars;
+            return await _localMirror.GetOhlcBarsAsync(
+                normalizedSymbol,
+                normalizedResolution,
+                from,
+                to,
+                cancellationToken);
         }
 
-        var sharedBars = await _sharedStateStore.GetOhlcBarsAsync(
-            normalizedSymbol,
-            normalizedResolution,
-            from,
-            to,
-            cancellationToken);
-        if (sharedBars.Count > 0)
+        if (await _sharedStateStore.HasOhlcCoverageAsync(normalizedSymbol, normalizedResolution, from, to, cancellationToken))
         {
+            var sharedBars = await _sharedStateStore.GetOhlcBarsAsync(
+                normalizedSymbol,
+                normalizedResolution,
+                from,
+                to,
+                cancellationToken);
             await _localMirror.UpsertOhlcBarsAsync(
                 normalizedSymbol,
                 normalizedResolution,
@@ -180,23 +179,20 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
             from,
             to,
             cancellationToken);
-        if (fallbackBars.Count > 0)
-        {
-            await _sharedStateStore.UpsertOhlcBarsAsync(
-                normalizedSymbol,
-                normalizedResolution,
-                from,
-                to,
-                fallbackBars,
-                cancellationToken);
-            await _localMirror.UpsertOhlcBarsAsync(
-                normalizedSymbol,
-                normalizedResolution,
-                from,
-                to,
-                fallbackBars,
-                cancellationToken);
-        }
+        await _sharedStateStore.UpsertOhlcBarsAsync(
+            normalizedSymbol,
+            normalizedResolution,
+            from,
+            to,
+            fallbackBars,
+            cancellationToken);
+        await _localMirror.UpsertOhlcBarsAsync(
+            normalizedSymbol,
+            normalizedResolution,
+            from,
+            to,
+            fallbackBars,
+            cancellationToken);
 
         return fallbackBars;
     }
@@ -235,25 +231,24 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
         var normalizedIndexName = NormalizeToken(indexName, string.Empty);
         var normalizedResolution = NormalizeToken(resolution, "1");
 
-        var localBars = await _localMirror.GetIndexOhlcBarsAsync(
-            normalizedIndexName,
-            normalizedResolution,
-            from,
-            to,
-            cancellationToken);
-        if (localBars.Count > 0)
+        if (await _localMirror.HasIndexOhlcCoverageUntilAsync(normalizedIndexName, normalizedResolution, from, to, cancellationToken))
         {
-            return localBars;
+            return await _localMirror.GetIndexOhlcBarsAsync(
+                normalizedIndexName,
+                normalizedResolution,
+                from,
+                to,
+                cancellationToken);
         }
 
-        var sharedBars = await _sharedStateStore.GetIndexOhlcBarsAsync(
-            normalizedIndexName,
-            normalizedResolution,
-            from,
-            to,
-            cancellationToken);
-        if (sharedBars.Count > 0)
+        if (await _sharedStateStore.HasIndexOhlcCoverageUntilAsync(normalizedIndexName, normalizedResolution, from, to, cancellationToken))
         {
+            var sharedBars = await _sharedStateStore.GetIndexOhlcBarsAsync(
+                normalizedIndexName,
+                normalizedResolution,
+                from,
+                to,
+                cancellationToken);
             await _localMirror.UpsertIndexOhlcBarsAsync(
                 normalizedIndexName,
                 normalizedResolution,
@@ -270,23 +265,20 @@ public sealed class MarketStateBackedMarketDataProvider : IMarketDataProvider
             from,
             to,
             cancellationToken);
-        if (fallbackBars.Count > 0)
-        {
-            await _sharedStateStore.UpsertIndexOhlcBarsAsync(
-                normalizedIndexName,
-                normalizedResolution,
-                from,
-                to,
-                fallbackBars,
-                cancellationToken);
-            await _localMirror.UpsertIndexOhlcBarsAsync(
-                normalizedIndexName,
-                normalizedResolution,
-                from,
-                to,
-                fallbackBars,
-                cancellationToken);
-        }
+        await _sharedStateStore.UpsertIndexOhlcBarsAsync(
+            normalizedIndexName,
+            normalizedResolution,
+            from,
+            to,
+            fallbackBars,
+            cancellationToken);
+        await _localMirror.UpsertIndexOhlcBarsAsync(
+            normalizedIndexName,
+            normalizedResolution,
+            from,
+            to,
+            fallbackBars,
+            cancellationToken);
 
         return fallbackBars;
     }

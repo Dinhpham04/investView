@@ -1,3 +1,24 @@
+export class HttpError extends Error {
+  readonly status: number;
+  readonly statusText: string;
+
+  constructor(status: number, statusText: string) {
+    super(`Request failed: ${status} ${statusText}`);
+    this.name = 'HttpError';
+    this.status = status;
+    this.statusText = statusText;
+  }
+}
+
+const unauthorizedSubscribers = new Set<() => void>();
+
+export function subscribeToUnauthorized(subscriber: () => void) {
+  unauthorizedSubscribers.add(subscriber);
+  return () => {
+    unauthorizedSubscribers.delete(subscriber);
+  };
+}
+
 export async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await request(url, init);
   return response.json() as Promise<T>;
@@ -34,7 +55,13 @@ async function request(url: string, init?: RequestInit): Promise<Response> {
   });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status} ${response.statusText}`);
+    if (response.status === 401) {
+      for (const subscriber of unauthorizedSubscribers) {
+        subscriber();
+      }
+    }
+
+    throw new HttpError(response.status, response.statusText);
   }
 
   return response;

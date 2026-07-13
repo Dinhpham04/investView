@@ -12,12 +12,11 @@ export function WatchlistPanel() {
     error,
     isAdding,
     isLoading,
-    isLoggingIn,
     isRemoving,
     items,
-    login,
     removeItem,
     session,
+    status,
   } = useWatchlist();
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -64,17 +63,12 @@ export function WatchlistPanel() {
           </div>
 
           <div className="space-y-3 p-3">
-            {session == null ? (
-              <button
-                className="h-8 w-full border border-market-border-strong bg-market-surface-2 px-3 text-[12px] font-bold text-market-text hover:border-focus-ring"
-                disabled={isLoggingIn}
-                type="button"
-                onClick={() => {
-                  void login().catch(() => undefined);
-                }}
-              >
-                {isLoggingIn ? 'Dang nhap...' : 'Dang nhap demo'}
-              </button>
+            {status === 'checking' ? (
+              <p className="text-[11px] font-semibold text-market-text-muted">Đang xác minh phiên đăng nhập...</p>
+            ) : session == null ? (
+              <p className="text-[11px] font-semibold text-market-text-muted">
+                Đăng nhập ở góc trên bên phải để quản lý danh mục theo dõi.
+              </p>
             ) : (
               <>
                 <form className="flex items-end gap-2" onSubmit={handleSubmit}>

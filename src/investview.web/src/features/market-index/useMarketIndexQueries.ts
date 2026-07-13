@@ -6,9 +6,10 @@ import { defaultMarketIndexNames } from './marketIndexLists';
 const vietnamTimeZone = 'Asia/Ho_Chi_Minh';
 const sessionStartMinute = 9 * 60;
 const sessionEndMinute = 15 * 60;
+const marketIndexOhlcBackfillRefetchIntervalMs = 60_000;
 
 export function useMarketIndexQueries(indexNames: readonly string[] = defaultMarketIndexNames) {
-  const marketSessionRange = createVietnamMarketSessionRange();
+  const marketSessionRange = createVietnamFullMarketSessionRange();
   const indicesQuery = useQuery({
     queryKey: ['market-indices', indexNames],
     queryFn: () => getMarketIndices({ names: [...indexNames] }),
@@ -23,13 +24,20 @@ export function useMarketIndexQueries(indexNames: readonly string[] = defaultMar
         marketSessionRange.from.toISOString(),
         marketSessionRange.to.toISOString(),
       ],
-      queryFn: () => getIndexOhlc({
-        from: marketSessionRange.from.toISOString(),
-        resolution: '1',
-        symbol: indexName,
-        to: marketSessionRange.to.toISOString(),
-      }),
-      staleTime: 30_000,
+      queryFn: () => {
+        const backfillRange = createVietnamMarketSessionRange();
+
+        return getIndexOhlc({
+          from: backfillRange.from.toISOString(),
+          resolution: '1',
+          symbol: indexName,
+          to: backfillRange.to.toISOString(),
+        });
+      },
+      refetchInterval: () => getMarketIndexOhlcBackfillRefetchInterval(),
+      refetchOnReconnect: false,
+      refetchOnWindowFocus: false,
+      staleTime: marketIndexOhlcBackfillRefetchIntervalMs,
     })),
   });
   const ohlcByIndexName = new Map<string, OhlcBar[]>();
@@ -46,12 +54,44 @@ export function useMarketIndexQueries(indexNames: readonly string[] = defaultMar
 }
 
 export function createVietnamMarketSessionRange(now = new Date()) {
+  const fullSessionRange = createVietnamFullMarketSessionRange(now);
+  const currentTime = now.getTime();
+  const sessionStartTime = fullSessionRange.from.getTime();
+  const sessionEndTime = fullSessionRange.to.getTime();
+
+  if (currentTime <= sessionStartTime) {
+    return {
+      from: fullSessionRange.from,
+      to: fullSessionRange.from,
+    };
+  }
+
+  if (currentTime >= sessionEndTime) {
+    return fullSessionRange;
+  }
+
+  return {
+    from: fullSessionRange.from,
+    to: floorToMinute(now),
+  };
+}
+
+export function createVietnamFullMarketSessionRange(now = new Date()) {
   const dateParts = getVietnamDateParts(now);
 
   return {
     from: new Date(`${dateParts.year}-${dateParts.month}-${dateParts.day}T09:00:00+07:00`),
     to: new Date(`${dateParts.year}-${dateParts.month}-${dateParts.day}T15:00:00+07:00`),
   };
+}
+
+export function getMarketIndexOhlcBackfillRefetchInterval(now = new Date()) {
+  const fullSessionRange = createVietnamFullMarketSessionRange(now);
+  const currentTime = now.getTime();
+
+  return currentTime >= fullSessionRange.from.getTime() && currentTime <= fullSessionRange.to.getTime()
+    ? marketIndexOhlcBackfillRefetchIntervalMs
+    : false;
 }
 
 export function filterVietnamMarketSessionBars(bars: OhlcBar[]) {
@@ -95,6 +135,12 @@ function getVietnamTimeParts(date: Date) {
     hour: Number.parseInt(getDateTimePart(parts, 'hour'), 10),
     minute: Number.parseInt(getDateTimePart(parts, 'minute'), 10),
   };
+}
+
+function floorToMinute(date: Date) {
+  const floored = new Date(date);
+  floored.setSeconds(0, 0);
+  return floored;
 }
 
 function getDateTimePart(parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes) {

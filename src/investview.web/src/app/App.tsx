@@ -1,7 +1,7 @@
 import { AllCommunityModule } from 'ag-grid-community';
 import { AgGridProvider } from 'ag-grid-react';
+import { DemoSessionControls } from '../features/auth/DemoSessionControls';
 import { MarketBoard } from '../features/market-board/MarketBoard';
-import { PortfolioPanel } from '../features/portfolio/PortfolioPanel';
 import { SystemStatusIndicator } from '../features/system-status/SystemStatus';
 
 const agGridModules = [AllCommunityModule];
@@ -22,11 +22,11 @@ export function App() {
             <span className="rounded-sm border border-market-border bg-market-surface-2 px-2 py-1 text-market-text-muted">
               Simulated trading
             </span>
+            <DemoSessionControls />
           </div>
         </header>
 
         <section className="grid min-h-[calc(100svh-45px)] grid-cols-1" aria-label="InvestView workspace">
-          <PortfolioPanel />
           <MarketBoard />
         </section>
       </main>

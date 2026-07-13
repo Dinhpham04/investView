@@ -34,6 +34,23 @@ public sealed class MarketQuoteStreamScheduleTests
     }
 
     [Fact]
+    public void Evaluate_WhenInsideStreamingWindowAndHasOhlcDemand_ReturnsConnect()
+    {
+        var schedule = CreateSchedule();
+        var snapshot = new MarketQuoteSubscriptionSnapshot(
+            Boards: [],
+            OhlcSubscriptions: [new MarketOhlcSubscription("HPG", ["1D"])],
+            Version: 1);
+
+        var decision = schedule.Evaluate(
+            snapshot,
+            new DateTimeOffset(2026, 7, 8, 3, 0, 0, TimeSpan.Zero));
+
+        Assert.True(decision.ShouldConnect);
+        Assert.Contains("inside streaming window", decision.Message);
+    }
+
+    [Fact]
     public void Evaluate_WhenOutsideStreamingWindow_ReturnsDoNotConnect()
     {
         var schedule = CreateSchedule();
@@ -98,6 +115,7 @@ public sealed class MarketQuoteStreamScheduleTests
     {
         return new MarketQuoteSubscriptionSnapshot(
             [new MarketQuoteBoardSubscription(boardId, symbols)],
+            OhlcSubscriptions: [],
             Version: 1);
     }
 }

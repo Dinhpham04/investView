@@ -14,6 +14,7 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
     private readonly ConcurrentDictionary<string, IReadOnlyList<OhlcBarDto>> _indexOhlcBars = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, OhlcBarDto>> _ohlcTimelineBars = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<long, OhlcBarDto>> _indexOhlcTimelineBars = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, OhlcCoverageRange> _indexOhlcCoverageRanges = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, MarketSessionUpdateDto> _sessions = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _boardSymbols = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> _marketSymbols = new(StringComparer.Ordinal);
@@ -109,6 +110,16 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
             : _ohlcTimelineBars;
 
         UpsertTimelineBars(timelines, normalizedUpdate.Symbol, normalizedUpdate.Resolution, [bar]);
+        if (normalizedUpdate.Type.Equals("INDEX", StringComparison.Ordinal))
+        {
+            ExtendExistingOhlcCoverageRange(
+                _indexOhlcCoverageRanges,
+                normalizedUpdate.Symbol,
+                normalizedUpdate.Resolution,
+                bar.Time,
+                bar.Time);
+        }
+
         return Task.FromResult(normalizedUpdate);
     }
 
@@ -289,6 +300,17 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         return Task.FromResult(GetTimelineBars(_ohlcTimelineBars, symbol, resolution, from, to));
     }
 
+    public Task<bool> HasOhlcCoverageAsync(
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_ohlcBars.ContainsKey(OhlcKey(symbol, resolution, from, to)));
+    }
+
     public Task UpsertIndexOhlcBarsAsync(
         string indexName,
         string resolution,
@@ -301,6 +323,12 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         var normalizedBars = NormalizeBars(bars);
         _indexOhlcBars[OhlcKey(indexName, resolution, from, to)] = normalizedBars;
         UpsertTimelineBars(_indexOhlcTimelineBars, indexName, resolution, normalizedBars);
+        ExtendOhlcCoverageRange(
+            _indexOhlcCoverageRanges,
+            indexName,
+            resolution,
+            from ?? normalizedBars.FirstOrDefault()?.Time,
+            to ?? normalizedBars.LastOrDefault()?.Time);
         return Task.CompletedTask;
     }
 
@@ -318,6 +346,32 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         }
 
         return Task.FromResult(GetTimelineBars(_indexOhlcTimelineBars, indexName, resolution, from, to));
+    }
+
+    public Task<bool> HasIndexOhlcCoverageAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_indexOhlcBars.ContainsKey(OhlcKey(indexName, resolution, from, to)));
+    }
+
+    public Task<bool> HasIndexOhlcCoverageUntilAsync(
+        string indexName,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var hasExactCoverage = _indexOhlcBars.ContainsKey(OhlcKey(indexName, resolution, from, to));
+        var hasRangeCoverage = _indexOhlcCoverageRanges.TryGetValue(OhlcTimelineKey(indexName, resolution), out var coverage) &&
+                               coverage.Covers(from, to);
+
+        return Task.FromResult(hasExactCoverage || hasRangeCoverage);
     }
 
     public Task<IReadOnlyList<MarketTradeDto>> GetLatestTradesAsync(
@@ -396,6 +450,42 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
         }
     }
 
+    private static void ExtendOhlcCoverageRange(
+        ConcurrentDictionary<string, OhlcCoverageRange> coverageRanges,
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to)
+    {
+        if (!from.HasValue && !to.HasValue)
+        {
+            return;
+        }
+
+        var nextFrom = from ?? to;
+        var nextTo = to ?? from;
+        coverageRanges.AddOrUpdate(
+            OhlcTimelineKey(symbol, resolution),
+            _ => new OhlcCoverageRange(nextFrom, nextTo),
+            (_, current) => current.Extend(nextFrom, nextTo));
+    }
+
+    private static void ExtendExistingOhlcCoverageRange(
+        ConcurrentDictionary<string, OhlcCoverageRange> coverageRanges,
+        string symbol,
+        string resolution,
+        DateTimeOffset? from,
+        DateTimeOffset? to)
+    {
+        var key = OhlcTimelineKey(symbol, resolution);
+        if (!coverageRanges.ContainsKey(key))
+        {
+            return;
+        }
+
+        ExtendOhlcCoverageRange(coverageRanges, symbol, resolution, from, to);
+    }
+
     private static IReadOnlyList<OhlcBarDto> GetTimelineBars(
         ConcurrentDictionary<string, ConcurrentDictionary<long, OhlcBarDto>> timelines,
         string symbol,
@@ -410,6 +500,53 @@ public sealed class InMemoryMarketStateStore : IMarketStateStore, IMarketStateMi
                 .OrderBy(bar => bar.Time)
                 .ToArray()
             : [];
+    }
+
+    private readonly record struct OhlcCoverageRange(DateTimeOffset? From, DateTimeOffset? To)
+    {
+        public bool Covers(DateTimeOffset? from, DateTimeOffset? to)
+        {
+            var coversFrom = from is null || (From.HasValue && From.Value <= from.Value);
+            var coversTo = to is null || (To.HasValue && To.Value >= to.Value);
+            return coversFrom && coversTo;
+        }
+
+        public OhlcCoverageRange Extend(DateTimeOffset? from, DateTimeOffset? to)
+        {
+            var nextFrom = Min(From, from);
+            var nextTo = Max(To, to);
+            return new OhlcCoverageRange(nextFrom, nextTo);
+        }
+
+        private static DateTimeOffset? Min(DateTimeOffset? left, DateTimeOffset? right)
+        {
+            if (!left.HasValue)
+            {
+                return right;
+            }
+
+            if (!right.HasValue)
+            {
+                return left;
+            }
+
+            return left.Value <= right.Value ? left : right;
+        }
+
+        private static DateTimeOffset? Max(DateTimeOffset? left, DateTimeOffset? right)
+        {
+            if (!left.HasValue)
+            {
+                return right;
+            }
+
+            if (!right.HasValue)
+            {
+                return left;
+            }
+
+            return left.Value >= right.Value ? left : right;
+        }
     }
 
     private static string SessionKey(string productGroupId, string boardId)

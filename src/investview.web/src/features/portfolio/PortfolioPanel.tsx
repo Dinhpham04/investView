@@ -3,19 +3,14 @@ import { formatMoney, formatOrderPrice, formatQuantity } from '../trading/tradin
 import { usePortfolio } from './usePortfolio';
 
 export function PortfolioPanel() {
-  const {
-    error: loginError,
-    isLoggingIn,
-    login,
-    session,
-  } = useDemoSession();
+  const { session, status } = useDemoSession();
   const {
     orders,
     ordersQuery,
     portfolio,
     portfolioQuery,
   } = usePortfolio();
-  const error = portfolioQuery.error ?? ordersQuery.error ?? loginError;
+  const error = portfolioQuery.error ?? ordersQuery.error;
   const isPortfolioLoading = portfolioQuery.isPending;
   const latestOrders = orders.slice(0, 4);
 
@@ -29,25 +24,20 @@ export function PortfolioPanel() {
           </p>
         </div>
 
-        {session == null ? (
-          <button
-            className="h-8 border border-market-border-strong bg-market-surface-2 px-3 text-[12px] font-bold text-market-text hover:border-focus-ring disabled:text-market-text-subtle"
-            disabled={isLoggingIn}
-            type="button"
-            onClick={() => {
-              void login().catch(() => undefined);
-            }}
-          >
-            {isLoggingIn ? 'Dang nhap...' : 'Dang nhap demo'}
-          </button>
+        {status === 'checking' ? (
+          <p className="text-[11px] font-semibold text-market-text-muted">Đang xác minh phiên đăng nhập...</p>
+        ) : session == null ? (
+          <p className="text-[11px] font-semibold text-market-text-muted">
+            Đăng nhập ở góc trên bên phải để xem tài khoản mô phỏng.
+          </p>
         ) : (
           <>
-            <Metric label="Tien mat" value={isPortfolioLoading ? 'Dang tai' : formatMoney(portfolio?.totalCash)} />
-            <Metric label="Gia tri CK" value={isPortfolioLoading ? 'Dang tai' : formatMoney(portfolio?.totalMarketValue)} />
-            <Metric label="Tong tai san" value={isPortfolioLoading ? 'Dang tai' : formatMoney(portfolio?.totalEquity)} tone="strong" />
+            <Metric label="Tien mat" value={formatPortfolioMetric(isPortfolioLoading, portfolio?.totalCash)} />
+            <Metric label="Gia tri CK" value={formatPortfolioMetric(isPortfolioLoading, portfolio?.totalMarketValue)} />
+            <Metric label="Tong tai san" value={formatPortfolioMetric(isPortfolioLoading, portfolio?.totalEquity)} tone="strong" />
             <Metric
               label="Lenh"
-              value={ordersQuery.isPending ? 'Dang tai' : `${orders.length} lenh`}
+              value={ordersQuery.isPending ? 'Dang tai' : ordersQuery.isError ? '--' : `${orders.length} lenh`}
             />
           </>
         )}
@@ -73,6 +63,14 @@ export function PortfolioPanel() {
       ) : null}
     </section>
   );
+}
+
+function formatPortfolioMetric(isLoading: boolean, value: number | null | undefined) {
+  if (isLoading) {
+    return 'Dang tai';
+  }
+
+  return value == null ? '--' : formatMoney(value);
 }
 
 function Metric({ label, value, tone = 'muted' }: { label: string; value: string; tone?: 'muted' | 'strong' }) {

@@ -85,6 +85,38 @@ public sealed class DnseWebSocketSubscriptionBuilderTests
     }
 
     [Fact]
+    public void BuildMarketIndexOhlcSubscribePayload_UsesOnlyOneMinuteResolution()
+    {
+        var openPayload = DnseWebSocketSubscriptionBuilder.BuildMarketIndexOhlcSubscribePayload(
+            indexNames: ["vnindex", "VN30"],
+            encoding: "json",
+            closed: false);
+        var closedPayload = DnseWebSocketSubscriptionBuilder.BuildMarketIndexOhlcSubscribePayload(
+            indexNames: ["vnindex", "VN30"],
+            encoding: "json",
+            closed: true);
+
+        Assert.Equal(["ohlc.1.json"], openPayload.Channels.Select(channel => channel.Name));
+        Assert.Equal(["ohlc_closed.1.json"], closedPayload.Channels.Select(channel => channel.Name));
+        Assert.All(openPayload.Channels, channel => Assert.Equal(["VN30", "VNINDEX"], channel.Symbols));
+        Assert.All(closedPayload.Channels, channel => Assert.Equal(["VN30", "VNINDEX"], channel.Symbols));
+    }
+
+    [Fact]
+    public void BuildOhlcUnsubscribePayload_UsesDnseUnsubscribeAction()
+    {
+        var payload = DnseWebSocketSubscriptionBuilder.BuildOhlcUnsubscribePayload(
+            symbols: ["ssi"],
+            resolutions: ["1d"],
+            encoding: "json",
+            closed: false);
+
+        Assert.Equal("unsubscribe", payload.Action);
+        Assert.Equal(["ohlc.1D.json"], payload.Channels.Select(channel => channel.Name));
+        Assert.Equal(["SSI"], payload.Channels[0].Symbols);
+    }
+
+    [Fact]
     public void BuildSessionSubscribePayload_UsesProductGroupBoardChannelsWithoutSymbols()
     {
         var payload = DnseWebSocketSubscriptionBuilder.BuildSessionSubscribePayload(

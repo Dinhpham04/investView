@@ -135,18 +135,20 @@ public sealed class DnseWebSocketMessageMapper
         }
 
         var resolution = GetOptionalString(root, "resolution") ?? "1";
+        var type = NormalizeMessageType(GetOptionalString(root, "type") ?? "STOCK");
+        var isIndex = type.Equals("INDEX", StringComparison.Ordinal);
         var barTime = GetOptionalTimestamp(root, "time") ?? _timeProvider.GetUtcNow();
         var updatedAt = GetOptionalTimestamp(root, "lastUpdated") ?? barTime;
         var update = new MarketOhlcUpdateDto(
             Symbol: symbol.Trim().ToUpperInvariant(),
             Resolution: resolution.Trim().ToUpperInvariant(),
             Time: barTime,
-            Open: NormalizePrice(GetOptionalDecimal(root, "open")) ?? 0m,
-            High: NormalizePrice(GetOptionalDecimal(root, "high")) ?? 0m,
-            Low: NormalizePrice(GetOptionalDecimal(root, "low")) ?? 0m,
-            Close: NormalizePrice(GetOptionalDecimal(root, "close")) ?? 0m,
+            Open: NormalizeOhlcPrice(GetOptionalDecimal(root, "open"), isIndex) ?? 0m,
+            High: NormalizeOhlcPrice(GetOptionalDecimal(root, "high"), isIndex) ?? 0m,
+            Low: NormalizeOhlcPrice(GetOptionalDecimal(root, "low"), isIndex) ?? 0m,
+            Close: NormalizeOhlcPrice(GetOptionalDecimal(root, "close"), isIndex) ?? 0m,
             Volume: ScaleQuantity(GetOptionalLong(root, "volume")) ?? 0,
-            Type: GetOptionalString(root, "type") ?? "STOCK",
+            Type: type,
             IsClosed: isClosed,
             UpdatedAt: updatedAt);
 
@@ -191,7 +193,7 @@ public sealed class DnseWebSocketMessageMapper
             HighValue: GetOptionalDecimal(root, "highestValueIndexes"),
             LowValue: GetOptionalDecimal(root, "lowestValueIndexes"),
             TotalVolume: GetOptionalLong(root, "totalVolumeTraded"),
-            TotalValue: GetOptionalDecimal(root, "grossTradeAmount"),
+            TotalValue: GetMarketIndexTotalValue(root),
             UpCount: GetOptionalInt(root, "fluctuationUpIssueCount"),
             DownCount: GetOptionalInt(root, "fluctuationDownIssueCount"),
             NoChangeCount: GetOptionalInt(root, "fluctuationSteadinessIssueCount"),
@@ -236,7 +238,7 @@ public sealed class DnseWebSocketMessageMapper
             EstimatedChange: GetOptionalDecimal(root, "changedValue"),
             EstimatedChangePercent: GetOptionalDecimal(root, "changedRatio"),
             EstimatedTotalVolume: GetOptionalLong(root, "totalVolumeTraded"),
-            EstimatedTotalValue: GetOptionalDecimal(root, "grossTradeAmount"),
+            EstimatedTotalValue: GetMarketIndexTotalValue(root),
             EstimatedUpdatedAt: updatedAt);
 
         return new DnseWebSocketMessage(DnseWebSocketMessageKind.MarketIndexUpdate, MarketIndexUpdate: update);
@@ -340,6 +342,34 @@ public sealed class DnseWebSocketMessageMapper
         }
 
         return value.Value * PriceScaleFactor;
+    }
+
+    private static decimal? NormalizeOhlcPrice(decimal? value, bool isIndex)
+    {
+        return isIndex ? value : NormalizePrice(value);
+    }
+
+    private static string NormalizeMessageType(string value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? "STOCK" : value.Trim().ToUpperInvariant();
+    }
+
+    private static decimal? GetMarketIndexTotalValue(JsonElement root)
+    {
+        var grossTradeAmount = GetOptionalDecimal(root, "grossTradeAmount");
+        if (grossTradeAmount is > 0m)
+        {
+            return grossTradeAmount;
+        }
+
+        var continuousAuctionValue = GetOptionalDecimal(root, "contauctAccTrdVal");
+        var blockTradeValue = GetOptionalDecimal(root, "blkTrdAccTrdVal");
+        if (continuousAuctionValue is not null || blockTradeValue is not null)
+        {
+            return (continuousAuctionValue ?? 0m) + (blockTradeValue ?? 0m);
+        }
+
+        return grossTradeAmount;
     }
 
     private long? ScaleQuantity(long? value)

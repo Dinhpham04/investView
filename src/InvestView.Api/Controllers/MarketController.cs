@@ -1,5 +1,6 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Dtos.MarketData;
+using InvestView.Infrastructure.MarketData;
 using Microsoft.AspNetCore.Mvc;
 
 namespace InvestView.Api.Controllers;
@@ -10,11 +11,20 @@ namespace InvestView.Api.Controllers;
 public sealed class MarketController : ControllerBase
 {
     private const string DefaultBoardId = "G1";
+    private const string DefaultMarketId = "HOSE";
+    private const string DefaultProductGroupId = "STO";
     private readonly IMarketDataProvider _marketDataProvider;
+    private readonly IMarketStateStore _marketStateStore;
+    private readonly TimeProvider _timeProvider;
 
-    public MarketController(IMarketDataProvider marketDataProvider)
+    public MarketController(
+        IMarketDataProvider marketDataProvider,
+        IMarketStateStore marketStateStore,
+        TimeProvider timeProvider)
     {
         _marketDataProvider = marketDataProvider;
+        _marketStateStore = marketStateStore;
+        _timeProvider = timeProvider;
     }
 
     [HttpGet("quotes")]
@@ -35,6 +45,45 @@ public sealed class MarketController : ControllerBase
             cancellationToken);
 
         return Ok(quotes);
+    }
+
+    [HttpGet("session")]
+    [ProducesResponseType<MarketSessionUpdateDto>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<MarketSessionUpdateDto>> GetMarketSession(
+        [FromQuery] string? productGroupId,
+        [FromQuery] string? boardId,
+        [FromQuery] string? marketId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedProductGroupId = string.IsNullOrWhiteSpace(productGroupId)
+            ? DefaultProductGroupId
+            : productGroupId.Trim().ToUpperInvariant();
+        var normalizedBoardId = string.IsNullOrWhiteSpace(boardId)
+            ? DefaultBoardId
+            : boardId.Trim().ToUpperInvariant();
+        var normalizedMarketId = string.IsNullOrWhiteSpace(marketId)
+            ? DefaultMarketId
+            : marketId.Trim().ToUpperInvariant();
+        var now = _timeProvider.GetUtcNow();
+
+        var cachedSession = await _marketStateStore.GetMarketSessionAsync(
+            normalizedProductGroupId,
+            normalizedBoardId,
+            cancellationToken);
+        if (cachedSession is not null)
+        {
+            return Ok(MarketSessionResolver.Resolve(cachedSession, now));
+        }
+
+        var fallbackSession = new MarketSessionUpdateDto(
+            normalizedMarketId,
+            normalizedBoardId,
+            normalizedProductGroupId,
+            EventId: string.Empty,
+            TradingSessionId: string.Empty,
+            UpdatedAt: now);
+
+        return Ok(MarketSessionResolver.Resolve(fallbackSession));
     }
 
     [HttpGet("symbols/{symbol}")]

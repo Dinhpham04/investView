@@ -230,6 +230,37 @@ public sealed class DnseWebSocketMessageMapperTests
     }
 
     [Fact]
+    public void Map_WhenIndexOhlcIsBelowThousand_DoesNotApplyStockPriceScale()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "b",
+              "symbol": "HNX",
+              "resolution": "1",
+              "open": 292.10,
+              "high": 293.25,
+              "low": 291.90,
+              "close": 292.57,
+              "volume": 1000,
+              "type": "INDEX",
+              "time": 1783479600
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.OhlcUpdate, message.Kind);
+        Assert.NotNull(message.OhlcUpdate);
+        Assert.Equal("HNX", message.OhlcUpdate.Symbol);
+        Assert.Equal("INDEX", message.OhlcUpdate.Type);
+        Assert.Equal(292.10m, message.OhlcUpdate.Open);
+        Assert.Equal(293.25m, message.OhlcUpdate.High);
+        Assert.Equal(291.90m, message.OhlcUpdate.Low);
+        Assert.Equal(292.57m, message.OhlcUpdate.Close);
+    }
+
+    [Fact]
     public void Map_WhenMessageIsExpectedPrice_ReturnsExpectedPriceQuoteUpdate()
     {
         var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
@@ -277,7 +308,7 @@ public sealed class DnseWebSocketMessageMapperTests
               "highestValueIndexes": 1857.00,
               "priorValueIndexes": 1853.70,
               "valueIndexes": 1840.70,
-              "grossTradeAmount": 14603675000000,
+              "grossTradeAmount": 14603.675,
               "totalVolumeTraded": 585707000,
               "marketId": 1,
               "tradingSessionId": 99,
@@ -292,12 +323,39 @@ public sealed class DnseWebSocketMessageMapperTests
         Assert.Equal(-13.00m, message.MarketIndexUpdate.Change);
         Assert.Equal(-0.70m, message.MarketIndexUpdate.ChangePercent);
         Assert.Equal(1853.70m, message.MarketIndexUpdate.ReferenceValue);
+        Assert.Equal(585_707_000, message.MarketIndexUpdate.TotalVolume);
+        Assert.Equal(14_603.675m, message.MarketIndexUpdate.TotalValue);
         Assert.Equal(92, message.MarketIndexUpdate.UpCount);
         Assert.Equal(206, message.MarketIndexUpdate.DownCount);
         Assert.Equal(66, message.MarketIndexUpdate.NoChangeCount);
         Assert.Equal("1", message.MarketIndexUpdate.MarketId);
         Assert.Equal("99", message.MarketIndexUpdate.TradingSessionId);
         Assert.Equal(DateTimeOffset.Parse("2026-07-03T07:45:00+00:00"), message.MarketIndexUpdate.UpdatedAt);
+    }
+
+    [Fact]
+    public void Map_WhenMarketIndexGrossTradeAmountIsZero_UsesAccumulatedTradingValues()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "mi",
+              "indexName": "VNINDEX",
+              "valueIndexes": 1840.70,
+              "grossTradeAmount": 0,
+              "contauctAccTrdVal": 14000,
+              "blkTrdAccTrdVal": 603.675,
+              "totalVolumeTraded": 585707000,
+              "transactTime": "2026-07-03T07:45:00+00:00"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.MarketIndexUpdate, message.Kind);
+        Assert.NotNull(message.MarketIndexUpdate);
+        Assert.Equal("VNINDEX", message.MarketIndexUpdate.IndexName);
+        Assert.Equal(14_603.675m, message.MarketIndexUpdate.TotalValue);
     }
 
     [Fact]
@@ -327,6 +385,31 @@ public sealed class DnseWebSocketMessageMapperTests
         Assert.Equal(-2.10m, message.MarketIndexUpdate.EstimatedChange);
         Assert.Equal(-0.20m, message.MarketIndexUpdate.EstimatedChangePercent);
         Assert.Equal(184_907_600, message.MarketIndexUpdate.EstimatedTotalVolume);
+        Assert.Equal(6391.86m, message.MarketIndexUpdate.EstimatedTotalValue);
+    }
+
+    [Fact]
+    public void Map_WhenEstimatedMarketIndexGrossTradeAmountIsZero_UsesAccumulatedTradingValues()
+    {
+        var mapper = new DnseWebSocketMessageMapper(new FixedTimeProvider(FallbackTime));
+
+        var message = mapper.Map(
+            """
+            {
+              "T": "emi",
+              "indexName": "VN30",
+              "valueIndexes": 1848.40,
+              "grossTradeAmount": 0,
+              "contauctAccTrdVal": 6000.00,
+              "blkTrdAccTrdVal": 391.86,
+              "totalVolumeTraded": 184907600,
+              "time": "2026-07-08T06:56:29Z"
+            }
+            """);
+
+        Assert.Equal(DnseWebSocketMessageKind.MarketIndexUpdate, message.Kind);
+        Assert.NotNull(message.MarketIndexUpdate);
+        Assert.Equal("VN30", message.MarketIndexUpdate.IndexName);
         Assert.Equal(6391.86m, message.MarketIndexUpdate.EstimatedTotalValue);
     }
 

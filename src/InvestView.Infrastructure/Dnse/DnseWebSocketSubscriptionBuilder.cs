@@ -4,6 +4,8 @@ namespace InvestView.Infrastructure.Dnse;
 
 public static class DnseWebSocketSubscriptionBuilder
 {
+    private static readonly IReadOnlyCollection<string> MarketIndexOhlcResolutions = ["1"];
+
     public static DnseWebSocketSubscribePayload BuildSubscribePayload(
         IReadOnlyCollection<string> symbols,
         string boardId,
@@ -57,6 +59,33 @@ public static class DnseWebSocketSubscriptionBuilder
         string encoding,
         bool closed)
     {
+        return BuildOhlcPayload("subscribe", symbols, resolutions, encoding, closed);
+    }
+
+    public static DnseWebSocketSubscribePayload BuildMarketIndexOhlcSubscribePayload(
+        IReadOnlyCollection<string> indexNames,
+        string encoding,
+        bool closed)
+    {
+        return BuildOhlcPayload("subscribe", indexNames, MarketIndexOhlcResolutions, encoding, closed);
+    }
+
+    public static DnseWebSocketSubscribePayload BuildOhlcUnsubscribePayload(
+        IReadOnlyCollection<string> symbols,
+        IReadOnlyCollection<string> resolutions,
+        string encoding,
+        bool closed)
+    {
+        return BuildOhlcPayload("unsubscribe", symbols, resolutions, encoding, closed);
+    }
+
+    private static DnseWebSocketSubscribePayload BuildOhlcPayload(
+        string action,
+        IReadOnlyCollection<string> symbols,
+        IReadOnlyCollection<string> resolutions,
+        string encoding,
+        bool closed)
+    {
         var normalizedSymbols = NormalizeSymbols(symbols);
         var normalizedEncoding = NormalizeToken(encoding, "json").ToLowerInvariant();
         var prefix = closed ? "ohlc_closed" : "ohlc";
@@ -66,7 +95,7 @@ public static class DnseWebSocketSubscriptionBuilder
                 normalizedSymbols))
             .ToArray();
 
-        return new DnseWebSocketSubscribePayload("subscribe", subscriptions);
+        return new DnseWebSocketSubscribePayload(action, subscriptions);
     }
 
     public static DnseWebSocketSubscribePayload BuildSessionSubscribePayload(
