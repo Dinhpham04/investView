@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { memo, useEffect, useId, useMemo, useState } from 'react';
 import {
   createVietnamFullMarketSessionRange,
   filterVietnamMarketSessionBars,
@@ -13,7 +13,7 @@ type MarketIndexOverviewProps = {
   latestUpdate?: MarketIndexUpdate | null;
 };
 
-export function MarketIndexOverview({ latestOhlcUpdate = null, latestUpdate = null }: MarketIndexOverviewProps) {
+function MarketIndexOverviewComponent({ latestOhlcUpdate = null, latestUpdate = null }: MarketIndexOverviewProps) {
   const { indicesQuery, isOhlcPending, ohlcByIndexName } = useMarketIndexQueries(defaultMarketIndexNames);
   const [liveIndices, setLiveIndices] = useState<MarketIndex[]>([]);
   const [realtimeOhlcByIndexName, setRealtimeOhlcByIndexName] = useState<Map<string, OhlcBar[]>>(() => new Map());
@@ -39,6 +39,7 @@ export function MarketIndexOverview({ latestOhlcUpdate = null, latestUpdate = nu
   }, [latestOhlcUpdate]);
 
   const indices = useMemo(() => orderIndices(liveIndices), [liveIndices]);
+  const indicesByName = useMemo(() => new Map(indices.map((index) => [index.indexName, index])), [indices]);
   const displayedOhlcByIndexName = useMemo(
     () => mergeOhlcMaps(ohlcByIndexName, realtimeOhlcByIndexName),
     [ohlcByIndexName, realtimeOhlcByIndexName],
@@ -49,8 +50,8 @@ export function MarketIndexOverview({ latestOhlcUpdate = null, latestUpdate = nu
       <div className="grid min-w-0 grid-cols-1 gap-1 md:grid-cols-2 xl:grid-cols-5">
         {defaultMarketIndexNames.map((indexName) => (
           <MarketIndexCard
-            bars={displayedOhlcByIndexName.get(indexName) ?? []}
-            index={indices.find((item) => item.indexName === indexName) ?? createEmptyIndex(indexName)}
+            bars={displayedOhlcByIndexName.get(indexName) ?? emptyOhlcBars}
+            index={indicesByName.get(indexName) ?? emptyIndicesByName.get(indexName) ?? createEmptyIndex(indexName)}
             isLoading={indicesQuery.isPending || isOhlcPending}
             key={indexName}
           />
@@ -61,7 +62,9 @@ export function MarketIndexOverview({ latestOhlcUpdate = null, latestUpdate = nu
   );
 }
 
-export function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: MarketIndex; isLoading: boolean }) {
+export const MarketIndexOverview = memo(MarketIndexOverviewComponent);
+
+export const MarketIndexCard = memo(function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; index: MarketIndex; isLoading: boolean }) {
   const toneClass = classForChange(index.change);
 
   return (
@@ -91,9 +94,9 @@ export function MarketIndexCard({ bars, index, isLoading }: { bars: OhlcBar[]; i
       </div>
     </article>
   );
-}
+});
 
-export function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketIndex[]; isError: boolean; isLoading: boolean }) {
+export const MarketIndexTable = memo(function MarketIndexTable({ indices, isError, isLoading }: { indices: MarketIndex[]; isError: boolean; isLoading: boolean }) {
   return (
     <div className="min-w-0 overflow-x-auto border border-[#2d2a38] bg-[#1d1a2a] text-[11px] font-semibold">
       <div className="grid h-7 min-w-[462px] grid-cols-[72px_62px_42px_70px_52px_108px] items-center gap-2 border-b border-[#34313d] bg-[#171421] px-2 text-[#f2f2f6]">
@@ -141,11 +144,11 @@ export function MarketIndexTable({ indices, isError, isLoading }: { indices: Mar
       ) : null}
     </div>
   );
-}
+});
 
-export function MiniIndexChart({ bars, referenceValue, toneClass }: { bars: OhlcBar[]; referenceValue: number | null; toneClass: string }) {
+export const MiniIndexChart = memo(function MiniIndexChart({ bars, referenceValue, toneClass }: { bars: OhlcBar[]; referenceValue: number | null; toneClass: string }) {
   const chartDomId = useId().replaceAll(':', '');
-  const geometry = createMiniChartGeometry(bars, referenceValue);
+  const geometry = useMemo(() => createMiniChartGeometry(bars, referenceValue), [bars, referenceValue]);
 
   if (geometry == null) {
     return <div className="grid h-full place-items-center text-[11px] font-semibold text-market-text-muted">-</div>;
@@ -224,7 +227,7 @@ export function MiniIndexChart({ bars, referenceValue, toneClass }: { bars: Ohlc
       )}
     </svg>
   );
-}
+});
 
 const miniChart = {
   height: 82,
@@ -408,6 +411,9 @@ function createEmptyIndex(indexName: string): MarketIndex {
     value: null,
   };
 }
+
+const emptyOhlcBars: OhlcBar[] = [];
+const emptyIndicesByName = new Map(defaultMarketIndexNames.map((indexName) => [indexName, createEmptyIndex(indexName)]));
 
 function classForChange(value: number | null | undefined) {
   if (value == null || value === 0) {

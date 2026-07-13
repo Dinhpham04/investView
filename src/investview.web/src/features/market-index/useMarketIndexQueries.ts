@@ -4,6 +4,18 @@ import type { OhlcBar } from '../../shared/types/market';
 import { defaultMarketIndexNames } from './marketIndexLists';
 
 const vietnamTimeZone = 'Asia/Ho_Chi_Minh';
+const vietnamDateFormatter = new Intl.DateTimeFormat('en-US', {
+  day: '2-digit',
+  month: '2-digit',
+  timeZone: vietnamTimeZone,
+  year: 'numeric',
+});
+const vietnamTimeFormatter = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  hourCycle: 'h23',
+  minute: '2-digit',
+  timeZone: vietnamTimeZone,
+});
 const sessionStartMinute = 9 * 60;
 const sessionEndMinute = 15 * 60;
 const marketIndexOhlcBackfillRefetchIntervalMs = 60_000;
@@ -109,12 +121,7 @@ export function filterVietnamMarketSessionBars(bars: OhlcBar[]) {
 }
 
 function getVietnamDateParts(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: '2-digit',
-    timeZone: vietnamTimeZone,
-    year: 'numeric',
-  }).formatToParts(date);
+  const parts = vietnamDateFormatter.formatToParts(date);
 
   return {
     day: getDateTimePart(parts, 'day'),
@@ -124,12 +131,7 @@ function getVietnamDateParts(date: Date) {
 }
 
 function getVietnamTimeParts(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    hour: '2-digit',
-    hourCycle: 'h23',
-    minute: '2-digit',
-    timeZone: vietnamTimeZone,
-  }).formatToParts(date);
+  const parts = vietnamTimeFormatter.formatToParts(date);
 
   return {
     hour: Number.parseInt(getDateTimePart(parts, 'hour'), 10),
