@@ -15,6 +15,8 @@ export type MarketQuote = {
   change: number | null;
   changePercent: number | null;
   lastQuantity: number | null;
+  expectedPrice?: number | null;
+  expectedQuantity?: number | null;
   totalVolume: number | null;
   totalValue: number | null;
   foreignBuyVolume: number | null;
@@ -98,6 +100,8 @@ export type MarketQuoteUpdate = {
   change: number | null;
   changePercent: number | null;
   lastQuantity: number | null;
+  expectedPrice?: number | null;
+  expectedQuantity?: number | null;
   totalVolume: number | null;
   totalValue: number | null;
   foreignBuyVolume: number | null;

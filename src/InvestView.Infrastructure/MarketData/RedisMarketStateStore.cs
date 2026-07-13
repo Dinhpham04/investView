@@ -46,6 +46,7 @@ public sealed class RedisMarketStateStore : IMarketStateStore
             : MarketStateMapper.MergeQuote(current, normalizedUpdate);
 
         await _database.HashSetAsync(key, _schema.ToQuoteHash(next, includeGroupTimestamps: false));
+        await DeleteNullQuoteHashFieldsAsync(key, next);
         await _database.HashSetAsync(key, _schema.ToQuoteGroupTimestampHash(normalizedUpdate));
         await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
 
@@ -358,7 +359,17 @@ public sealed class RedisMarketStateStore : IMarketStateStore
     {
         var key = _schema.QuoteStateKey(quote.BoardId, quote.Symbol);
         await _database.HashSetAsync(key, _schema.ToQuoteHash(quote, includeGroupTimestamps));
+        await DeleteNullQuoteHashFieldsAsync(key, quote);
         await _database.KeyExpireAsync(key, _schema.QuoteStateTtl);
+    }
+
+    private async Task DeleteNullQuoteHashFieldsAsync(RedisKey key, MarketQuoteDto quote)
+    {
+        var fields = _schema.ToQuoteHashFieldsToDelete(quote);
+        if (fields.Length > 0)
+        {
+            await _database.HashDeleteAsync(key, fields);
+        }
     }
 
     private async Task ReplaceMembershipAsync(RedisKey key, IReadOnlyCollection<string> symbols)

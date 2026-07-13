@@ -71,6 +71,31 @@ public sealed class MarketStateRedisSchemaTests
     }
 
     [Fact]
+    public void ToQuoteHashFieldsToDelete_WhenExpectedAuctionFieldsAreNull_ReturnsExpectedScalarFieldNames()
+    {
+        var schema = CreateSchema();
+
+        var fields = schema.ToQuoteHashFieldsToDelete(CreateQuote()).Select(field => field.ToString()).ToArray();
+
+        Assert.Equal(["expectedPrice", "expectedQuantity"], fields);
+    }
+
+    [Fact]
+    public void ToQuoteHashFieldsToDelete_WhenExpectedAuctionFieldsArePresent_DoesNotDeleteThem()
+    {
+        var schema = CreateSchema();
+        var quote = CreateQuote() with
+        {
+            ExpectedPrice = 24.2m,
+            ExpectedQuantity = 1_000
+        };
+
+        var fields = schema.ToQuoteHashFieldsToDelete(quote);
+
+        Assert.Empty(fields);
+    }
+
+    [Fact]
     public void ToQuoteGroupTimestampHash_OnlyTouchesGroupsPresentInPartialUpdate()
     {
         var schema = CreateSchema();

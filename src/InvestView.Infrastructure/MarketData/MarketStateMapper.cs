@@ -103,6 +103,9 @@ internal static class MarketStateMapper
     public static MarketQuoteDto MergeQuote(MarketQuoteDto current, MarketQuoteUpdateDto update)
     {
         var isExpectedOnlyUpdate = IsExpectedOnlyQuoteUpdate(update);
+        var shouldClearExpectedAuction = HasActualMatchedQuoteUpdate(update) &&
+                                         !update.ExpectedPrice.HasValue &&
+                                         !update.ExpectedQuantity.HasValue;
         var lastPrice = update.LastPrice ?? current.LastPrice;
         var referencePrice = update.ReferencePrice ?? current.ReferencePrice;
         var change = update.Change ?? (referencePrice > 0m ? lastPrice - referencePrice : current.Change);
@@ -131,8 +134,8 @@ internal static class MarketStateMapper
             AskLevels = update.AskLevels ?? current.AskLevels,
             TradingStatus = update.TradingStatus ?? current.TradingStatus,
             UpdatedAt = isExpectedOnlyUpdate ? current.UpdatedAt : update.UpdatedAt,
-            ExpectedPrice = update.ExpectedPrice ?? current.ExpectedPrice,
-            ExpectedQuantity = update.ExpectedQuantity ?? current.ExpectedQuantity
+            ExpectedPrice = shouldClearExpectedAuction ? null : update.ExpectedPrice ?? current.ExpectedPrice,
+            ExpectedQuantity = shouldClearExpectedAuction ? null : update.ExpectedQuantity ?? current.ExpectedQuantity
         };
     }
 
@@ -157,6 +160,12 @@ internal static class MarketStateMapper
                !update.OpenPrice.HasValue &&
                !update.HighPrice.HasValue &&
                !update.LowPrice.HasValue;
+    }
+
+    private static bool HasActualMatchedQuoteUpdate(MarketQuoteUpdateDto update)
+    {
+        return update.LastPrice.HasValue ||
+               update.LastQuantity.HasValue;
     }
 
     public static MarketQuoteDto CreateQuoteFromUpdate(MarketQuoteUpdateDto update)

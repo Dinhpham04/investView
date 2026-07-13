@@ -32,22 +32,22 @@ const quote: MarketQuote = {
 
 describe('marketBoardColumnDefs', () => {
   it('keeps the base price color class separate from removable flash rules', () => {
-    const row = mapQuoteToMarketBoardRow(quote, { lastPrice: 'up' });
-    const lastPriceColumn = findColumnByField('lastPrice');
+    const row = mapQuoteToMarketBoardRow(quote, { matchedPrice: 'up' });
+    const matchedPriceColumn = findColumnByField('matchedPrice');
 
-    expect(lastPriceColumn.cellClass).toEqual(expect.arrayContaining(['market-cell', 'market-cell--number', 'ag-cell-bg-highlight']));
-    expect(lastPriceColumn.cellClass).not.toContain('quote-cell-flash');
-    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-price-up', row)).toBe(true);
-    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(true);
-    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(true);
+    expect(matchedPriceColumn.cellClass).toEqual(expect.arrayContaining(['market-cell', 'market-cell--number', 'ag-cell-bg-highlight']));
+    expect(matchedPriceColumn.cellClass).not.toContain('quote-cell-flash');
+    expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-price-up', row)).toBe(true);
+    expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(true);
+    expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(true);
   });
 
   it('turns flash classes off after the row flash marker is cleared', () => {
     const row = mapQuoteToMarketBoardRow(quote);
-    const lastPriceColumn = findColumnByField('lastPrice');
+    const matchedPriceColumn = findColumnByField('matchedPrice');
 
-    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(false);
-    expect(ruleApplies(lastPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(false);
+    expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(false);
+    expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(false);
   });
 });
 

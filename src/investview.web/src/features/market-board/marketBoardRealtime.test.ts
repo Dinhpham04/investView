@@ -142,6 +142,78 @@ describe('applyQuoteUpdate', () => {
     });
   });
 
+  it('merges expected auction price updates without overwriting matched trade fields', () => {
+    const result = applyQuoteUpdate([baseQuote], {
+      ...update,
+      lastPrice: null,
+      change: null,
+      changePercent: null,
+      lastQuantity: null,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: null,
+      expectedPrice: 28.2,
+      expectedQuantity: 42_000,
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      lastPrice: 28.1,
+      lastQuantity: 18_000,
+      expectedPrice: 28.2,
+      expectedQuantity: 42_000,
+    });
+    expect(result.flashClasses).toMatchObject({
+      matchedPrice: 'up',
+      matchedQuantity: 'up',
+      matchedChange: 'up',
+      matchedChangePercent: 'up',
+    });
+    expect(result.flashClasses).not.toHaveProperty('lastPrice');
+    expect(result.flashClasses).not.toHaveProperty('lastQuantity');
+  });
+
+  it('clears stale expected auction fields when an actual match update arrives', () => {
+    const quoteWithExpectedAuction = {
+      ...baseQuote,
+      expectedPrice: 28.2,
+      expectedQuantity: 42_000,
+    };
+
+    const result = applyQuoteUpdate([quoteWithExpectedAuction], {
+      ...update,
+      lastPrice: 28.35,
+      change: 0.95,
+      changePercent: 3.47,
+      lastQuantity: 20_000,
+      totalVolume: null,
+      totalValue: null,
+      foreignBuyVolume: null,
+      foreignSellVolume: null,
+      foreignRoom: null,
+      bidLevels: null,
+      askLevels: null,
+      tradingStatus: null,
+    });
+
+    expect(result.updatedQuote).toMatchObject({
+      lastPrice: 28.35,
+      lastQuantity: 20_000,
+      expectedPrice: null,
+      expectedQuantity: null,
+    });
+    expect(result.flashClasses).toMatchObject({
+      matchedPrice: 'up',
+      matchedQuantity: 'up',
+      matchedChange: 'up',
+      matchedChangePercent: 'up',
+    });
+  });
+
   it('uses reference comparison for flash classes instead of old-versus-new direction', () => {
     const result = applyQuoteUpdate([baseQuote], {
       ...update,
@@ -349,6 +421,7 @@ describe('applyQuoteUpdate', () => {
 
     expect(result.flashClasses).toEqual({
       lastQuantity: 'up',
+      matchedQuantity: 'up',
     });
   });
 

@@ -163,6 +163,22 @@ public sealed class MarketStateRedisSchema
         return entries.ToArray();
     }
 
+    public RedisValue[] ToQuoteHashFieldsToDelete(MarketQuoteDto quote)
+    {
+        var fields = new List<RedisValue>();
+        if (!quote.ExpectedPrice.HasValue)
+        {
+            fields.Add("expectedPrice");
+        }
+
+        if (!quote.ExpectedQuantity.HasValue)
+        {
+            fields.Add("expectedQuantity");
+        }
+
+        return fields.ToArray();
+    }
+
     public HashEntry[] ToQuoteGroupTimestampHash(MarketQuoteUpdateDto update)
     {
         var entries = new List<HashEntry> { Entry(UpdatedAtField, update.UpdatedAt) };

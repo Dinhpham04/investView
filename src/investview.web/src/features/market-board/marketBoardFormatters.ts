@@ -17,6 +17,10 @@ export type MarketBoardFlashField =
   | 'lastQuantity'
   | 'change'
   | 'changePercent'
+  | 'matchedPrice'
+  | 'matchedQuantity'
+  | 'matchedChange'
+  | 'matchedChangePercent'
   | 'ask1Price'
   | 'ask1Quantity'
   | 'ask2Price'
@@ -51,6 +55,10 @@ export type MarketBoardRow = {
   lastQuantity: number | null;
   change: number | null;
   changePercent: number | null;
+  matchedPrice: number | null;
+  matchedQuantity: number | null;
+  matchedChange: number | null;
+  matchedChangePercent: number | null;
   ask1Price: number | null;
   ask1Quantity: number | null;
   ask2Price: number | null;
@@ -78,6 +86,9 @@ export type MarketBoardRow = {
   lastPriceClass: PriceClass;
   lastQuantityClass: PriceClass;
   changeClass: PriceClass;
+  matchedPriceClass: PriceClass;
+  matchedQuantityClass: PriceClass;
+  matchedChangeClass: PriceClass;
   ask1PriceClass: PriceClass;
   ask1QuantityClass: PriceClass;
   ask2PriceClass: PriceClass;
@@ -195,6 +206,35 @@ export function classifyPrice(value: number | null | undefined, quote: MarketQuo
   return 'neutral';
 }
 
+type MatchedDisplayValues = {
+  matchedPrice: number | null;
+  matchedQuantity: number | null;
+  matchedChange: number | null;
+  matchedChangePercent: number | null;
+  matchedPriceClass: PriceClass;
+  matchedQuantityClass: PriceClass;
+  matchedChangeClass: PriceClass;
+};
+
+export function getMatchedDisplayValues(quote: MarketQuote): MatchedDisplayValues {
+  const matchedPrice = quote.expectedPrice ?? quote.lastPrice;
+  const matchedQuantity = quote.expectedQuantity ?? quote.lastQuantity;
+  const matchedChange = resolveMatchedChange(quote, matchedPrice);
+  const matchedChangePercent = resolveMatchedChangePercent(quote, matchedChange);
+  const matchedPriceClass = classifyPrice(matchedPrice, quote);
+  const matchedChangeClass = classifyChange(matchedChange);
+
+  return {
+    matchedPrice,
+    matchedQuantity,
+    matchedChange,
+    matchedChangePercent,
+    matchedPriceClass,
+    matchedQuantityClass: matchedPriceClass,
+    matchedChangeClass,
+  };
+}
+
 export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: MarketBoardFlashClasses = {}): MarketBoardRow {
   const bid1 = getLevel(quote.bidLevels, 0);
   const bid2 = getLevel(quote.bidLevels, 1);
@@ -209,6 +249,7 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: Marke
   const ask1Class = classifyPrice(ask1.price, quote);
   const ask2Class = classifyPrice(ask2.price, quote);
   const ask3Class = classifyPrice(ask3.price, quote);
+  const matchedValues = getMatchedDisplayValues(quote);
 
   return {
     id: `${quote.boardId}:${quote.symbol}`,
@@ -229,6 +270,10 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: Marke
     lastQuantity: quote.lastQuantity,
     change: quote.change,
     changePercent: quote.changePercent,
+    matchedPrice: matchedValues.matchedPrice,
+    matchedQuantity: matchedValues.matchedQuantity,
+    matchedChange: matchedValues.matchedChange,
+    matchedChangePercent: matchedValues.matchedChangePercent,
     ask1Price: ask1.price,
     ask1Quantity: ask1.quantity,
     ask2Price: ask2.price,
@@ -243,7 +288,7 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: Marke
     lowPrice: quote.lowPrice,
     tradingStatus: quote.tradingStatus,
     updatedTime: formatUpdatedTime(quote.updatedAt),
-    symbolClass: lastClass,
+    symbolClass: matchedValues.matchedPriceClass,
     ceilingPriceClass: 'ceiling',
     floorPriceClass: 'floor',
     referencePriceClass: 'reference',
@@ -256,6 +301,9 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: Marke
     lastPriceClass: lastClass,
     lastQuantityClass: lastClass,
     changeClass: classifyChange(quote.change),
+    matchedPriceClass: matchedValues.matchedPriceClass,
+    matchedQuantityClass: matchedValues.matchedQuantityClass,
+    matchedChangeClass: matchedValues.matchedChangeClass,
     ask1PriceClass: ask1Class,
     ask1QuantityClass: ask1Class,
     ask2PriceClass: ask2Class,
@@ -270,6 +318,42 @@ export function mapQuoteToMarketBoardRow(quote: MarketQuote, flashClasses: Marke
 
 function getLevel(levels: PriceLevel[], index: number): PriceLevel {
   return levels[index] ?? { price: null, quantity: null };
+}
+
+function resolveMatchedChange(quote: MarketQuote, matchedPrice: number | null) {
+  if (quote.expectedPrice == null) {
+    return quote.change;
+  }
+
+  return calculateChange(matchedPrice, quote.referencePrice) ?? quote.change;
+}
+
+function resolveMatchedChangePercent(quote: MarketQuote, matchedChange: number | null) {
+  if (quote.expectedPrice == null) {
+    return quote.changePercent;
+  }
+
+  if (matchedChange == null || quote.referencePrice == null || quote.referencePrice <= 0) {
+    return quote.changePercent;
+  }
+
+  return roundPercent((matchedChange / quote.referencePrice) * 100);
+}
+
+function calculateChange(price: number | null, referencePrice: number | null) {
+  if (price == null || referencePrice == null || referencePrice <= 0) {
+    return null;
+  }
+
+  return roundPriceDelta(price - referencePrice);
+}
+
+function roundPriceDelta(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function roundPercent(value: number) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
 function formatUpdatedTime(value: string) {

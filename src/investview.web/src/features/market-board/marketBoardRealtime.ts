@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatPrice,
   formatQuantity,
+  getMatchedDisplayValues,
   type MarketBoardFlashClasses,
   type MarketBoardFlashField,
   type PriceClass,
@@ -34,6 +35,8 @@ export function applyQuoteUpdate(quotes: MarketQuote[], update: MarketQuoteUpdat
     const nextLastPrice = keepExistingWhenNullish(update.lastPrice, sourceQuote.lastPrice);
     const nextChange = resolveChange(update, sourceQuote, nextLastPrice, nextReferencePrice);
     const nextChangePercent = resolveChangePercent(update, sourceQuote, nextChange, nextReferencePrice);
+    const shouldClearExpectedAuction =
+      hasActualMatchedUpdate(update) && update.expectedPrice == null && update.expectedQuantity == null;
 
     updatedQuote = {
       ...sourceQuote,
@@ -44,6 +47,12 @@ export function applyQuoteUpdate(quotes: MarketQuote[], update: MarketQuoteUpdat
       change: nextChange,
       changePercent: nextChangePercent,
       lastQuantity: keepExistingWhenNullish(update.lastQuantity, sourceQuote.lastQuantity),
+      expectedPrice: shouldClearExpectedAuction
+        ? null
+        : keepExistingWhenNullish(update.expectedPrice, sourceQuote.expectedPrice ?? null),
+      expectedQuantity: shouldClearExpectedAuction
+        ? null
+        : keepExistingWhenNullish(update.expectedQuantity, sourceQuote.expectedQuantity ?? null),
       totalVolume: keepExistingWhenNullish(update.totalVolume, sourceQuote.totalVolume),
       totalValue: keepExistingWhenNullish(update.totalValue, sourceQuote.totalValue),
       foreignBuyVolume: keepExistingWhenNullish(update.foreignBuyVolume, sourceQuote.foreignBuyVolume),
@@ -80,6 +89,8 @@ function createFlashClasses(
   const flashClasses: MarketBoardFlashClasses = {};
   const lastPriceClass = classifyPrice(updatedQuote.lastPrice, updatedQuote);
   const changeClass = classifyChange(updatedQuote.change);
+  const previousMatchedValues = getMatchedDisplayValues(previousQuote);
+  const updatedMatchedValues = getMatchedDisplayValues(updatedQuote);
 
   if (hasDisplayedValueChanged(previousQuote.ceilingPrice, updatedQuote.ceilingPrice, update.ceilingPrice, formatPrice)) {
     setFlash(flashClasses, 'ceilingPrice', 'ceiling');
@@ -115,6 +126,52 @@ function createFlashClasses(
     )
   ) {
     setFlash(flashClasses, 'changePercent', changeClass);
+  }
+
+  if (
+    hasDisplayedValueChanged(
+      previousMatchedValues.matchedPrice,
+      updatedMatchedValues.matchedPrice,
+      update.expectedPrice ?? update.lastPrice,
+      formatPrice,
+    )
+  ) {
+    setFlash(flashClasses, 'matchedPrice', updatedMatchedValues.matchedPriceClass);
+  }
+
+  if (
+    hasDisplayedValueChanged(
+      previousMatchedValues.matchedQuantity,
+      updatedMatchedValues.matchedQuantity,
+      update.expectedQuantity ?? update.lastQuantity,
+      formatQuantity,
+    )
+  ) {
+    setFlash(flashClasses, 'matchedQuantity', updatedMatchedValues.matchedPriceClass);
+  }
+
+  if (
+    hasDerivedDisplayedValueChanged(
+      previousMatchedValues.matchedChange,
+      updatedMatchedValues.matchedChange,
+      update.change ?? update.expectedPrice,
+      update.lastPrice,
+      formatChange,
+    )
+  ) {
+    setFlash(flashClasses, 'matchedChange', updatedMatchedValues.matchedChangeClass);
+  }
+
+  if (
+    hasDerivedDisplayedValueChanged(
+      previousMatchedValues.matchedChangePercent,
+      updatedMatchedValues.matchedChangePercent,
+      update.changePercent ?? update.expectedPrice,
+      update.lastPrice,
+      formatPercent,
+    )
+  ) {
+    setFlash(flashClasses, 'matchedChangePercent', updatedMatchedValues.matchedChangeClass);
   }
 
   if (hasDisplayedValueChanged(previousQuote.totalVolume, updatedQuote.totalVolume, update.totalVolume, formatQuantity)) {
@@ -192,6 +249,10 @@ function keepLevelsWhenNullish(nextLevels: PriceLevel[] | null | undefined, curr
   return nextLevels == null ? currentLevels : nextLevels;
 }
 
+function hasActualMatchedUpdate(update: MarketQuoteUpdate) {
+  return update.lastPrice != null || update.lastQuantity != null;
+}
+
 function normalizeQuotePriceScaleForUpdate(quote: MarketQuote, update: MarketQuoteUpdate): MarketQuote {
   if (!hasScaledPrice(update) || !hasUnscaledQuotePrice(quote)) {
     return quote;
@@ -204,6 +265,7 @@ function normalizeQuotePriceScaleForUpdate(quote: MarketQuote, update: MarketQuo
     floorPrice: scalePrice(quote.floorPrice),
     lastPrice: scalePrice(quote.lastPrice),
     change: scaleChange(quote.change),
+    expectedPrice: scalePrice(quote.expectedPrice ?? null),
     openPrice: scalePrice(quote.openPrice),
     highPrice: scalePrice(quote.highPrice),
     lowPrice: scalePrice(quote.lowPrice),
@@ -218,6 +280,7 @@ function hasScaledPrice(update: MarketQuoteUpdate) {
     update.ceilingPrice,
     update.floorPrice,
     update.lastPrice,
+    update.expectedPrice,
     update.openPrice,
     update.highPrice,
     update.lowPrice,
@@ -232,6 +295,7 @@ function hasUnscaledQuotePrice(quote: MarketQuote) {
     quote.ceilingPrice,
     quote.floorPrice,
     quote.lastPrice,
+    quote.expectedPrice,
     quote.openPrice,
     quote.highPrice,
     quote.lowPrice,

@@ -86,10 +86,10 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     headerName: 'Khớp lệnh',
     marryChildren: true,
     children: [
-      priceColumn('Giá', 'lastPrice', 'lastPriceClass', undefined, true),
-      quantityColumn('KL', 'lastQuantity', 'lastQuantityClass', undefined, true),
-      changeColumn('+/-', 'change', true),
-      percentColumn('+/- (%)', 'changePercent', true),
+      priceColumn('Giá', 'matchedPrice', 'matchedPriceClass', undefined, true),
+      quantityColumn('KL', 'matchedQuantity', 'matchedQuantityClass', undefined, true),
+      changeColumn('+/-', 'matchedChange', 'matchedChangeClass', 'matchedChange', true),
+      percentColumn('+/- (%)', 'matchedChangePercent', 'matchedChangeClass', 'matchedChangePercent', true),
     ],
   },
   {
@@ -160,7 +160,13 @@ function quantityColumn(
   };
 }
 
-function changeColumn(headerName: string, field: keyof MarketBoardRow, highlight = false): ColDef<MarketBoardRow> {
+function changeColumn(
+  headerName: string,
+  field: keyof MarketBoardRow,
+  classField: keyof MarketBoardRow = 'changeClass',
+  flashField: MarketBoardFlashField = 'change',
+  highlight = false
+): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
@@ -168,13 +174,19 @@ function changeColumn(headerName: string, field: keyof MarketBoardRow, highlight
     valueFormatter: (params) => formatChange(params.value as number | null | undefined, params.data?.referencePrice),
     cellClass: staticClasses(undefined, highlight),
     cellClassRules: {
-      ...priceClassRules('changeClass'),
-      ...flashClassRules('change'),
+      ...priceClassRules(classField),
+      ...flashClassRules(flashField),
     },
   };
 }
 
-function percentColumn(headerName: string, field: keyof MarketBoardRow, highlight = false): ColDef<MarketBoardRow> {
+function percentColumn(
+  headerName: string,
+  field: keyof MarketBoardRow,
+  classField: keyof MarketBoardRow = 'changeClass',
+  flashField: MarketBoardFlashField = 'changePercent',
+  highlight = false
+): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
@@ -182,8 +194,8 @@ function percentColumn(headerName: string, field: keyof MarketBoardRow, highligh
     valueFormatter: (params) => formatPercent(params.value as number | null | undefined),
     cellClass: staticClasses(undefined, highlight),
     cellClassRules: {
-      ...priceClassRules('changeClass'),
-      ...flashClassRules('changePercent'),
+      ...priceClassRules(classField),
+      ...flashClassRules(flashField),
     },
   };
 }

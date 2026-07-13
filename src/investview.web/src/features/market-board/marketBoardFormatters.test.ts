@@ -95,6 +95,24 @@ describe('market board formatting', () => {
     expect(row.updatedTime).toBe('14:45:00');
   });
 
+  it('maps expected auction values into matched display columns', () => {
+    const row = mapQuoteToMarketBoardRow({
+      ...baseQuote,
+      expectedPrice: 28.2,
+      expectedQuantity: 42_000,
+    });
+
+    expect(row.lastPrice).toBe(28.1);
+    expect(row.lastQuantity).toBe(18_000);
+    expect(row.matchedPrice).toBe(28.2);
+    expect(row.matchedQuantity).toBe(42_000);
+    expect(row.matchedChange).toBe(0.8);
+    expect(row.matchedChangePercent).toBe(2.92);
+    expect(row.matchedPriceClass).toBe('up');
+    expect(row.matchedQuantityClass).toBe('up');
+    expect(row.matchedChangeClass).toBe('up');
+  });
+
   it('maps price color classes to matching quantity cells and the symbol cell', () => {
     const quote: MarketQuote = {
       ...baseQuote,

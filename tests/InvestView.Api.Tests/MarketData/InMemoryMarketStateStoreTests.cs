@@ -83,6 +83,45 @@ public sealed class InMemoryMarketStateStoreTests
     }
 
     [Fact]
+    public async Task ApplyQuoteUpdateAsync_WhenMatchedPriceArrives_ClearsExpectedAuctionFields()
+    {
+        var store = new InMemoryMarketStateStore();
+        await store.UpsertQuotesAsync(
+        [
+            CreateQuote("ssi", referencePrice: 26.7m, lastPrice: 26.8m) with
+            {
+                ExpectedPrice = 27.0m,
+                ExpectedQuantity = 10_000
+            }
+        ], CancellationToken.None);
+
+        await store.ApplyQuoteUpdateAsync(
+            new MarketQuoteUpdateDto(
+                "SSI",
+                "G1",
+                LastPrice: 27.1m,
+                Change: null,
+                ChangePercent: null,
+                LastQuantity: 500,
+                TotalVolume: null,
+                TotalValue: null,
+                ForeignBuyVolume: null,
+                ForeignSellVolume: null,
+                ForeignRoom: null,
+                BidLevels: null,
+                AskLevels: null,
+                TradingStatus: null,
+                UpdatedAt: new DateTimeOffset(2026, 7, 8, 3, 30, 0, TimeSpan.Zero)),
+            CancellationToken.None);
+
+        var quote = Assert.Single(await store.GetQuotesAsync("g1", ["ssi"], CancellationToken.None));
+        Assert.Equal(27.1m, quote.LastPrice);
+        Assert.Equal(500, quote.LastQuantity);
+        Assert.Null(quote.ExpectedPrice);
+        Assert.Null(quote.ExpectedQuantity);
+    }
+
+    [Fact]
     public async Task ApplyQuoteUpdateAsync_DoesNotLetStaleUpdateOverwriteCurrentQuote()
     {
         var store = new InMemoryMarketStateStore();
