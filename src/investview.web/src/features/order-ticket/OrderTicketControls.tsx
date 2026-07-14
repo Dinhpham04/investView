@@ -8,7 +8,7 @@ import {
   InputGroupInput,
 } from '@/components/ui/input-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import type { MarketQuote } from '../../shared/types/market';
+import type { MarketQuote, MarketSessionUpdate } from '../../shared/types/market';
 import {
   classifyChange,
   formatChange,
@@ -20,10 +20,11 @@ import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQuer
 
 type QuoteHeaderProps = {
   liveQuote: MarketQuote | null;
+  marketSession?: MarketSessionUpdate | null;
   selection: SymbolDetailSelection | null;
 };
 
-export function QuoteHeader({ liveQuote, selection }: QuoteHeaderProps) {
+export function QuoteHeader({ liveQuote, marketSession = null, selection }: QuoteHeaderProps) {
   const changeTone = classifyChange(liveQuote?.change);
   const priceToneClass = changeTone === 'up'
     ? 'text-[#16d982]'
@@ -55,7 +56,7 @@ export function QuoteHeader({ liveQuote, selection }: QuoteHeaderProps) {
       </div>
       <div className="min-w-[116px] text-right leading-[17px]">
         <p className="whitespace-nowrap font-semibold text-[#e2dee7]">
-          <span className="mr-1 text-[#ffbf21]">●</span>{formatTradingStatus(liveQuote?.tradingStatus)}
+          <span className="mr-1 text-[#ffbf21]">●</span>{formatTradingStatus(liveQuote?.tradingStatus, marketSession)}
         </p>
         <p className="whitespace-nowrap text-[#bbb7c3]">Tổng KL <strong className="text-white">{formatQuantity(liveQuote?.totalVolume)}</strong></p>
       </div>
@@ -85,18 +86,24 @@ export function FieldRow({
 
 export function StepperInput({
   ariaLabel,
+  disabled = false,
   id,
   onChange,
   step,
   value,
 }: {
   ariaLabel: string;
+  disabled?: boolean;
   id: string;
   onChange: (value: string) => void;
   step: number;
   value: string;
 }) {
   const updateValue = (direction: -1 | 1) => {
+    if (disabled) {
+      return;
+    }
+
     const parsedValue = Number(value.replace(',', '.') || 0);
     const currentValue = Number.isFinite(parsedValue) ? parsedValue : 0;
     const nextValue = Math.max(0, currentValue + direction * step);
@@ -109,6 +116,7 @@ export function StepperInput({
         <InputGroupButton
           aria-label={`Giảm ${ariaLabel.toLowerCase()}`}
           className="h-full w-8 rounded-none text-[#8e899b] hover:bg-white/5 hover:text-white"
+          disabled={disabled}
           size="icon-xs"
           onClick={() => updateValue(-1)}
         >
@@ -121,6 +129,7 @@ export function StepperInput({
         id={id}
         inputMode="decimal"
         placeholder="–"
+        disabled={disabled}
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -129,6 +138,7 @@ export function StepperInput({
         <InputGroupButton
           aria-label={`Tăng ${ariaLabel.toLowerCase()}`}
           className="h-full w-8 rounded-none text-[#aaa5b4] hover:bg-white/5 hover:text-white"
+          disabled={disabled}
           size="icon-xs"
           onClick={() => updateValue(1)}
         >
@@ -160,10 +170,32 @@ function InfoMark({ label }: { label: string }) {
   );
 }
 
-function formatTradingStatus(status: string | null | undefined) {
+function formatTradingStatus(status: string | null | undefined, marketSession: MarketSessionUpdate | null) {
+  const sessionLabel = marketSession?.label?.trim();
+  if (sessionLabel) {
+    return sessionLabel;
+  }
+
   if (status == null || status.trim() === '') {
     return 'Chưa có phiên';
   }
 
-  return status.toLowerCase() === 'continuous' ? 'Phiên liên tục' : status;
+  return tradingStatusLabels[status.trim().toUpperCase()] ?? status;
 }
+
+const tradingStatusLabels: Record<string, string> = {
+  '20': 'ATO',
+  '40': 'Liên tục',
+  '50': 'ATC',
+  '60': 'PLO sau giờ',
+  '99': 'Đã đóng cửa',
+  ATO: 'ATO',
+  ATC: 'ATC',
+  CLOSED: 'Đã đóng cửa',
+  CONTINUOUS: 'Liên tục',
+  LO: 'Liên tục',
+  LUNCH: 'Nghỉ trưa',
+  LUNCH_BREAK: 'Nghỉ trưa',
+  PLO: 'PLO sau giờ',
+  PRE_OPEN: 'Trước giờ',
+};

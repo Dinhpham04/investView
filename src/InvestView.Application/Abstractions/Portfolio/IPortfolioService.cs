@@ -28,6 +28,7 @@ public sealed record HoldingPositionDto(
     string BoardId,
     long Quantity,
     long AvailableQuantity,
+    long PendingReceiveQuantity,
     decimal AverageCost,
     decimal LastPrice,
     decimal MarketValue,

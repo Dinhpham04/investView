@@ -3,14 +3,17 @@ import { XIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetClose, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { MarketQuote } from '../../shared/types/market';
+import type { MarketQuote, MarketSessionUpdate } from '../../shared/types/market';
 import { OrderTicketPanel } from '../order-ticket/OrderTicketPanel';
+import type { OrderTicketPreset } from '../order-ticket/OrderTicketPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 
 type TradingDrawerProps = {
   isOpen: boolean;
   liveQuote: MarketQuote | null;
+  marketSession?: MarketSessionUpdate | null;
   onClose: () => void;
+  orderPreset?: OrderTicketPreset | null;
   selection: SymbolDetailSelection | null;
 };
 
@@ -21,7 +24,7 @@ const tradingTabs: Array<{ id: TradingMode; label: string }> = [
   { id: 'conditional', label: 'Đặt lệnh điều kiện' },
 ];
 
-export function TradingDrawer({ isOpen, liveQuote, onClose, selection }: TradingDrawerProps) {
+export function TradingDrawer({ isOpen, liveQuote, marketSession = null, onClose, orderPreset = null, selection }: TradingDrawerProps) {
   const [activeMode, setActiveMode] = useState<TradingMode>('spot');
   const closeDrawer = useCallback(() => {
     setActiveMode('spot');
@@ -81,7 +84,7 @@ export function TradingDrawer({ isOpen, liveQuote, onClose, selection }: Trading
           </header>
 
           <TabsContent className="flex min-h-0 flex-col overflow-hidden" value="spot">
-            <OrderTicketPanel liveQuote={liveQuote} selection={selection} />
+            <OrderTicketPanel liveQuote={liveQuote} marketSession={marketSession} preset={orderPreset} selection={selection} />
           </TabsContent>
           <TabsContent className="flex min-h-0 flex-col" value="conditional">
             <UnavailableTradingMode />

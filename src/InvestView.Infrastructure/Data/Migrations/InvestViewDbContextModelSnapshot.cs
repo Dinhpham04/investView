@@ -64,6 +64,9 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.Property<long>("AvailableQuantity")
                         .HasColumnType("bigint");
 
+                    b.Property<long>("PendingReceiveQuantity")
+                        .HasColumnType("bigint");
+
                     b.Property<decimal>("AverageCost")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
@@ -149,6 +152,11 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.Property<decimal?>("LimitPrice")
                         .HasPrecision(18, 4)
                         .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("OrderType")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(1);
 
                     b.Property<long>("Quantity")
                         .HasColumnType("bigint");

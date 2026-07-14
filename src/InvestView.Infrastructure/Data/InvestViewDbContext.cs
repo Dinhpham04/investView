@@ -170,6 +170,8 @@ public sealed class InvestViewDbContext : DbContext
         entity.Property(order => order.BoardId)
             .HasMaxLength(8)
             .IsRequired();
+        entity.Property(order => order.OrderType)
+            .HasDefaultValue(OrderType.LO);
         entity.Property(order => order.LimitPrice)
             .HasPrecision(18, 4);
         entity.Property(order => order.AverageFillPrice)

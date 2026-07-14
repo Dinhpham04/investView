@@ -67,6 +67,7 @@ public sealed class PortfolioService : IPortfolioService
                 holding.BoardId,
                 holding.Quantity,
                 holding.AvailableQuantity,
+                holding.PendingReceiveQuantity,
                 holding.AverageCost,
                 lastPrice,
                 marketValue,

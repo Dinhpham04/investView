@@ -157,6 +157,29 @@ input::placeholder {
   background-color: var(--color-theme-price-table-col-highlight);
 }
 
+.market-board-grid .ag-row {
+  cursor: pointer;
+}
+
+.market-board-grid .market-cell--order-action {
+  cursor: pointer;
+}
+
+.market-board-grid .market-cell--order-action:hover {
+  background-color: rgb(20 184 166 / 0.55);
+}
+
+.ag-tooltip {
+  border: 1px solid #5f5a70;
+  border-radius: 3px;
+  background-color: #5b556a;
+  box-shadow: 0 10px 22px rgb(0 0 0 / 0.35);
+  color: #f4f1f8;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 9px;
+}
+
 .market-cell--number {
   justify-content: flex-end;
 }

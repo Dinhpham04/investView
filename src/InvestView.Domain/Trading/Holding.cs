@@ -15,7 +15,8 @@ public sealed class Holding
         long quantity,
         long availableQuantity,
         decimal averageCost,
-        DateTimeOffset? updatedAt = null)
+        DateTimeOffset? updatedAt = null,
+        long pendingReceiveQuantity = 0)
     {
         if (userId == Guid.Empty)
         {
@@ -32,6 +33,13 @@ public sealed class Holding
             throw new ArgumentOutOfRangeException(nameof(availableQuantity), "Available quantity must be between zero and quantity.");
         }
 
+        if (pendingReceiveQuantity < 0 || availableQuantity + pendingReceiveQuantity > quantity)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(pendingReceiveQuantity),
+                "Pending receive quantity must be non-negative and fit within total quantity.");
+        }
+
         if (averageCost < 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(averageCost), "Average cost cannot be negative.");
@@ -43,6 +51,7 @@ public sealed class Holding
         BoardId = MarketIdentity.NormalizeBoardId(boardId);
         Quantity = quantity;
         AvailableQuantity = availableQuantity;
+        PendingReceiveQuantity = pendingReceiveQuantity;
         AverageCost = averageCost;
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
@@ -58,6 +67,8 @@ public sealed class Holding
     public long Quantity { get; private set; }
 
     public long AvailableQuantity { get; private set; }
+
+    public long PendingReceiveQuantity { get; private set; }
 
     public decimal AverageCost { get; private set; }
 
@@ -82,8 +93,25 @@ public sealed class Holding
         var totalQuantity = Quantity + quantity;
 
         Quantity = totalQuantity;
-        AvailableQuantity += quantity;
+        PendingReceiveQuantity += quantity;
         AverageCost = totalQuantity == 0 ? 0m : (currentCost + addedCost) / totalQuantity;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void SettleReceivedQuantity(long quantity, DateTimeOffset? updatedAt = null)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (quantity > PendingReceiveQuantity)
+        {
+            throw new InvalidOperationException("Pending receive quantity is insufficient.");
+        }
+
+        PendingReceiveQuantity -= quantity;
+        AvailableQuantity += quantity;
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
 
@@ -106,6 +134,38 @@ public sealed class Holding
             AverageCost = 0m;
         }
 
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ReserveSell(long quantity, DateTimeOffset? updatedAt = null)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (quantity > AvailableQuantity)
+        {
+            throw new InvalidOperationException("Available holding quantity is insufficient.");
+        }
+
+        AvailableQuantity -= quantity;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ReleaseSellReservation(long quantity, DateTimeOffset? updatedAt = null)
+    {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Quantity must be positive.");
+        }
+
+        if (AvailableQuantity + PendingReceiveQuantity + quantity > Quantity)
+        {
+            throw new InvalidOperationException("Reserved holding quantity is invalid.");
+        }
+
+        AvailableQuantity += quantity;
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
 }

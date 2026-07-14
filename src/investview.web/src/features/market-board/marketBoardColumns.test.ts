@@ -49,6 +49,19 @@ describe('marketBoardColumnDefs', () => {
     expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-cell-flash', row)).toBe(false);
     expect(ruleApplies(matchedPriceColumn.cellClassRules, 'quote-flash-up', row)).toBe(false);
   });
+
+  it('marks order-entry cells with cursor class and tooltip guidance', () => {
+    const matchedPriceColumn = findColumnByField('matchedPrice');
+    const ask1QuantityColumn = findColumnByField('ask1Quantity');
+    const totalVolumeColumn = findColumnByField('totalVolume');
+
+    expect(matchedPriceColumn.cellClass).toEqual(expect.arrayContaining(['market-cell--order-action']));
+    expect(ask1QuantityColumn.cellClass).toEqual(expect.arrayContaining(['market-cell--order-action']));
+    expect(totalVolumeColumn.cellClass).not.toContain('market-cell--order-action');
+    expect(getTooltip(matchedPriceColumn)).toBe('Click đúp để đặt lệnh với giá khớp');
+    expect(getTooltip(ask1QuantityColumn)).toBe('Click đúp để đặt lệnh LO với giá này');
+    expect(totalVolumeColumn.tooltipValueGetter).toBeUndefined();
+  });
 });
 
 function findColumnByField(field: keyof MarketBoardRow): ColDef<MarketBoardRow> {
@@ -78,4 +91,12 @@ function ruleApplies(
   }
 
   return rule({ data: row } as CellClassParams<MarketBoardRow>);
+}
+
+function getTooltip(column: ColDef<MarketBoardRow>) {
+  if (typeof column.tooltipValueGetter !== 'function') {
+    throw new Error(`Missing tooltipValueGetter for ${String(column.field)}`);
+  }
+
+  return column.tooltipValueGetter({} as never);
 }

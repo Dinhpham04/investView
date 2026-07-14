@@ -27,6 +27,9 @@ const flashClassNames: Record<PriceClass, string> = {
   neutral: 'quote-flash-neutral',
 };
 
+const matchedOrderTicketTooltip = 'Click đúp để đặt lệnh với giá khớp';
+const limitOrderTicketTooltip = 'Click đúp để đặt lệnh LO với giá này';
+
 export const defaultMarketBoardColumnDef: ColDef<MarketBoardRow> = {
   sortable: true,
   resizable: true,
@@ -74,34 +77,34 @@ export const marketBoardColumnDefs: (ColDef<MarketBoardRow> | ColGroupDef<Market
     headerName: 'Bên mua',
     marryChildren: true,
     children: [
-      priceColumn('Giá 3', 'bid3Price', 'bid3PriceClass'),
-      quantityColumn('KL 3', 'bid3Quantity', 'bid3QuantityClass'),
-      priceColumn('Giá 2', 'bid2Price', 'bid2PriceClass'),
-      quantityColumn('KL 2', 'bid2Quantity', 'bid2QuantityClass'),
-      priceColumn('Giá 1', 'bid1Price', 'bid1PriceClass'),
-      quantityColumn('KL 1', 'bid1Quantity', 'bid1QuantityClass'),
+      priceColumn('Giá 3', 'bid3Price', 'bid3PriceClass', undefined, false, true),
+      quantityColumn('KL 3', 'bid3Quantity', 'bid3QuantityClass', undefined, false, true),
+      priceColumn('Giá 2', 'bid2Price', 'bid2PriceClass', undefined, false, true),
+      quantityColumn('KL 2', 'bid2Quantity', 'bid2QuantityClass', undefined, false, true),
+      priceColumn('Giá 1', 'bid1Price', 'bid1PriceClass', undefined, false, true),
+      quantityColumn('KL 1', 'bid1Quantity', 'bid1QuantityClass', undefined, false, true),
     ],
   },
   {
     headerName: 'Khớp lệnh',
     marryChildren: true,
     children: [
-      priceColumn('Giá', 'matchedPrice', 'matchedPriceClass', undefined, true),
-      quantityColumn('KL', 'matchedQuantity', 'matchedQuantityClass', undefined, true),
-      changeColumn('+/-', 'matchedChange', 'matchedChangeClass', 'matchedChange', true),
-      percentColumn('+/- (%)', 'matchedChangePercent', 'matchedChangeClass', 'matchedChangePercent', true),
+      priceColumn('Giá', 'matchedPrice', 'matchedPriceClass', undefined, true, true),
+      quantityColumn('KL', 'matchedQuantity', 'matchedQuantityClass', undefined, true, true),
+      changeColumn('+/-', 'matchedChange', 'matchedChangeClass', 'matchedChange', true, true),
+      percentColumn('+/- (%)', 'matchedChangePercent', 'matchedChangeClass', 'matchedChangePercent', true, true),
     ],
   },
   {
     headerName: 'Bên bán',
     marryChildren: true,
     children: [
-      priceColumn('Giá 1', 'ask1Price', 'ask1PriceClass'),
-      quantityColumn('KL 1', 'ask1Quantity', 'ask1QuantityClass'),
-      priceColumn('Giá 2', 'ask2Price', 'ask2PriceClass'),
-      quantityColumn('KL 2', 'ask2Quantity', 'ask2QuantityClass'),
-      priceColumn('Giá 3', 'ask3Price', 'ask3PriceClass'),
-      quantityColumn('KL 3', 'ask3Quantity', 'ask3QuantityClass'),
+      priceColumn('Giá 1', 'ask1Price', 'ask1PriceClass', undefined, false, true),
+      quantityColumn('KL 1', 'ask1Quantity', 'ask1QuantityClass', undefined, false, true),
+      priceColumn('Giá 2', 'ask2Price', 'ask2PriceClass', undefined, false, true),
+      quantityColumn('KL 2', 'ask2Quantity', 'ask2QuantityClass', undefined, false, true),
+      priceColumn('Giá 3', 'ask3Price', 'ask3PriceClass', undefined, false, true),
+      quantityColumn('KL 3', 'ask3Quantity', 'ask3QuantityClass', undefined, false, true),
     ],
   },
   quantityColumn('Tổng KL', 'totalVolume', 104, undefined, true),
@@ -123,14 +126,16 @@ function priceColumn(
   field: keyof MarketBoardRow,
   classField: keyof MarketBoardRow,
   width = 76,
-  highlight = false
+  highlight = false,
+  orderAction = false
 ): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width,
     valueFormatter: priceValueFormatter,
-    cellClass: staticClasses(undefined, highlight),
+    tooltipValueGetter: orderAction ? () => getOrderTicketTooltip(field) : undefined,
+    cellClass: staticClasses(undefined, highlight, orderAction),
     cellClassRules: {
       ...priceClassRules(classField),
       ...flashClassRules(field as MarketBoardFlashField),
@@ -143,7 +148,8 @@ function quantityColumn(
   field: keyof MarketBoardRow,
   classFieldOrWidth?: keyof MarketBoardRow | number,
   width = 84,
-  highlight = false
+  highlight = false,
+  orderAction = false
 ): ColDef<MarketBoardRow> {
   const classField = typeof classFieldOrWidth === 'string' ? classFieldOrWidth : undefined;
   const columnWidth = typeof classFieldOrWidth === 'number' ? classFieldOrWidth : width;
@@ -152,7 +158,8 @@ function quantityColumn(
     field,
     width: columnWidth,
     valueFormatter: quantityValueFormatter,
-    cellClass: staticClasses(undefined, highlight),
+    tooltipValueGetter: orderAction ? () => getOrderTicketTooltip(field) : undefined,
+    cellClass: staticClasses(undefined, highlight, orderAction),
     cellClassRules: {
       ...priceClassRules(classField),
       ...flashClassRules(field as MarketBoardFlashField),
@@ -165,14 +172,16 @@ function changeColumn(
   field: keyof MarketBoardRow,
   classField: keyof MarketBoardRow = 'changeClass',
   flashField: MarketBoardFlashField = 'change',
-  highlight = false
+  highlight = false,
+  orderAction = false
 ): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width: 76,
     valueFormatter: (params) => formatChange(params.value as number | null | undefined, params.data?.referencePrice),
-    cellClass: staticClasses(undefined, highlight),
+    tooltipValueGetter: orderAction ? () => getOrderTicketTooltip(field) : undefined,
+    cellClass: staticClasses(undefined, highlight, orderAction),
     cellClassRules: {
       ...priceClassRules(classField),
       ...flashClassRules(flashField),
@@ -185,14 +194,16 @@ function percentColumn(
   field: keyof MarketBoardRow,
   classField: keyof MarketBoardRow = 'changeClass',
   flashField: MarketBoardFlashField = 'changePercent',
-  highlight = false
+  highlight = false,
+  orderAction = false
 ): ColDef<MarketBoardRow> {
   return {
     headerName,
     field,
     width: 88,
     valueFormatter: (params) => formatPercent(params.value as number | null | undefined),
-    cellClass: staticClasses(undefined, highlight),
+    tooltipValueGetter: orderAction ? () => getOrderTicketTooltip(field) : undefined,
+    cellClass: staticClasses(undefined, highlight, orderAction),
     cellClassRules: {
       ...priceClassRules(classField),
       ...flashClassRules(flashField),
@@ -212,12 +223,19 @@ function quantityValueFormatter(params: ValueFormatterParams<MarketBoardRow>) {
   return formatQuantity(params.value as number | null | undefined);
 }
 
-function staticClasses(extraClass?: string, highlight = false) {
+function staticClasses(extraClass?: string, highlight = false, orderAction = false) {
   return [
     'market-cell',
     extraClass ?? 'market-cell--number',
-    highlight ? 'ag-cell-bg-highlight' : ''
+    highlight ? 'ag-cell-bg-highlight' : '',
+    orderAction ? 'market-cell--order-action' : '',
   ];
+}
+
+function getOrderTicketTooltip(field: keyof MarketBoardRow) {
+  return field.startsWith('matched')
+    ? matchedOrderTicketTooltip
+    : limitOrderTicketTooltip;
 }
 
 function priceClassRules(classField?: keyof MarketBoardRow): CellClassRules<MarketBoardRow> {

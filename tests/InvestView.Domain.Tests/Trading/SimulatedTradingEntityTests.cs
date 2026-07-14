@@ -24,15 +24,52 @@ public sealed class SimulatedTradingEntityTests
     }
 
     [Fact]
-    public void Holding_ApplyBuy_ShouldIncreaseQuantityAndWeightedAverageCost()
+    public void CashAccount_Reserve_WhenBalanceIsAvailable_ShouldDecreaseAvailableBalanceOnly()
+    {
+        var account = new CashAccount(Guid.NewGuid(), "vnd", 1_000_000m, 1_000_000m);
+
+        account.Reserve(250_000m);
+
+        Assert.Equal(1_000_000m, account.Balance);
+        Assert.Equal(750_000m, account.AvailableBalance);
+    }
+
+    [Fact]
+    public void CashAccount_ReleaseReservation_ShouldRestoreAvailableBalance()
+    {
+        var account = new CashAccount(Guid.NewGuid(), "vnd", 1_000_000m, 1_000_000m);
+        account.Reserve(250_000m);
+
+        account.ReleaseReservation(250_000m);
+
+        Assert.Equal(1_000_000m, account.Balance);
+        Assert.Equal(1_000_000m, account.AvailableBalance);
+    }
+
+    [Fact]
+    public void Holding_ApplyBuy_ShouldIncreaseQuantityPendingReceiveAndWeightedAverageCost()
     {
         var holding = new Holding(Guid.NewGuid(), "hpg", "g1", 100, 100, 20_000m);
 
         holding.ApplyBuy(100, 30_000m);
 
         Assert.Equal(200, holding.Quantity);
-        Assert.Equal(200, holding.AvailableQuantity);
+        Assert.Equal(100, holding.AvailableQuantity);
+        Assert.Equal(100, holding.PendingReceiveQuantity);
         Assert.Equal(25_000m, holding.AverageCost);
+    }
+
+    [Fact]
+    public void Holding_SettleReceivedQuantity_ShouldMovePendingReceiveToAvailable()
+    {
+        var holding = new Holding(Guid.NewGuid(), "hpg", "g1", 0, 0, 0m);
+        holding.ApplyBuy(100, 30_000m);
+
+        holding.SettleReceivedQuantity(60);
+
+        Assert.Equal(100, holding.Quantity);
+        Assert.Equal(60, holding.AvailableQuantity);
+        Assert.Equal(40, holding.PendingReceiveQuantity);
     }
 
     [Fact]
@@ -56,12 +93,38 @@ public sealed class SimulatedTradingEntityTests
     }
 
     [Fact]
+    public void Holding_ReserveSell_WhenQuantityIsAvailable_ShouldDecreaseAvailableQuantityOnly()
+    {
+        var holding = new Holding(Guid.NewGuid(), "hpg", "g1", 200, 100, 20_000m);
+        holding.ApplyBuy(100, 30_000m);
+
+        holding.ReserveSell(40);
+
+        Assert.Equal(300, holding.Quantity);
+        Assert.Equal(60, holding.AvailableQuantity);
+        Assert.Equal(100, holding.PendingReceiveQuantity);
+    }
+
+    [Fact]
+    public void Holding_ReleaseSellReservation_ShouldRestoreAvailableQuantity()
+    {
+        var holding = new Holding(Guid.NewGuid(), "hpg", "g1", 100, 100, 20_000m);
+        holding.ReserveSell(40);
+
+        holding.ReleaseSellReservation(40);
+
+        Assert.Equal(100, holding.Quantity);
+        Assert.Equal(100, holding.AvailableQuantity);
+    }
+
+    [Fact]
     public void SimulatedOrder_Fill_ShouldCreateExecutionAndSetFilledStatus()
     {
-        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, 100, null);
+        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, OrderType.MTL, 100, null);
 
         order.Fill(100, 29_150m);
 
+        Assert.Equal(OrderType.MTL, order.OrderType);
         Assert.Equal(OrderStatus.Filled, order.Status);
         Assert.Equal(100, order.FilledQuantity);
         Assert.Equal(29_150m, order.AverageFillPrice);
@@ -73,7 +136,7 @@ public sealed class SimulatedTradingEntityTests
     [Fact]
     public void SimulatedOrder_Cancel_WhenOrderIsNew_ShouldSetCancelledStatus()
     {
-        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, 100, 28_000m);
+        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, OrderType.LO, 100, 28_000m);
 
         order.Cancel();
 
@@ -83,7 +146,7 @@ public sealed class SimulatedTradingEntityTests
     [Fact]
     public void SimulatedOrder_Cancel_WhenOrderIsFilled_ShouldReject()
     {
-        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, 100, null);
+        var order = new SimulatedOrder(Guid.NewGuid(), "hpg", "g1", OrderSide.Buy, OrderType.MTL, 100, null);
         order.Fill(100, 29_150m);
 
         Assert.Throws<InvalidOperationException>(() => order.Cancel());

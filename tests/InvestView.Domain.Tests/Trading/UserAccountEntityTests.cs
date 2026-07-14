@@ -52,6 +52,15 @@ public sealed class UserAccountEntityTests
     }
 
     [Fact]
+    public void Holding_WhenPendingReceiveQuantityExceedsRemainingQuantity_ShouldReject()
+    {
+        var userId = Guid.NewGuid();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new Holding(userId, "SSI", "G1", 100, 80, 30_000m, pendingReceiveQuantity: 21));
+    }
+
+    [Fact]
     public void SimulatedOrder_WhenCreated_ShouldNormalizeMarketIdentity()
     {
         var userId = Guid.NewGuid();

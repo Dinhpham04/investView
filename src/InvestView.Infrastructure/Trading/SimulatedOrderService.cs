@@ -1,26 +1,32 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Orders;
+using InvestView.Application.Dtos.MarketData;
 using InvestView.Domain.Trading;
 using InvestView.Infrastructure.Data;
+using InvestView.Infrastructure.MarketData;
 using Microsoft.EntityFrameworkCore;
 
 namespace InvestView.Infrastructure.Trading;
 
 public sealed class SimulatedOrderService : ISimulatedOrderService
 {
+    private const string StockProductGroupId = "STO";
     private const string TradingCurrency = "VND";
 
     private readonly InvestViewDbContext _dbContext;
     private readonly IMarketDataProvider _marketDataProvider;
+    private readonly IMarketStateStore _marketStateStore;
     private readonly TimeProvider _timeProvider;
 
     public SimulatedOrderService(
         InvestViewDbContext dbContext,
         IMarketDataProvider marketDataProvider,
+        IMarketStateStore marketStateStore,
         TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _marketDataProvider = marketDataProvider;
+        _marketStateStore = marketStateStore;
         _timeProvider = timeProvider;
     }
 
@@ -59,6 +65,12 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
             return new PlaceSimulatedOrderResult(PlaceSimulatedOrderStatus.UserNotFound, null);
         }
 
+        var now = _timeProvider.GetUtcNow();
+        if (!await CanPlaceSimulatedOrderAsync(normalizedBoardId, now, cancellationToken))
+        {
+            return new PlaceSimulatedOrderResult(PlaceSimulatedOrderStatus.MarketClosed, null);
+        }
+
         var detail = await _marketDataProvider.GetSymbolDetailAsync(
             normalizedSymbol,
             normalizedBoardId,
@@ -68,20 +80,21 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
             return new PlaceSimulatedOrderResult(PlaceSimulatedOrderStatus.SymbolNotFound, null);
         }
 
-        var executionPrice = detail.LastPrice > 0m ? detail.LastPrice : detail.ReferencePrice;
-        if (executionPrice <= 0m)
+        var marketPrice = detail.LastPrice > 0m ? detail.LastPrice : detail.ReferencePrice;
+        if (marketPrice <= 0m)
         {
             return new PlaceSimulatedOrderResult(PlaceSimulatedOrderStatus.PriceUnavailable, null);
         }
 
-        var isMarketable = IsMarketable(command.Side, command.LimitPrice, executionPrice);
-        var requiredAmount = command.Quantity * (isMarketable ? executionPrice : command.LimitPrice ?? executionPrice);
-        var now = _timeProvider.GetUtcNow();
+        var isMarketable = IsMarketable(command.Side, command.OrderType, command.LimitPrice, marketPrice);
+        var requiredAmount = command.Quantity * GetRequiredCashPrice(command.OrderType, command.LimitPrice, marketPrice);
+        var executionPrice = marketPrice;
         var order = new SimulatedOrder(
             userId,
             normalizedSymbol,
             normalizedBoardId,
             command.Side,
+            command.OrderType,
             command.Quantity,
             command.LimitPrice,
             now);
@@ -106,6 +119,10 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
                 holding.ApplyBuy(command.Quantity, executionPrice, now);
                 order.Fill(command.Quantity, executionPrice, now);
             }
+            else
+            {
+                cashAccount.Reserve(requiredAmount, now);
+            }
         }
         else
         {
@@ -125,6 +142,10 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
                 var cashAccount = await GetOrCreateCashAccountAsync(userId, now, cancellationToken);
                 cashAccount.Credit(command.Quantity * executionPrice, now);
                 order.Fill(command.Quantity, executionPrice, now);
+            }
+            else
+            {
+                holding.ReserveSell(command.Quantity, now);
             }
         }
 
@@ -156,6 +177,7 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
 
         try
         {
+            await ReleaseReservedAssetsAsync(order, cancellationToken);
             order.Cancel(_timeProvider.GetUtcNow());
         }
         catch (InvalidOperationException)
@@ -186,7 +208,10 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
 
         if (!Enum.IsDefined(command.Side) ||
             command.Quantity <= 0 ||
-            command.LimitPrice is <= 0m)
+            !Enum.IsDefined(command.OrderType) ||
+            command.OrderType == OrderType.LO && (command.LimitPrice is null or <= 0m) ||
+            command.OrderType != OrderType.LO && command.LimitPrice is not null ||
+            command.OrderType is OrderType.ATO or OrderType.ATC)
         {
             return false;
         }
@@ -194,19 +219,97 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
         return true;
     }
 
+    private async Task<bool> CanPlaceSimulatedOrderAsync(
+        string boardId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var cachedSession = await _marketStateStore.GetMarketSessionAsync(
+            StockProductGroupId,
+            boardId,
+            cancellationToken);
+        var session = cachedSession is null
+            ? MarketSessionResolver.Resolve(CreateFallbackSession(boardId, now), now)
+            : MarketSessionResolver.Resolve(cachedSession, now);
+
+        return session.IsOpen && session.IsContinuous;
+    }
+
+    private static MarketSessionUpdateDto CreateFallbackSession(string boardId, DateTimeOffset now)
+    {
+        return new MarketSessionUpdateDto(
+            MarketId: "VN",
+            BoardId: boardId,
+            ProductGroupId: StockProductGroupId,
+            EventId: string.Empty,
+            TradingSessionId: string.Empty,
+            UpdatedAt: now);
+    }
+
     private static bool IsMarketable(
         OrderSide side,
+        OrderType orderType,
         decimal? limitPrice,
         decimal executionPrice)
     {
-        if (limitPrice is null)
+        if (orderType == OrderType.MTL)
         {
             return true;
+        }
+
+        if (orderType != OrderType.LO)
+        {
+            return false;
+        }
+
+        if (limitPrice is null)
+        {
+            return false;
         }
 
         return side == OrderSide.Buy
             ? limitPrice >= executionPrice
             : limitPrice <= executionPrice;
+    }
+
+    private static decimal GetRequiredCashPrice(
+        OrderType orderType,
+        decimal? limitPrice,
+        decimal marketPrice)
+    {
+        return orderType == OrderType.LO
+            ? limitPrice ?? marketPrice
+            : marketPrice;
+    }
+
+    private async Task ReleaseReservedAssetsAsync(
+        SimulatedOrder order,
+        CancellationToken cancellationToken)
+    {
+        if (order.Status != OrderStatus.New)
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        if (order.Side == OrderSide.Buy)
+        {
+            if (order.LimitPrice is null)
+            {
+                return;
+            }
+
+            var cashAccount = await FindCashAccountAsync(order.UserId, cancellationToken);
+            cashAccount?.ReleaseReservation(order.Quantity * order.LimitPrice.Value, now);
+            return;
+        }
+
+        var holding = await FindHoldingAsync(
+            order.UserId,
+            order.Symbol,
+            order.BoardId,
+            cancellationToken);
+        holding?.ReleaseSellReservation(order.Quantity, now);
     }
 
     private Task<CashAccount?> FindCashAccountAsync(
@@ -273,6 +376,7 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
             order.Symbol,
             order.BoardId,
             order.Side,
+            order.OrderType,
             order.Quantity,
             order.LimitPrice,
             order.Status,

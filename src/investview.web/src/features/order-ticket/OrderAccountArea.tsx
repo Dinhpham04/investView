@@ -1,16 +1,4 @@
 import type { OrderSide, PortfolioSnapshot, SimulatedOrder } from '../../shared/types/trading';
-import {
-  BriefcaseBusinessIcon,
-  ChevronDownIcon,
-  Clock3Icon,
-  FilterIcon,
-  LandmarkIcon,
-  MaximizeIcon,
-  PieChartIcon,
-  TrendingUpIcon,
-  WalletIcon,
-} from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatPrice, formatQuantity } from '../market-board/marketBoardFormatters';
 import { formatMoney } from '../trading/tradingFormatters';
@@ -20,6 +8,9 @@ export type AccountTab = 'orders' | 'conditional' | 'watchlist' | 'assets';
 
 type OrderAccountAreaProps = {
   activeTab: AccountTab;
+  cancellingOrderId?: string | null;
+  onCancelOrder?: (order: SimulatedOrder) => void;
+  onEditOrder?: (order: SimulatedOrder) => void;
   onTabChange: (tab: AccountTab) => void;
   orders: SimulatedOrder[];
   ordersLoading: boolean;
@@ -35,15 +26,15 @@ const accountTabs: Array<{ id: AccountTab; label: string }> = [
   { id: 'assets', label: 'Tài sản' },
 ];
 
-const assetTimeFormatter = new Intl.DateTimeFormat('vi-VN', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  timeZone: 'Asia/Ho_Chi_Minh',
+const assetNumberFormatter = new Intl.NumberFormat('vi-VN', {
+  maximumFractionDigits: 0,
 });
 
 export function OrderAccountArea({
   activeTab,
+  cancellingOrderId = null,
+  onCancelOrder,
+  onEditOrder,
   onTabChange,
   orders,
   ordersLoading,
@@ -57,7 +48,7 @@ export function OrderAccountArea({
       value={activeTab}
       onValueChange={(value) => onTabChange(value as AccountTab)}
     >
-      <div className="flex h-[49px] shrink-0 items-stretch border-b border-[#393548]">
+      <div className="flex h-[36px] shrink-0 items-stretch border-b border-[#393548]">
         <TabsList
           aria-label="Thông tin tài khoản"
           className="h-full min-w-0 flex-1 gap-0 rounded-none bg-transparent p-0"
@@ -75,15 +66,16 @@ export function OrderAccountArea({
             );
           })}
         </TabsList>
-        <div className="flex shrink-0 items-center gap-2 px-2 text-[#aaa6b4]" aria-hidden="true">
-          <MaximizeIcon className="size-3.5" />
-          <FilterIcon className="size-3.5" />
-          <ChevronDownIcon className="size-3.5" />
-        </div>
       </div>
 
       <TabsContent className="flex min-h-0 flex-col" value="orders">
-        <OrdersLedger isLoading={ordersLoading} orders={orders} />
+        <OrdersLedger
+          cancellingOrderId={cancellingOrderId}
+          isLoading={ordersLoading}
+          orders={orders}
+          onCancelOrder={onCancelOrder}
+          onEditOrder={onEditOrder}
+        />
       </TabsContent>
       <TabsContent className="flex min-h-0 flex-col" value="conditional">
         <EmptyAccountTab message="Chưa có lệnh điều kiện" />
@@ -98,20 +90,38 @@ export function OrderAccountArea({
   );
 }
 
-function OrdersLedger({ isLoading, orders }: { isLoading: boolean; orders: SimulatedOrder[] }) {
+function OrdersLedger({
+  cancellingOrderId,
+  isLoading,
+  onCancelOrder,
+  onEditOrder,
+  orders,
+}: {
+  cancellingOrderId: string | null;
+  isLoading: boolean;
+  onCancelOrder?: (order: SimulatedOrder) => void;
+  onEditOrder?: (order: SimulatedOrder) => void;
+  orders: SimulatedOrder[];
+}) {
   const totalOrdered = orders.reduce((total, order) => total + order.quantity, 0);
   const totalFilled = orders.reduce((total, order) => total + order.filledQuantity, 0);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col" role="table" aria-label="Sổ lệnh mô phỏng">
-      <div className="h-[36px] shrink-0 px-2 py-2 text-[12px] text-[#aaa6b4]">
-        Tổng KL đặt: <strong className="text-[#ddd9e5]">{formatQuantity(totalOrdered)}</strong>
-        <span className="mx-1.5">·</span>
-        Tổng KL khớp: <strong className="text-[#ddd9e5]">{formatQuantity(totalFilled)}</strong>
+    <div className="flex min-h-0 flex-1 flex-col bg-[#1b1828]" role="table" aria-label="Sổ lệnh mô phỏng">
+      <div className="flex h-[36px] shrink-0 items-center border-b border-[#343143] bg-[#1d1a2a] px-2 text-[12px] font-semibold text-[#aaa6b4]">
+        <span>
+          Tổng KL đặt: <strong className="text-[#ddd9e5]">{formatQuantity(totalOrdered)}</strong>
+        </span>
+        <span className="mx-1.5 text-[#696374]">·</span>
+        <span>
+          Tổng KL khớp: <strong className="text-[#ddd9e5]">{formatQuantity(totalFilled)}</strong>
+        </span>
       </div>
-      <div className="grid min-h-[42px] shrink-0 grid-cols-[52px_57px_82px_85px_65px_55px] items-center rounded-t bg-[#393647] px-1 text-center text-[11px] font-bold leading-[14px] text-[#c7c3ce]" role="row">
-        <span role="columnheader">Mã CK</span>
+
+      <div className="grid min-h-[38px] shrink-0 grid-cols-[1fr_1fr_0.8fr_1fr_1fr_1fr_1.1fr] items-center bg-[#393647] px-2 text-center text-[11px] font-bold leading-[14px] text-[#c7c3ce]" role="row">
+        <span className="text-left" role="columnheader">Mã CK</span>
         <span role="columnheader">Mua/Bán</span>
+        <span role="columnheader">Loại</span>
         <span role="columnheader">KL Khớp<br />KL đặt</span>
         <span role="columnheader">Giá khớp TB<br />Giá đặt</span>
         <span role="columnheader">Trạng thái</span>
@@ -124,20 +134,80 @@ function OrdersLedger({ isLoading, orders }: { isLoading: boolean; orders: Simul
           <EmptyAccountTab message="Không tìm thấy lệnh nào" />
         ) : (
           orders.map((order) => (
-            <div
-              aria-label={`${order.symbol} ${formatSide(order.side)} ${formatStatus(order.status)}`}
-              className="grid min-h-[46px] grid-cols-[52px_57px_82px_85px_65px_55px] items-center border-b border-[#343143] px-1 text-center text-[11px]"
+            <OrderLedgerRow
+              cancellingOrderId={cancellingOrderId}
               key={order.id}
-              role="row"
-            >
-              <strong className="text-[#ffe000]" role="cell">{order.symbol}</strong>
-              <span className={order.side === 'Buy' ? 'text-[#20d18b]' : 'text-[#ff4255]'} role="cell">{formatSide(order.side)}</span>
-              <span role="cell">{formatQuantity(order.filledQuantity)}<br />{formatQuantity(order.quantity)}</span>
-              <span role="cell">{formatPrice(order.averageFillPrice)}<br />{formatPrice(order.limitPrice)}</span>
-              <span role="cell">{formatStatus(order.status)}</span>
-              <span className="text-[#8d8998]" role="cell">-</span>
-            </div>
+              order={order}
+              onCancelOrder={onCancelOrder}
+              onEditOrder={onEditOrder}
+            />
           ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OrderLedgerRow({
+  cancellingOrderId,
+  onCancelOrder,
+  onEditOrder,
+  order,
+}: {
+  cancellingOrderId: string | null;
+  onCancelOrder?: (order: SimulatedOrder) => void;
+  onEditOrder?: (order: SimulatedOrder) => void;
+  order: SimulatedOrder;
+}) {
+  const status = formatStatus(order.status);
+  const canAmend = order.status === 'New';
+  const isCancelling = cancellingOrderId === order.id;
+
+  return (
+    <div
+      aria-label={`${order.symbol} ${formatSide(order.side)} ${order.orderType} ${status}`}
+      className="grid min-h-[48px] grid-cols-[1fr_1fr_0.8fr_1fr_1fr_1fr_1.1fr] items-center border-b border-[#343143] px-2 text-center text-[11px] text-[#d7d2df] transition-colors hover:bg-[#242033]"
+      role="row"
+    >
+      <div className="min-w-0 text-left" role="cell">
+        <strong className="block truncate text-[12px] font-extrabold text-[#ffe000]">{order.symbol}</strong>
+        <span className="mt-0.5 block text-[9px] font-semibold text-[#8f8a9a]">{order.boardId}</span>
+      </div>
+      <span className={`font-bold ${order.side === 'Buy' ? 'text-[#20d18b]' : 'text-[#ff4255]'}`} role="cell">
+        {formatSide(order.side)}
+      </span>
+      <span className="font-bold text-[#dcd8e5]" role="cell">{order.orderType}</span>
+      <div className="tabular-nums" role="cell">
+        <p className="font-semibold text-white">{formatQuantity(order.filledQuantity)}</p>
+        <p className="mt-0.5 text-[#c8c3d0]">{formatQuantity(order.quantity)}</p>
+      </div>
+      <div className="tabular-nums" role="cell">
+        <p className="font-semibold text-white">{formatPrice(order.averageFillPrice)}</p>
+        <p className="mt-0.5 text-[#c8c3d0]">{formatPrice(order.limitPrice)}</p>
+      </div>
+      <span className={getStatusTextClass(order.status)} role="cell">{status}</span>
+      <div className="flex items-center justify-center gap-1" role="cell">
+        {canAmend ? (
+          <>
+            <button
+              className="rounded px-1.5 py-0.5 font-semibold text-[#c8c3d0] hover:bg-[#343143] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={isCancelling}
+              type="button"
+              onClick={() => onEditOrder?.(order)}
+            >
+              Sửa
+            </button>
+            <button
+              className="rounded px-1.5 py-0.5 font-semibold text-[#ff6577] hover:bg-[#3b1521] disabled:cursor-not-allowed disabled:opacity-45"
+              disabled={isCancelling}
+              type="button"
+              onClick={() => onCancelOrder?.(order)}
+            >
+              {isCancelling ? '...' : 'Hủy'}
+            </button>
+          </>
+        ) : (
+          <span className="text-[#8d8998]">-</span>
         )}
       </div>
     </div>
@@ -150,14 +220,70 @@ function HoldingsTab({ portfolio }: { portfolio: PortfolioSnapshot | null }) {
   }
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto">
-      {portfolio.holdings.map((holding) => (
-        <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-[#343143] px-3 py-2" key={`${holding.boardId}:${holding.symbol}`}>
-          <strong className="text-[#ffe000]">{holding.symbol}</strong>
-          <span>{formatQuantity(holding.quantity)}</span>
-          <span>{formatMoney(holding.marketValue)}</span>
-        </div>
-      ))}
+    <div className="flex min-h-0 flex-1 flex-col bg-[#1b1828]" role="table" aria-label="Danh mục chứng khoán nắm giữ">
+      <div className="grid min-h-[38px] shrink-0 grid-cols-[1.05fr_0.95fr_1fr_1.15fr_1.05fr_0.75fr] items-center bg-[#393647] px-2 text-center text-[11px] font-bold leading-[14px] text-[#c7c3ce]" role="row">
+        <span className="text-left" role="columnheader">Mã CK</span>
+        <span role="columnheader">KLGD<br />Tổng KL</span>
+        <span role="columnheader">Giá TT<br />Giá vốn</span>
+        <span role="columnheader">Giá trị TT</span>
+        <span role="columnheader">Lãi/Lỗ<br />Lãi/Lỗ (%)</span>
+        <span role="columnheader">Bán</span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {portfolio.holdings.map((holding) => (
+          <HoldingRow holding={holding} key={`${holding.boardId}:${holding.symbol}`} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HoldingRow({ holding }: { holding: PortfolioSnapshot['holdings'][number] }) {
+  const pnlPercent = calculatePercentChange(holding.unrealizedPnL, holding.costValue);
+  const pnlClass = holding.unrealizedPnL > 0
+    ? 'text-[#20d18b]'
+    : holding.unrealizedPnL < 0
+      ? 'text-[#ff4255]'
+      : 'text-[#dcd8e5]';
+
+  return (
+    <div
+      aria-label={`${holding.symbol} tổng khối lượng ${formatQuantity(holding.quantity)} giá trị thị trường ${formatMoney(holding.marketValue)}`}
+      className="grid min-h-[52px] grid-cols-[1.05fr_0.95fr_1fr_1.15fr_1.05fr_0.75fr] items-center border-b border-[#343143] px-2 text-center text-[11px] text-[#d7d2df] transition-colors hover:bg-[#242033]"
+      role="row"
+    >
+      <div className="min-w-0 text-left" role="cell">
+        <strong className="block truncate text-[13px] font-extrabold text-[#ffe000]">{holding.symbol}</strong>
+        <p className="mt-0.5 truncate text-[10px] font-semibold text-[#9f9aaa]">
+          Có thể bán {formatQuantity(holding.availableQuantity)}
+          {holding.pendingReceiveQuantity > 0 ? ` · Chờ về ${formatQuantity(holding.pendingReceiveQuantity)}` : ''}
+        </p>
+      </div>
+      <div className="tabular-nums" role="cell">
+        <p className="font-bold text-white">{formatQuantity(holding.availableQuantity)}</p>
+        <p className="mt-0.5 text-[#aaa6b4]">{formatQuantity(holding.quantity)}</p>
+      </div>
+      <div className="tabular-nums" role="cell">
+        <p className="font-bold text-white">{formatPrice(holding.lastPrice)}</p>
+        <p className="mt-0.5 text-[#aaa6b4]">{formatPrice(holding.averageCost)}</p>
+      </div>
+      <span className="truncate text-right font-bold tabular-nums text-white" role="cell">
+        {formatMoney(holding.marketValue)}
+      </span>
+      <div className={`tabular-nums ${pnlClass}`} role="cell">
+        <p className="font-bold">{formatMoney(holding.unrealizedPnL)}</p>
+        <p className="mt-0.5 font-semibold">{formatPercentValue(pnlPercent)}</p>
+      </div>
+      <div className="flex justify-center" role="cell">
+        <button
+          className="h-6 rounded bg-[#d81024] px-2 text-[11px] font-bold text-white hover:bg-[#e51a2e] disabled:cursor-not-allowed disabled:bg-[#3a2330] disabled:text-[#8f8a9a]"
+          disabled
+          title="Chức năng bán nhanh từ danh mục sẽ được bổ sung sau"
+          type="button"
+        >
+          Bán
+        </button>
+      </div>
     </div>
   );
 }
@@ -193,13 +319,23 @@ function AssetsTab({
 
   if (isLoading && portfolio == null) {
     return (
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3" role="status" aria-label="Đang tải tài sản">
-        <div className="space-y-3">
-          <div className="h-[112px] animate-pulse rounded border border-[#343143] bg-[#211e30]" />
-          <div className="grid grid-cols-2 gap-2">
-            <div className="h-[72px] animate-pulse rounded border border-[#343143] bg-[#211e30]" />
-            <div className="h-[72px] animate-pulse rounded border border-[#343143] bg-[#211e30]" />
-          </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto bg-[#1b1828]"
+        role="status"
+        aria-label="Đang tải tài sản"
+      >
+        <div className="border-b border-[#302d3d]">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              className={`grid min-h-[36px] grid-cols-[minmax(0,1fr)_96px] items-center gap-3 border-b border-[#302d3d] px-3 ${
+                index % 2 === 0 ? 'bg-[#1b1828]' : 'bg-[#2a2738]'
+              }`}
+              key={index}
+            >
+              <div className="h-3 w-32 animate-pulse rounded bg-[#403b50]" />
+              <div className="ml-auto h-3 w-16 animate-pulse rounded bg-[#403b50]" />
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -209,178 +345,69 @@ function AssetsTab({
     return <EmptyAccountTab message="Chưa có dữ liệu tài sản." />;
   }
 
-  const cashPercent = calculatePercent(portfolio.totalCash, portfolio.totalEquity);
-  const stockPercent = calculatePercent(portfolio.totalMarketValue, portfolio.totalEquity);
-  const pnlTone = portfolio.totalUnrealizedPnL > 0
-    ? 'text-[#20d18b]'
-    : portfolio.totalUnrealizedPnL < 0
-      ? 'text-[#ff4255]'
-      : 'text-[#dcd8e5]';
+  const rows = createAssetSummaryRows(portfolio);
 
   return (
     <section
       aria-label="Tài sản tài khoản mô phỏng"
-      className="min-h-0 flex-1 overflow-y-auto bg-[#171522]"
+      className="min-h-0 flex-1 overflow-y-auto bg-[#1b1828]"
     >
-      <div className="space-y-3 px-3 py-3">
-        <div className="rounded border border-[#393548] bg-[#211e30] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] font-extrabold uppercase text-[#ffb800]">Simulated trading</p>
-              <h3 className="mt-0.5 truncate text-[13px] font-bold text-white">{session.user.displayName}</h3>
-              <p className="mt-1 flex items-center gap-1 text-[11px] text-[#9f9aaa]">
-                <Clock3Icon className="size-3" />
-                Cập nhật {formatAssetTime(portfolio.updatedAt)}
-              </p>
-            </div>
-            <span className="rounded border border-[#3c6d62] bg-[#142c2a] px-2 py-1 text-[10px] font-bold uppercase text-[#38d3ad]">
-              Demo
+      <div className="border-b border-[#302d3d] text-[12px] font-semibold" role="table" aria-label="Tổng hợp tài sản">
+        {rows.map((row, index) => (
+          <div
+            className={`grid min-h-[36px] grid-cols-[minmax(0,1fr)_minmax(92px,auto)] items-center gap-3 border-b border-[#302d3d] px-3 ${
+              index % 2 === 0 ? 'bg-[#1b1828]' : 'bg-[#2a2738]'
+            }`}
+            key={row.label}
+            role="row"
+          >
+            <span className="truncate text-[#aaa6b4]" role="cell">
+              {row.label}
+            </span>
+            <span className="text-right font-bold tabular-nums text-[#dcd8e5]" role="cell">
+              {formatAssetAmount(row.value)}
             </span>
           </div>
-
-          <div className="mt-4">
-            <p className="text-[11px] font-semibold text-[#9f9aaa]">Tổng tài sản</p>
-            <p className="mt-0.5 text-[22px] font-extrabold leading-none text-white">
-              {formatMoney(portfolio.totalEquity)}
-            </p>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <AssetMetric icon={WalletIcon} label="Tiền mặt" value={formatMoney(portfolio.totalCash)} />
-            <AssetMetric icon={LandmarkIcon} label="Sức mua" value={formatMoney(portfolio.totalAvailableCash)} />
-            <AssetMetric icon={BriefcaseBusinessIcon} label="Giá trị CK" value={formatMoney(portfolio.totalMarketValue)} />
-            <AssetMetric className={pnlTone} icon={TrendingUpIcon} label="Lãi/lỗ tạm tính" value={formatMoney(portfolio.totalUnrealizedPnL)} />
-          </div>
-        </div>
-
-        <div className="rounded border border-[#343143] bg-[#1d1a2b] p-3">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="flex items-center gap-2 text-[12px] font-bold text-white">
-              <PieChartIcon className="size-4 text-[#38d3ad]" />
-              Phân bổ tài sản
-            </p>
-            <span className="text-[11px] font-semibold text-[#9f9aaa]">{portfolio.holdings.length} mã</span>
-          </div>
-          <AllocationRow label="Tiền mặt" percent={cashPercent} value={formatMoney(portfolio.totalCash)} variant="cash" />
-          <AllocationRow label="Chứng khoán" percent={stockPercent} value={formatMoney(portfolio.totalMarketValue)} variant="stock" />
-        </div>
-
-        <div className="rounded border border-[#343143] bg-[#1d1a2b]">
-          <div className="flex items-center justify-between border-b border-[#343143] px-3 py-2">
-            <p className="text-[12px] font-bold text-white">Danh mục nắm giữ</p>
-            <span className="text-[11px] font-semibold text-[#9f9aaa]">{portfolio.holdings.length} mã</span>
-          </div>
-          {portfolio.holdings.length === 0 ? (
-            <div className="px-3 py-8 text-center text-[12px] text-[#9f9aaa]">Danh mục chưa có chứng khoán</div>
-          ) : (
-            <div className="divide-y divide-[#343143]">
-              {portfolio.holdings.map((holding) => (
-                <div className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2" key={`${holding.boardId}:${holding.symbol}`}>
-                  <div className="min-w-0">
-                    <strong className="text-[13px] text-[#ffe000]">{holding.symbol}</strong>
-                    <p className="mt-0.5 text-[11px] text-[#9f9aaa]">
-                      {formatQuantity(holding.quantity)} cp · Giá vốn {formatPrice(holding.averageCost)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[12px] font-bold text-white">{formatMoney(holding.marketValue)}</p>
-                    <p className={`mt-0.5 text-[11px] font-semibold ${holding.unrealizedPnL > 0 ? 'text-[#20d18b]' : holding.unrealizedPnL < 0 ? 'text-[#ff4255]' : 'text-[#9f9aaa]'}`}>
-                      {formatMoney(holding.unrealizedPnL)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="rounded border border-[#343143] bg-[#1d1a2b]">
-          <div className="border-b border-[#343143] px-3 py-2">
-            <p className="text-[12px] font-bold text-white">Tiền theo tài khoản</p>
-          </div>
-          {portfolio.cashAccounts.length === 0 ? (
-            <div className="px-3 py-5 text-[12px] text-[#9f9aaa]">Không có tài khoản tiền chi tiết.</div>
-          ) : (
-            <div className="divide-y divide-[#343143]">
-              {portfolio.cashAccounts.map((account) => (
-                <div className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2" key={account.currency}>
-                  <span className="text-[12px] font-semibold text-[#dcd8e5]">{account.currency}</span>
-                  <span className="text-right text-[12px] font-bold text-white">{formatMoney(account.availableBalance)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        ))}
       </div>
     </section>
   );
 }
 
-function AssetMetric({
-  className = 'text-[#dcd8e5]',
-  icon: Icon,
-  label,
-  value,
-}: {
-  className?: string;
-  icon: LucideIcon;
+type AssetSummaryRow = {
   label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded border border-[#363247] bg-[#181625] px-2.5 py-2">
-      <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-[#8f8a9a]">
-        <Icon className="size-3.5" />
-        {label}
-      </p>
-      <p className={`mt-1 truncate text-[12px] font-extrabold ${className}`}>{value}</p>
-    </div>
-  );
+  value: number | null;
+};
+
+function createAssetSummaryRows(portfolio: PortfolioSnapshot): AssetSummaryRow[] {
+  return [
+    { label: 'Tổng tài sản TKCK', value: portfolio.totalEquity },
+    { label: 'Sức mua tối đa', value: portfolio.totalAvailableCash },
+    { label: 'Tổng tài sản thực có', value: portfolio.totalEquity },
+    { label: 'Số dư tiền', value: portfolio.totalCash },
+    { label: 'Giá trị CK niêm yết', value: portfolio.totalMarketValue },
+    { label: 'Tiền có thể rút', value: portfolio.totalAvailableCash },
+  ];
 }
 
-function AllocationRow({
-  label,
-  percent,
-  value,
-  variant,
-}: {
-  label: string;
-  percent: number;
-  value: string;
-  variant: 'cash' | 'stock';
-}) {
-  const barClass = variant === 'cash' ? 'bg-[#38d3ad]' : 'bg-[#ffd600]';
-
-  return (
-    <div className="not-first:mt-3">
-      <div className="mb-1.5 flex items-center justify-between gap-3 text-[11px]">
-        <span className="font-semibold text-[#c9c4d1]">{label}</span>
-        <span className="font-bold text-white">{value}</span>
-      </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-[#2a2638]">
-        <div className={`h-full rounded-full ${barClass}`} style={{ width: `${percent}%` }} />
-      </div>
-      <p className="mt-1 text-right text-[10px] font-semibold text-[#8f8a9a]">{percent.toFixed(1)}%</p>
-    </div>
-  );
-}
-
-function calculatePercent(value: number, total: number) {
-  if (total <= 0) {
-    return 0;
-  }
-
-  return Math.min(100, Math.max(0, value / total * 100));
-}
-
-function formatAssetTime(value: string) {
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) {
+function formatAssetAmount(value: number | null | undefined) {
+  if (value == null || !Number.isFinite(value)) {
     return '-';
   }
 
-  return assetTimeFormatter.format(date);
+  return assetNumberFormatter.format(value);
+}
+
+function calculatePercentChange(value: number, baseValue: number) {
+  if (baseValue <= 0) {
+    return 0;
+  }
+
+  return value / baseValue * 100;
+}
+
+function formatPercentValue(value: number) {
+  return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 }
 
 function EmptyAccountTab({ message }: { message: string }) {
@@ -404,4 +431,15 @@ function formatStatus(status: SimulatedOrder['status']) {
   };
 
   return labels[status];
+}
+
+function getStatusTextClass(status: SimulatedOrder['status']) {
+  const classes: Record<SimulatedOrder['status'], string> = {
+    New: 'font-semibold text-[#ffd86b]',
+    Filled: 'font-semibold text-[#dcd8e5]',
+    Cancelled: 'font-semibold text-[#aaa6b4]',
+    Rejected: 'font-semibold text-[#ff5b6b]',
+  };
+
+  return classes[status];
 }

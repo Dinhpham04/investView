@@ -18,6 +18,27 @@ public sealed class SimulatedOrder
         long quantity,
         decimal? limitPrice,
         DateTimeOffset? createdAt = null)
+        : this(
+            userId,
+            symbol,
+            boardId,
+            side,
+            limitPrice is null ? OrderType.MTL : OrderType.LO,
+            quantity,
+            limitPrice,
+            createdAt)
+    {
+    }
+
+    public SimulatedOrder(
+        Guid userId,
+        string symbol,
+        string boardId,
+        OrderSide side,
+        OrderType orderType,
+        long quantity,
+        decimal? limitPrice,
+        DateTimeOffset? createdAt = null)
     {
         if (userId == Guid.Empty)
         {
@@ -34,6 +55,21 @@ public sealed class SimulatedOrder
             throw new ArgumentOutOfRangeException(nameof(side), "Order side is invalid.");
         }
 
+        if (!Enum.IsDefined(orderType))
+        {
+            throw new ArgumentOutOfRangeException(nameof(orderType), "Order type is invalid.");
+        }
+
+        if (orderType == OrderType.LO && limitPrice is null or <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limitPrice), "Limit price is required for LO orders.");
+        }
+
+        if (orderType != OrderType.LO && limitPrice is not null)
+        {
+            throw new ArgumentException("Only LO orders can include a limit price.", nameof(limitPrice));
+        }
+
         if (limitPrice is < 0m)
         {
             throw new ArgumentOutOfRangeException(nameof(limitPrice), "Limit price cannot be negative.");
@@ -44,6 +80,7 @@ public sealed class SimulatedOrder
         Symbol = MarketIdentity.NormalizeSymbol(symbol);
         BoardId = MarketIdentity.NormalizeBoardId(boardId);
         Side = side;
+        OrderType = orderType;
         Quantity = quantity;
         LimitPrice = limitPrice;
         Status = OrderStatus.New;
@@ -60,6 +97,8 @@ public sealed class SimulatedOrder
     public string BoardId { get; private set; }
 
     public OrderSide Side { get; private set; }
+
+    public OrderType OrderType { get; private set; }
 
     public long Quantity { get; private set; }
 
@@ -124,6 +163,14 @@ public enum OrderSide
 {
     Buy = 1,
     Sell = 2
+}
+
+public enum OrderType
+{
+    LO = 1,
+    MTL = 2,
+    ATO = 3,
+    ATC = 4
 }
 
 public enum OrderStatus

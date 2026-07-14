@@ -81,13 +81,15 @@ vi.mock('ag-grid-react', async () => {
       getRowId,
       rowData,
       onGridReady,
-      onRowClicked,
+      onCellClicked,
+      onCellDoubleClicked,
     }: {
       columnDefs: MockColumn[];
       getRowId?: (params: { data: Record<string, unknown> }) => string;
       rowData: Record<string, unknown>[];
       onGridReady?: (event: { api: { applyTransactionAsync: typeof testRuntime.applyTransactionAsync } }) => void;
-      onRowClicked?: (event: { data: Record<string, unknown> }) => void;
+      onCellClicked?: (event: { colDef: MockColumn; data: Record<string, unknown> }) => void;
+      onCellDoubleClicked?: (event: { colDef: MockColumn; data: Record<string, unknown> }) => void;
     }) => {
       const leafColumns = flattenColumns(columnDefs);
 
@@ -104,13 +106,35 @@ vi.mock('ag-grid-react', async () => {
               ...(column.children?.map((child) => <span key={`${column.headerName}-${child.headerName}`}>{child.headerName}</span>) ?? []),
             ])}
           </div>
-          {rowData.map((row) => (
-            <div key={getRowId?.({ data: row }) ?? String(row.symbol ?? row.id)} role="row" onClick={() => onRowClicked?.({ data: row })}>
+          {rowData.map((row) => {
+            const symbolColumn = leafColumns.find((column) => column.field === 'symbol') ?? leafColumns[0];
+
+            return (
+            <div
+              key={getRowId?.({ data: row }) ?? String(row.symbol ?? row.id)}
+              role="row"
+              onClick={() => onCellClicked?.({ colDef: symbolColumn, data: row })}
+              onDoubleClick={() => onCellDoubleClicked?.({ colDef: symbolColumn, data: row })}
+            >
               {leafColumns.map((column, index) => (
-                <span key={`${column.field ?? column.headerName}-${index}`}>{renderCellValue(column, row)}</span>
+                <span
+                  data-field={column.field}
+                  key={`${column.field ?? column.headerName}-${index}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCellClicked?.({ colDef: column, data: row });
+                  }}
+                  onDoubleClick={(event) => {
+                    event.stopPropagation();
+                    onCellDoubleClicked?.({ colDef: column, data: row });
+                  }}
+                >
+                  {renderCellValue(column, row)}
+                </span>
               ))}
             </div>
-          ))}
+          );
+          })}
         </div>
       );
     },
@@ -440,6 +464,65 @@ describe('MarketBoard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Đóng bảng đặt lệnh' }));
     expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
+  });
+
+  it('opens the trading drawer from the symbol detail order button', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+
+    const row = await screen.findByRole('row');
+    fireEvent.click(row);
+
+    const panel = await screen.findByTestId('symbol-detail-panel');
+    fireEvent.click(within(panel).getByRole('button', { name: 'Đặt lệnh HPG' }));
+
+    const drawer = await screen.findByTestId('trading-drawer');
+    expect(drawer).toBeInTheDocument();
+    expect(screen.getByTestId('symbol-detail-panel')).toBeInTheDocument();
+    expect(within(drawer).getByText('HPG')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MTL' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('opens a prefilled MTL order ticket when double-clicking a matched trade cell', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+
+    fireEvent.doubleClick(getGridCell('matchedPrice'));
+
+    const drawer = await screen.findByTestId('trading-drawer');
+    expect(drawer).toBeInTheDocument();
+    expect(screen.queryByTestId('symbol-detail-panel')).not.toBeInTheDocument();
+    expect(within(drawer).getByText('HPG')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'MTL' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('opens a prefilled LO order ticket when double-clicking a bid or ask cell', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+
+    fireEvent.doubleClick(getGridCell('ask1Quantity'));
+
+    expect(await screen.findByTestId('trading-drawer')).toBeInTheDocument();
+    expect(screen.queryByTestId('symbol-detail-panel')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'LO' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByDisplayValue('28.1')).toBeInTheDocument();
+  });
+
+  it('does not open detail or trading ticket on a single click inside bid, ask, or matched cells', async () => {
+    vi.stubGlobal('fetch', mockMarketBoardFetch());
+
+    renderWithQueryClient(<MarketBoard />);
+    expect(await screen.findByRole('grid')).toBeInTheDocument();
+
+    fireEvent.click(getGridCell('bid1Price'));
+
+    expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('symbol-detail-panel')).not.toBeInTheDocument();
   });
 
   it('applies realtime quote updates to the matching grid row', async () => {
@@ -948,9 +1031,18 @@ describe('MarketBoard', () => {
 
     renderWithQueryClient(<MarketBoard />);
 
-    expect(await screen.findByText('Request failed: 503 Service Unavailable')).toBeInTheDocument();
+    expect(await screen.findByText('Service unavailable')).toBeInTheDocument();
   });
 });
+
+function getGridCell(field: string) {
+  const cell = screen.getByRole('grid').querySelector(`[data-field="${field}"]`);
+  if (!(cell instanceof HTMLElement)) {
+    throw new Error(`Grid cell not found: ${field}`);
+  }
+
+  return cell;
+}
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {

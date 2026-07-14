@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import type { GridApi, GridReadyEvent, RowClickedEvent } from 'ag-grid-community';
+import type { CellClickedEvent, CellDoubleClickedEvent, GridApi, GridReadyEvent } from 'ag-grid-community';
 import { AgGridReact } from 'ag-grid-react';
 import { useMarketQuotesQuery } from './useMarketQuotesQuery';
 import { useMarketSessionQuery } from './useMarketSessionQuery';
@@ -12,6 +12,7 @@ import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import { TradingDrawer } from '../trading/TradingDrawer';
 import { WatchlistPanel } from '../watchlist/WatchlistPanel';
+import type { OrderTicketPreset } from '../order-ticket/OrderTicketPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection, type QuoteHubConnectionStatus, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate } from '../../shared/types/market';
@@ -48,8 +49,11 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const [quotes, setQuotes] = useState<MarketQuote[]>([]);
   const [flashClassesByRow, setFlashClassesByRow] = useState<Record<string, MarketBoardFlashClasses>>({});
   const [selectedSymbol, setSelectedSymbol] = useState<SymbolDetailSelection | null>(null);
+  const [isSymbolDetailOpen, setIsSymbolDetailOpen] = useState(false);
   const [symbolOhlcSubscription, setSymbolOhlcSubscription] = useState<SymbolOhlcSubscription | null>(null);
   const [isTradingDrawerOpen, setIsTradingDrawerOpen] = useState(false);
+  const [orderTicketPreset, setOrderTicketPreset] = useState<OrderTicketPreset | null>(null);
+  const nextOrderTicketPresetIdRef = useRef(0);
   const [latestMarketIndexUpdate, setLatestMarketIndexUpdate] = useState<MarketIndexUpdate | null>(null);
   const [latestOhlcUpdate, setLatestOhlcUpdate] = useState<MarketOhlcUpdate | null>(null);
   const [latestMarketSessionUpdate, setLatestMarketSessionUpdate] = useState<MarketSessionUpdate | null>(null);
@@ -143,8 +147,12 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const handleGridReady = useCallback((event: GridReadyEvent<MarketBoardRow>) => {
     gridApiRef.current = event.api;
   }, []);
-  const handleRowClicked = useCallback((event: RowClickedEvent<MarketBoardRow>) => {
+  const handleCellClicked = useCallback((event: CellClickedEvent<MarketBoardRow>) => {
     if (event.data == null) {
+      return;
+    }
+
+    if (getOrderTicketPresetForCell(event.data, getCellField(event)) != null) {
       return;
     }
 
@@ -152,7 +160,43 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
       boardId: event.data.boardId,
       symbol: event.data.symbol,
     });
+    setIsSymbolDetailOpen(true);
   }, []);
+  const openTradingDrawer = useCallback((
+    preset: Omit<OrderTicketPreset, 'id'> = { limitPrice: null, orderType: 'MTL' },
+    options: { closeSymbolDetail?: boolean } = {},
+  ) => {
+    nextOrderTicketPresetIdRef.current += 1;
+    setOrderTicketPreset({
+      ...preset,
+      id: nextOrderTicketPresetIdRef.current,
+    });
+    if (options.closeSymbolDetail !== false) {
+      setIsSymbolDetailOpen(false);
+    }
+    setIsTradingDrawerOpen(true);
+  }, []);
+  const handleCellDoubleClicked = useCallback((event: CellDoubleClickedEvent<MarketBoardRow>) => {
+    if (event.data == null) {
+      return;
+    }
+
+    const preset = getOrderTicketPresetForCell(event.data, getCellField(event));
+    if (preset == null) {
+      setSelectedSymbol({
+        boardId: event.data.boardId,
+        symbol: event.data.symbol,
+      });
+      setIsSymbolDetailOpen(true);
+      return;
+    }
+
+    setSelectedSymbol({
+      boardId: event.data.boardId,
+      symbol: event.data.symbol,
+    });
+    openTradingDrawer(preset);
+  }, [openTradingDrawer]);
   const closeTradingDrawer = useCallback(() => {
     setIsTradingDrawerOpen(false);
   }, []);
@@ -180,6 +224,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
     }
 
     setSelectedSymbol(null);
+    setIsSymbolDetailOpen(false);
   }, [quotes, selectedSymbol]);
 
   useEffect(() => {
@@ -315,7 +360,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
         <button
           className="ml-auto h-8 rounded-sm bg-[#16a77e] px-5 !text-[12px] font-extrabold text-white hover:bg-[#1db98e]"
           type="button"
-          onClick={() => setIsTradingDrawerOpen(true)}
+          onClick={() => openTradingDrawer()}
         >
           Đặt lệnh
         </button>
@@ -334,7 +379,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
       {!isEmptyWatchlistFilter && quotesQuery.isSuccess && rows.length === 0 ? <BoardState label="Không có mã cho bảng này" /> : null}
 
       {!isEmptyWatchlistFilter && quotesQuery.isSuccess && rows.length > 0 ? (
-        <div className="min-h-0 flex-1" data-testid="market-board-grid">
+        <div className="market-board-grid min-h-0 flex-1" data-testid="market-board-grid">
           <AgGridReact
             autoSizeStrategy={{
               type: 'fitGridWidth',
@@ -353,8 +398,9 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
             defaultColGroupDef={defaultMarketBoardColumnGroupDef}
             getRowId={(params) => params.data.id}
             headerHeight={30}
+            onCellClicked={handleCellClicked}
+            onCellDoubleClicked={handleCellDoubleClicked}
             onGridReady={handleGridReady}
-            onRowClicked={handleRowClicked}
             rowData={rows}
             suppressCellFocus
             suppressHorizontalScroll
@@ -367,15 +413,21 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
       <SymbolDetailPanel
         liveQuote={selectedLiveQuote}
         liveTrade={latestTradeUpdate}
-        selection={selectedSymbol}
+        selection={isSymbolDetailOpen ? selectedSymbol : null}
         onOhlcSubscriptionChange={handleOhlcSubscriptionChange}
-        onClose={() => setSelectedSymbol(null)}
+        onOpenOrderTicket={() => openTradingDrawer(undefined, { closeSymbolDetail: false })}
+        onClose={() => {
+          setIsSymbolDetailOpen(false);
+          setSelectedSymbol(null);
+        }}
       />
 
       <TradingDrawer
         isOpen={isTradingDrawerOpen}
         liveQuote={selectedLiveQuote}
+        marketSession={marketSession}
         onClose={closeTradingDrawer}
+        orderPreset={orderTicketPreset}
         selection={selectedSymbol}
       />
 
@@ -421,6 +473,65 @@ function UserFeatureNavigation() {
 
 function getRowId(quote: Pick<MarketQuote, 'boardId' | 'symbol'>) {
   return `${quote.boardId}:${quote.symbol}`;
+}
+
+function getCellField(event: CellClickedEvent<MarketBoardRow> | CellDoubleClickedEvent<MarketBoardRow>) {
+  return typeof event.colDef.field === 'string' ? event.colDef.field : null;
+}
+
+function getOrderTicketPresetForCell(row: MarketBoardRow, field: string | null): Omit<OrderTicketPreset, 'id'> | null {
+  if (field == null) {
+    return null;
+  }
+
+  if (marketOrderFields.has(field)) {
+    return {
+      limitPrice: null,
+      orderType: 'MTL',
+    };
+  }
+
+  const limitPrice = getLimitPriceForOrderBookField(row, field);
+  if (limitPrice == null) {
+    return null;
+  }
+
+  return {
+    limitPrice,
+    orderType: 'LO',
+  };
+}
+
+const marketOrderFields = new Set<string>([
+  'matchedPrice',
+  'matchedQuantity',
+  'matchedChange',
+  'matchedChangePercent',
+]);
+
+function getLimitPriceForOrderBookField(row: MarketBoardRow, field: string) {
+  switch (field) {
+    case 'bid1Price':
+    case 'bid1Quantity':
+      return row.bid1Price;
+    case 'bid2Price':
+    case 'bid2Quantity':
+      return row.bid2Price;
+    case 'bid3Price':
+    case 'bid3Quantity':
+      return row.bid3Price;
+    case 'ask1Price':
+    case 'ask1Quantity':
+      return row.ask1Price;
+    case 'ask2Price':
+    case 'ask2Quantity':
+      return row.ask2Price;
+    case 'ask3Price':
+    case 'ask3Quantity':
+      return row.ask3Price;
+    default:
+      return null;
+  }
 }
 
 function BoardState({ label, tone = 'muted' }: { label: string; tone?: 'muted' | 'error' }) {

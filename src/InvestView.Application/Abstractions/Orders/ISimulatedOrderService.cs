@@ -23,6 +23,7 @@ public sealed record PlaceSimulatedOrderCommand(
     string Symbol,
     string BoardId,
     OrderSide Side,
+    OrderType OrderType,
     long Quantity,
     decimal? LimitPrice);
 
@@ -38,7 +39,8 @@ public enum PlaceSimulatedOrderStatus
     SymbolNotFound,
     PriceUnavailable,
     InsufficientCash,
-    InsufficientHolding
+    InsufficientHolding,
+    MarketClosed
 }
 
 public sealed record CancelSimulatedOrderResult(
@@ -57,6 +59,7 @@ public sealed record SimulatedOrderDto(
     string Symbol,
     string BoardId,
     OrderSide Side,
+    OrderType OrderType,
     long Quantity,
     decimal? LimitPrice,
     OrderStatus Status,

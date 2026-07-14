@@ -68,6 +68,38 @@ public sealed class CashAccount
         UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
     }
 
+    public void Reserve(decimal amount, DateTimeOffset? updatedAt = null)
+    {
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Amount must be positive.");
+        }
+
+        if (amount > AvailableBalance)
+        {
+            throw new InvalidOperationException("Available cash balance is insufficient.");
+        }
+
+        AvailableBalance -= amount;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
+    public void ReleaseReservation(decimal amount, DateTimeOffset? updatedAt = null)
+    {
+        if (amount <= 0m)
+        {
+            throw new ArgumentOutOfRangeException(nameof(amount), "Amount must be positive.");
+        }
+
+        if (AvailableBalance + amount > Balance)
+        {
+            throw new InvalidOperationException("Reserved cash amount is invalid.");
+        }
+
+        AvailableBalance += amount;
+        UpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+    }
+
     public void Credit(decimal amount, DateTimeOffset? updatedAt = null)
     {
         if (amount <= 0m)

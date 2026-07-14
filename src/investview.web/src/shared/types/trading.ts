@@ -1,5 +1,7 @@
 export type OrderSide = 'Buy' | 'Sell';
 
+export type OrderType = 'LO' | 'MTL' | 'ATO' | 'ATC';
+
 export type OrderStatus = 'New' | 'Filled' | 'Cancelled' | 'Rejected';
 
 export type OrderExecution = {
@@ -15,6 +17,7 @@ export type SimulatedOrder = {
   symbol: string;
   boardId: string;
   side: OrderSide;
+  orderType: OrderType;
   quantity: number;
   limitPrice: number | null;
   status: OrderStatus;
@@ -29,6 +32,7 @@ export type PlaceOrderRequest = {
   symbol: string;
   boardId: string;
   side: OrderSide;
+  orderType: OrderType;
   quantity: number;
   limitPrice: number | null;
 };
@@ -45,6 +49,7 @@ export type HoldingPosition = {
   boardId: string;
   quantity: number;
   availableQuantity: number;
+  pendingReceiveQuantity: number;
   averageCost: number;
   lastPrice: number;
   marketValue: number;

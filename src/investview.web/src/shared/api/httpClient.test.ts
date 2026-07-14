@@ -23,4 +23,20 @@ describe('httpClient authorization failures', () => {
 
     unsubscribe();
   });
+
+  it('uses ProblemDetails title as the thrown error message', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(
+      new Response(JSON.stringify({ title: 'Market is not open for simulated orders.' }), {
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { 'Content-Type': 'application/problem+json' },
+      }),
+    )));
+
+    await expect(getJson('/api/orders')).rejects.toMatchObject({
+      message: 'Market is not open for simulated orders.',
+      status: 400,
+      statusText: 'Bad Request',
+    });
+  });
 });

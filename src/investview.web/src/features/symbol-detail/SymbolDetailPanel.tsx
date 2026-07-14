@@ -27,6 +27,7 @@ type SymbolDetailPanelProps = {
   liveTrade?: MarketTradeUpdate | null;
   onClose: () => void;
   onOhlcSubscriptionChange?: (subscription: SymbolOhlcSubscription | null) => void;
+  onOpenOrderTicket?: () => void;
   selection: SymbolDetailSelection | null;
 };
 
@@ -44,6 +45,7 @@ export function SymbolDetailPanel({
   liveTrade = null,
   onClose,
   onOhlcSubscriptionChange,
+  onOpenOrderTicket,
   selection,
 }: SymbolDetailPanelProps) {
   const [chartTimeframe, setChartTimeframe] = useState<ChartTimeframe>(defaultChartTimeframe);
@@ -109,6 +111,7 @@ export function SymbolDetailPanel({
         isError={detailQuery.isError}
         isPending={detailQuery.isPending}
         onClose={onClose}
+        onOpenOrderTicket={onOpenOrderTicket}
         selection={selection}
       />
 
@@ -155,12 +158,14 @@ function SymbolOverlayHeader({
   isError,
   isPending,
   onClose,
+  onOpenOrderTicket,
   selection,
 }: {
   detail: SymbolDetail | null;
   isError: boolean;
   isPending: boolean;
   onClose: () => void;
+  onOpenOrderTicket?: () => void;
   selection: SymbolDetailSelection;
 }) {
   const displayName = detail?.name || detail?.displayName || '';
@@ -217,7 +222,12 @@ function SymbolOverlayHeader({
             boardId={selection.boardId}
             symbol={selection.symbol}
           />
-          <button className="h-9 bg-[#16a77e] px-8 text-sm font-bold rounded-sm text-white hover:bg-[#1db98e]" type="button">
+          <button
+            aria-label={`Đặt lệnh ${selection.symbol}`}
+            className="h-9 bg-[#16a77e] px-8 text-sm font-bold rounded-sm text-white hover:bg-[#1db98e]"
+            type="button"
+            onClick={onOpenOrderTicket}
+          >
             Đặt lệnh
           </button>
           <button className="grid size-9 place-items-center text-3xl leading-none text-[#c8c6d4] hover:text-white" type="button" onClick={onClose} aria-label="Đóng">

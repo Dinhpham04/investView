@@ -53,12 +53,21 @@ public sealed class OrdersController : ControllerBase
             return BadRequest(new ProblemDetails { Title = "Invalid order side." });
         }
 
+        var requestedOrderType = TryGetOrderType(request, out var orderType)
+            ? orderType
+            : (OrderType?)null;
+        if (requestedOrderType is null)
+        {
+            return BadRequest(new ProblemDetails { Title = "Invalid order type." });
+        }
+
         var result = await _orderService.PlaceAsync(
             userId,
             new PlaceSimulatedOrderCommand(
                 request.Symbol,
                 request.BoardId,
                 side,
+                requestedOrderType.Value,
                 request.Quantity,
                 request.LimitPrice),
             cancellationToken);
@@ -73,6 +82,8 @@ public sealed class OrdersController : ControllerBase
                 BadRequest(new ProblemDetails { Title = "Insufficient simulated cash." }),
             PlaceSimulatedOrderStatus.InsufficientHolding =>
                 BadRequest(new ProblemDetails { Title = "Insufficient simulated holding." }),
+            PlaceSimulatedOrderStatus.MarketClosed =>
+                BadRequest(new ProblemDetails { Title = "Market is not open for simulated orders." }),
             PlaceSimulatedOrderStatus.SymbolNotFound =>
                 NotFound(new ProblemDetails { Title = "Symbol was not found." }),
             PlaceSimulatedOrderStatus.UserNotFound =>
@@ -116,6 +127,18 @@ public sealed class OrdersController : ControllerBase
         return Guid.TryParse(userIdClaim, out userId);
     }
 
+    private static bool TryGetOrderType(PlaceOrderRequest request, out OrderType orderType)
+    {
+        if (string.IsNullOrWhiteSpace(request.OrderType))
+        {
+            orderType = request.LimitPrice is null ? OrderType.MTL : OrderType.LO;
+            return true;
+        }
+
+        return Enum.TryParse(request.OrderType, ignoreCase: true, out orderType) &&
+               Enum.IsDefined(orderType);
+    }
+
     private static SimulatedOrderResponse ToResponse(SimulatedOrderDto order)
     {
         return new SimulatedOrderResponse(
@@ -123,6 +146,7 @@ public sealed class OrdersController : ControllerBase
             order.Symbol,
             order.BoardId,
             order.Side.ToString(),
+            order.OrderType.ToString(),
             order.Quantity,
             order.LimitPrice,
             order.Status.ToString(),
@@ -145,6 +169,7 @@ public sealed record PlaceOrderRequest(
     string Symbol,
     string BoardId,
     string Side,
+    string? OrderType,
     long Quantity,
     decimal? LimitPrice);
 
@@ -153,6 +178,7 @@ public sealed record SimulatedOrderResponse(
     string Symbol,
     string BoardId,
     string Side,
+    string OrderType,
     long Quantity,
     decimal? LimitPrice,
     string Status,
