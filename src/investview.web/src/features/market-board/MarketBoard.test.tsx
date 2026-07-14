@@ -19,6 +19,7 @@ import type {
   QuoteStreamStatus,
   SymbolDetail,
 } from '../../shared/types/market';
+import type { SimulatedOrder } from '../../shared/types/trading';
 
 const testRuntime = vi.hoisted(() => ({
   applyTransactionAsync: vi.fn(),
@@ -271,6 +272,45 @@ const marketSession: MarketSessionUpdate = {
   updatedAt: '2026-07-13T02:20:00.000Z',
 };
 
+const simulatedOrders: SimulatedOrder[] = [
+  {
+    id: 'order-pending-1',
+    symbol: 'ACB',
+    boardId: 'G1',
+    side: 'Sell',
+    orderType: 'LO',
+    quantity: 100,
+    limitPrice: 22.65,
+    status: 'New',
+    filledQuantity: 0,
+    averageFillPrice: null,
+    createdAt: '2026-07-14T03:00:00Z',
+    updatedAt: '2026-07-14T03:00:00Z',
+    executions: [],
+  },
+  {
+    id: 'order-filled-1',
+    symbol: 'HPG',
+    boardId: 'G1',
+    side: 'Buy',
+    orderType: 'MTL',
+    quantity: 100,
+    limitPrice: null,
+    status: 'Filled',
+    filledQuantity: 100,
+    averageFillPrice: 28.1,
+    createdAt: '2026-07-14T02:30:00Z',
+    updatedAt: '2026-07-14T02:30:01Z',
+    executions: [{
+      id: 'execution-1',
+      quantity: 100,
+      price: 28.1,
+      grossAmount: 2_810,
+      executedAt: '2026-07-14T02:30:01Z',
+    }],
+  },
+];
+
 const lunchBreakMarketSession: MarketSessionUpdate = {
   ...marketSession,
   eventId: '',
@@ -488,6 +528,79 @@ describe('MarketBoard', () => {
     expect(screen.getByText('Bán chờ giao')).toBeInTheDocument();
     expect(screen.getAllByText('100').length).toBeGreaterThan(0);
     expect(screen.getByText('Về 16/07/2026')).toBeInTheDocument();
+  });
+
+  it('renders the base order book workspace from the user navigation', async () => {
+    const fetchMock = mockMarketBoardFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: /Đăng nhập demo/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Sổ lệnh/ }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/orders', expect.any(Object)),
+    );
+    expect(await screen.findByTestId('order-book-grid')).toBeInTheDocument();
+    expect(screen.getByText('Giá trị khớp lệnh Mua:')).toBeInTheDocument();
+    expect(screen.getByText('Mã CK')).toBeInTheDocument();
+    expect(screen.getByText('Mua/Bán')).toBeInTheDocument();
+    expect(screen.getByText('KL chờ khớp')).toBeInTheDocument();
+    expect(screen.getByText('Thời gian đặt')).toBeInTheDocument();
+    expect(screen.getByText('Sửa/Hủy')).toBeInTheDocument();
+    expect(screen.getByText('ACB')).toBeInTheDocument();
+    expect(screen.getByText('HPG')).toBeInTheDocument();
+    expect(screen.getByText('Chờ khớp')).toBeInTheDocument();
+    expect(screen.getByText('Đã khớp')).toBeInTheDocument();
+  });
+
+  it('cancels a pending order from the base order book', async () => {
+    const fetchMock = mockMarketBoardFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: /Đăng nhập demo/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Sổ lệnh/ }));
+    expect(await screen.findByTestId('order-book-grid')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hủy' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/orders/order-pending-1/cancel', expect.objectContaining({ method: 'POST' })),
+    );
+    expect(await screen.findByText('Đã hủy')).toBeInTheDocument();
+  });
+
+  it('opens a prefilled order ticket when editing a pending base order', async () => {
+    const fetchMock = mockMarketBoardFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: /Đăng nhập demo/ }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Sổ lệnh/ }));
+    expect(await screen.findByTestId('order-book-grid')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sửa' }));
+
+    const drawer = await screen.findByTestId('trading-drawer');
+    expect(drawer).toBeInTheDocument();
+    expect(within(drawer).getAllByText('ACB').length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'LO' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByDisplayValue('100')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('22.65')).toBeInTheDocument();
   });
 
   it('opens the trading drawer from the symbol detail order button', async () => {
@@ -1079,6 +1192,7 @@ function jsonResponse(body: unknown, init?: ResponseInit) {
 function mockMarketBoardFetch(
   quotes: MarketQuote[] = [quote],
   watchlistGroups: unknown[] = [],
+  ordersFixture: SimulatedOrder[] = simulatedOrders,
 ) {
   let groups = watchlistGroups as Array<{
     id: string;
@@ -1087,6 +1201,7 @@ function mockMarketBoardFetch(
     updatedAt: string;
     items: Array<{ id: string; groupId: string; symbol: string; boardId: string; createdAt: string }>;
   }>;
+  let orders = ordersFixture;
 
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = input.toString();
@@ -1146,6 +1261,27 @@ function mockMarketBoardFetch(
         totalUnrealizedPnL: 0,
         updatedAt: '2026-07-14T03:00:00Z',
       }));
+    }
+
+    if (url === '/api/orders' && method === 'GET') {
+      return Promise.resolve(jsonResponse(orders));
+    }
+
+    const cancelOrderMatch = url.match(/^\/api\/orders\/([^/]+)\/cancel$/);
+    if (cancelOrderMatch && method === 'POST') {
+      const orderId = decodeURIComponent(cancelOrderMatch[1]);
+      const existingOrder = orders.find((order) => order.id === orderId);
+      if (existingOrder == null) {
+        return Promise.resolve(jsonResponse({ message: 'Order not found' }, { status: 404, statusText: 'Not Found' }));
+      }
+
+      const cancelledOrder: SimulatedOrder = {
+        ...existingOrder,
+        status: 'Cancelled',
+        updatedAt: '2026-07-14T03:01:00Z',
+      };
+      orders = orders.map((order) => order.id === orderId ? cancelledOrder : order);
+      return Promise.resolve(jsonResponse(cancelledOrder));
     }
 
     const addWatchlistItemMatch = url.match(/^\/api\/watchlist\/([^/]+)\/items$/);

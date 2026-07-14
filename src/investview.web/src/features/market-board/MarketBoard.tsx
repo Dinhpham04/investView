@@ -10,6 +10,7 @@ import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './
 import { applyQuoteUpdate } from './marketBoardRealtime';
 import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
 import { HoldingsView } from '../holdings/HoldingsView';
+import { OrderBookView } from '../order-book/OrderBookView';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import { TradingDrawer } from '../trading/TradingDrawer';
 import { WatchlistPanel } from '../watchlist/WatchlistPanel';
@@ -17,7 +18,7 @@ import type { OrderTicketPreset } from '../order-ticket/OrderTicketPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection, type QuoteHubConnectionStatus, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate } from '../../shared/types/market';
-import type { PortfolioHolding } from '../../shared/types/trading';
+import type { PortfolioHolding, SimulatedOrder } from '../../shared/types/trading';
 import type { WatchlistGroup } from '../../shared/types/watchlist';
 
 type ActiveMarketFilter =
@@ -29,7 +30,7 @@ type MarketBoardProps = {
   onConnectionStatusChange?: (status: QuoteHubConnectionStatus) => void;
 };
 
-type UserFeatureView = 'market-board' | 'holdings';
+type UserFeatureView = 'market-board' | 'orders' | 'holdings';
 
 const userNavigationItems: Array<{ hasDropdown?: boolean; isActive?: boolean; label: string }> = [
   { isActive: true, label: 'Bảng giá' },
@@ -214,6 +215,18 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
     setIsSymbolDetailOpen(false);
     openTradingDrawer({ limitPrice: null, orderType: 'MTL' }, { closeSymbolDetail: false });
   }, [openTradingDrawer]);
+  const handleEditOrderFromBook = useCallback((order: SimulatedOrder) => {
+    setSelectedSymbol({
+      boardId: order.boardId,
+      symbol: order.symbol,
+    });
+    setIsSymbolDetailOpen(false);
+    openTradingDrawer({
+      limitPrice: order.limitPrice,
+      orderType: order.orderType === 'LO' ? 'LO' : 'MTL',
+      quantity: order.quantity,
+    }, { closeSymbolDetail: false });
+  }, [openTradingDrawer]);
   const handleOhlcSubscriptionChange = useCallback((subscription: SymbolOhlcSubscription | null) => {
     setSymbolOhlcSubscription(subscription);
   }, []);
@@ -292,6 +305,8 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
 
       {activeFeatureView === 'holdings' ? (
         <HoldingsView onSellHolding={handleSellHolding} />
+      ) : activeFeatureView === 'orders' ? (
+        <OrderBookView onEditOrder={handleEditOrderFromBook} />
       ) : (
         <>
 
@@ -531,6 +546,10 @@ function UserFeatureNavigation({
 function getNavigationItemView(index: number): UserFeatureView | null {
   if (index === 0) {
     return 'market-board';
+  }
+
+  if (index === 2) {
+    return 'orders';
   }
 
   if (index === 3) {

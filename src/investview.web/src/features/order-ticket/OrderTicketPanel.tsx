@@ -34,6 +34,7 @@ export type OrderTicketPreset = {
   id: number;
   limitPrice: number | null;
   orderType: TicketOrderType;
+  quantity?: number;
 };
 
 const orderTypeOptions: Array<{ id: TicketOrderType; hint: string }> = [
@@ -188,6 +189,9 @@ export function OrderTicketPanel({ liveQuote, marketSession = null, preset = nul
 
     setOrderType(preset.orderType);
     setLimitPrice(preset.orderType === 'LO' ? formatLimitPriceInput(preset.limitPrice, marketPrice) : '');
+    if (preset.quantity != null) {
+      setQuantity(String(preset.quantity));
+    }
   }, [marketPrice, preset]);
 
   const handlePlaceOrder = async (side: OrderSide) => {

@@ -71,30 +71,32 @@ export function HoldingsView({ onSellHolding }: HoldingsViewProps) {
       {rows.length === 0 ? (
         <HoldingsState message="Danh mục chưa có mã chứng khoán nào" />
       ) : (
-        <div className="holdings-grid min-h-0 flex-1" data-testid="holdings-grid">
-          <AgGridReact
-            autoSizeStrategy={{
-              type: 'fitGridWidth',
-              defaultMinWidth: 74,
-              columnLimits: [
-                { colId: 'symbol', minWidth: 96 },
-                { colId: 'sellAction', minWidth: 64, maxWidth: 72 },
-              ],
-            }}
-            columnDefs={columnDefs}
-            defaultColDef={{
-              cellClass: 'holdings-cell',
-              resizable: false,
-              sortable: true,
-              suppressMovable: true,
-            }}
-            getRowId={(params) => `${params.data.boardId}:${params.data.symbol}`}
-            headerHeight={28}
-            rowData={rows}
-            rowHeight={38}
-            suppressCellFocus
-            theme={marketBoardTheme}
-          />
+        <div className="flex min-h-0 flex-1 px-4 py-2">
+          <div className="holdings-grid min-h-0 flex-1" data-testid="holdings-grid">
+            <AgGridReact
+              autoSizeStrategy={{
+                type: 'fitGridWidth',
+                defaultMinWidth: 74,
+                columnLimits: [
+                  { colId: 'symbol', minWidth: 96 },
+                  { colId: 'sellAction', minWidth: 64, maxWidth: 72 },
+                ],
+              }}
+              columnDefs={columnDefs}
+              defaultColDef={{
+                cellClass: 'holdings-cell',
+                resizable: false,
+                sortable: true,
+                suppressMovable: true,
+              }}
+              getRowId={(params) => `${params.data.boardId}:${params.data.symbol}`}
+              headerHeight={28}
+              rowData={rows}
+              rowHeight={38}
+              suppressCellFocus
+              theme={marketBoardTheme}
+            />
+          </div>
         </div>
       )}
     </section>
