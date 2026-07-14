@@ -1,0 +1,80 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Express
+      MSSQL_SA_PASSWORD: ${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in .env}
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"SELECT 1\" -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: src/InvestView.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_HTTP_PORTS: ""
+      ASPNETCORE_URLS: http://+:8080
+      AllowedHosts: ${ALLOWED_HOSTS:-*}
+      ConnectionStrings__InvestViewDb: Server=sqlserver,1433;Database=InvestView;User Id=sa;Password=${SQL_SA_PASSWORD:?Set SQL_SA_PASSWORD in .env};TrustServerCertificate=True;MultipleActiveResultSets=true
+      INVESTVIEW_JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:?Set JWT_SIGNING_KEY in .env}
+      INVESTVIEW_DEMO_EMAIL: ${INVESTVIEW_DEMO_EMAIL:-demo@investview.local}
+      INVESTVIEW_DEMO_DISPLAY_NAME: ${INVESTVIEW_DEMO_DISPLAY_NAME:-InvestView Demo}
+      INVESTVIEW_DEMO_PASSWORD: ${INVESTVIEW_DEMO_PASSWORD:?Set INVESTVIEW_DEMO_PASSWORD in .env}
+      INVESTVIEW_DEMO_CURRENCY: ${INVESTVIEW_DEMO_CURRENCY:-VND}
+      INVESTVIEW_DEMO_INITIAL_CASH_BALANCE: ${INVESTVIEW_DEMO_INITIAL_CASH_BALANCE:-100000000}
+      REDIS_CONNECTION_STRING: redis:6379
+      MarketData__State__RedisConnectionString: redis:6379
+      MarketData__State__RedisEnvironment: ${MARKET_STATE_ENVIRONMENT:-prod}
+      MarketData__Provider: ${MARKET_DATA_PROVIDER:-Mock}
+      MarketData__QuoteStream__SourceProvider: ${QUOTE_STREAM_SOURCE_PROVIDER:-Mock}
+      MarketData__QuoteStream__Schedule__RequireActiveSubscriptions: ${QUOTE_STREAM_REQUIRE_ACTIVE_SUBSCRIPTIONS:-true}
+      MarketData__SecurityDefinitionWarmup__Enabled: ${SECURITY_DEFINITION_WARMUP_ENABLED:-false}
+      Dnse__LogResponseBodies: ${DNSE_LOG_RESPONSE_BODIES:-false}
+      DNSE_API_KEY: ${DNSE_API_KEY:-}
+      DNSE_API_SECRET: ${DNSE_API_SECRET:-}
+    volumes:
+      - api-data-protection:/root/.aspnet/DataProtection-Keys
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${API_HTTP_PORT:-5122}:8080"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: src/investview.web/Dockerfile
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_HTTP_PORT:-8080}:80"
+    restart: unless-stopped
+
+volumes:
+  api-data-protection:
+  sqlserver-data:
+  redis-data:
