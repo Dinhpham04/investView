@@ -49,6 +49,7 @@ public static class DependencyInjection
             services.AddOptions<MarketQuoteStreamOptions>();
             services.AddOptions<SecurityDefinitionWarmupOptions>();
             services.AddOptions<DemoAuthOptions>();
+            services.AddOptions<DatabaseMigrationOptions>();
         }
         else
         {
@@ -64,6 +65,8 @@ public static class DependencyInjection
                 configuration.GetSection(SecurityDefinitionWarmupOptions.SectionName));
             services.Configure<DemoAuthOptions>(
                 configuration.GetSection(DemoAuthOptions.SectionName));
+            services.Configure<DatabaseMigrationOptions>(
+                configuration.GetSection(DatabaseMigrationOptions.SectionName));
         }
 
         services.PostConfigure<DnseMarketDataOptions>(options =>

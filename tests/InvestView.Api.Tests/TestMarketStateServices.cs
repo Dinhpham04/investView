@@ -21,6 +21,7 @@ internal static class TestMarketStateServices
                 configurationBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["MarketData:State:RedisConnectionString"] = "localhost:6379",
+                    ["Database:ApplyMigrationsOnStartup"] = "false",
                     ["DemoAuth:SeedOnStartup"] = "false"
                 }))
             .ConfigureServices(services =>

@@ -3,6 +3,7 @@ using InvestView.Api.Hubs;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Infrastructure;
 using InvestView.Infrastructure.Auth;
+using InvestView.Infrastructure.Data;
 using Microsoft.AspNetCore.HttpOverrides;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -37,6 +38,7 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<QuoteHub>("/hubs/quotes");
 
+await app.Services.MigrateDatabaseAsync(app.Lifetime.ApplicationStopping);
 await app.Services.SeedDemoDataAsync(app.Lifetime.ApplicationStopping);
 
 app.Run();

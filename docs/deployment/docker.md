@@ -11,6 +11,7 @@ This setup runs InvestView on one VPS with Docker Compose:
 
 Create `.env` from `.env.example` and set production values before starting the stack. Required values:
 
+- `DATABASE_APPLY_MIGRATIONS_ON_STARTUP`: keep `true` for single-VPS deployment so the API applies EF Core migrations before seeding demo data and serving traffic.
 - `SQL_SA_PASSWORD`: strong SQL Server SA password. Avoid semicolons because the value is embedded in a connection string.
 - `JWT_SIGNING_KEY`: stable signing key with at least 32 characters. Changing it invalidates existing JWTs.
 - `INVESTVIEW_DEMO_PASSWORD`: password for the seeded demo account.
@@ -55,6 +56,20 @@ docker compose logs -f api
 ```
 
 By default the web app is exposed on `http://localhost:8080`, while the API is only bound to `127.0.0.1:5122` for host-local diagnostics.
+
+## Database Migrations
+
+The API runs EF Core migrations during startup when `DATABASE_APPLY_MIGRATIONS_ON_STARTUP=true`. Startup order is:
+
+```text
+SQL Server healthy
+  -> API container starts
+  -> API applies pending EF Core migrations
+  -> API seeds demo data when enabled
+  -> API starts serving REST and SignalR traffic
+```
+
+This is intended for the single-VPS Docker Compose deployment. If the app is later scaled to multiple API replicas, replace startup migrations with a one-off migration job or deployment step so only one process applies schema changes.
 
 ## VPS Reverse Proxy
 

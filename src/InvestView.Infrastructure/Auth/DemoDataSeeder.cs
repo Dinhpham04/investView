@@ -34,11 +34,6 @@ public sealed class DemoDataSeeder
             return;
         }
 
-        if (_dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.SqlServer")
-        {
-            await _dbContext.Database.MigrateAsync(cancellationToken);
-        }
-
         var email = NormalizeEmail(options.Email);
         var user = await _dbContext.Users
             .SingleOrDefaultAsync(candidate => candidate.Email == email, cancellationToken);
