@@ -4,6 +4,7 @@ using InvestView.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -11,9 +12,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace InvestView.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(InvestViewDbContext))]
-    partial class InvestViewDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260714110000_AddHoldingSettlementLots")]
+    partial class AddHoldingSettlementLots
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -188,39 +191,6 @@ namespace InvestView.Infrastructure.Data.Migrations
                     b.HasIndex("OrderId", "ExecutedAt");
 
                     b.ToTable("OrderExecutions", (string)null);
-                });
-
-            modelBuilder.Entity("InvestView.Domain.Trading.SettlementRun", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<DateTimeOffset>("CompletedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<int>("DueLotCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("FailedLotCount")
-                        .HasColumnType("int");
-
-                    b.Property<int>("SettledLotCount")
-                        .HasColumnType("int");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid?>("TriggeredByUserId")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StartedAt");
-
-                    b.HasIndex("TriggeredByUserId");
-
-                    b.ToTable("SettlementRuns", (string)null);
                 });
 
             modelBuilder.Entity("InvestView.Domain.Trading.SimulatedOrder", b =>

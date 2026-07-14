@@ -1,9 +1,15 @@
 import { authorizationHeaders } from './authorizationHeaders';
 import { getJson, postJson } from './httpClient';
-import type { PlaceOrderRequest, PortfolioSnapshot, SimulatedOrder } from '../types/trading';
+import type { PlaceOrderRequest, PortfolioHoldingsSnapshot, PortfolioSnapshot, SimulatedOrder } from '../types/trading';
 
 export function getPortfolio(accessToken: string) {
   return getJson<PortfolioSnapshot>('/api/portfolio', {
+    headers: authorizationHeaders(accessToken),
+  });
+}
+
+export function getPortfolioHoldings(accessToken: string) {
+  return getJson<PortfolioHoldingsSnapshot>('/api/portfolio/holdings', {
     headers: authorizationHeaders(accessToken),
   });
 }

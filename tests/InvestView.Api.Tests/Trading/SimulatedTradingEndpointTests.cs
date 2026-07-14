@@ -83,6 +83,79 @@ public sealed class SimulatedTradingEndpointTests : IClassFixture<WebApplication
         Assert.Equal(0, holding.GetProperty("availableQuantity").GetInt64());
         Assert.Equal(100, holding.GetProperty("pendingReceiveQuantity").GetInt64());
         Assert.Equal(29_150m, holding.GetProperty("averageCost").GetDecimal());
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<InvestViewDbContext>();
+        var user = await dbContext.Users.SingleAsync(user => user.Email == DemoEmail);
+        var settlementLot = Assert.Single(await dbContext.HoldingSettlementLots
+            .Where(lot => lot.UserId == user.Id && lot.Symbol == "HPG" && lot.BoardId == "G1")
+            .ToArrayAsync());
+        Assert.Equal(100, settlementLot.Quantity);
+        Assert.Equal(100, settlementLot.RemainingQuantity);
+        Assert.Equal(HoldingSettlementLotStatus.Pending, settlementLot.Status);
+        Assert.Equal(new DateOnly(2026, 7, 14), settlementLot.TradeDate);
+        Assert.Equal(new DateOnly(2026, 7, 16), settlementLot.SettlementDate);
+        Assert.Equal(new DateOnly(2026, 7, 16), settlementLot.AvailableFromDate);
+    }
+
+    [Fact]
+    public async Task GetHoldings_WhenBuyIsWaitingSettlement_ReturnsPendingBucketsAndNextAvailableDate()
+    {
+        using var client = _factory.CreateClient();
+        await AuthorizeAsDemoUserAsync(client);
+        await SeedMarketSessionAsync(isOpen: true);
+
+        var orderResponse = await client.PostAsJsonAsync(
+            "/api/orders",
+            new PlaceOrderRequest("HPG", "G1", "Buy", "MTL", 100, null));
+        Assert.Equal(HttpStatusCode.Created, orderResponse.StatusCode);
+
+        using var holdingsPayload = JsonDocument.Parse(await (await client.GetAsync("/api/portfolio/holdings")).Content.ReadAsStringAsync());
+        var holding = Assert.Single(holdingsPayload.RootElement.GetProperty("holdings").EnumerateArray());
+
+        Assert.Equal("HPG", holding.GetProperty("symbol").GetString());
+        Assert.Equal(100, holding.GetProperty("quantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("availableQuantity").GetInt64());
+        Assert.Equal(100, holding.GetProperty("pendingReceiveQuantity").GetInt64());
+        Assert.Equal(100, holding.GetProperty("pendingT0Quantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingT1Quantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingT2Quantity").GetInt64());
+        Assert.Equal("2026-07-16", holding.GetProperty("nextAvailableDate").GetString());
+        Assert.Equal(100, holdingsPayload.RootElement.GetProperty("totalQuantity").GetInt64());
+        Assert.Equal(0, holdingsPayload.RootElement.GetProperty("totalAvailableQuantity").GetInt64());
+        Assert.Equal(100, holdingsPayload.RootElement.GetProperty("totalPendingReceiveQuantity").GetInt64());
+    }
+
+    [Fact]
+    public async Task GetHoldings_WhenPendingLotIsDue_SettlesLotExactlyOnce()
+    {
+        using var client = _factory.CreateClient();
+        await AuthorizeAsDemoUserAsync(client);
+        await SeedPendingHoldingLotAsync("SSI", "G1", 200, 22_500m, new DateOnly(2026, 7, 10), new DateOnly(2026, 7, 14));
+
+        using var firstPayload = JsonDocument.Parse(await (await client.GetAsync("/api/portfolio/holdings")).Content.ReadAsStringAsync());
+        var holding = Assert.Single(firstPayload.RootElement.GetProperty("holdings").EnumerateArray());
+
+        Assert.Equal("SSI", holding.GetProperty("symbol").GetString());
+        Assert.Equal(200, holding.GetProperty("quantity").GetInt64());
+        Assert.Equal(200, holding.GetProperty("availableQuantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingReceiveQuantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingT0Quantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingT1Quantity").GetInt64());
+        Assert.Equal(0, holding.GetProperty("pendingT2Quantity").GetInt64());
+        Assert.True(holding.GetProperty("nextAvailableDate").ValueKind is JsonValueKind.Null);
+
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<InvestViewDbContext>();
+        var lot = await dbContext.HoldingSettlementLots.SingleAsync(lot => lot.Symbol == "SSI");
+        Assert.Equal(HoldingSettlementLotStatus.Settled, lot.Status);
+        Assert.Equal(0, lot.RemainingQuantity);
+        Assert.Equal(1, await dbContext.SettlementRuns.CountAsync(run => run.SettledLotCount == 1));
+
+        using var secondPayload = JsonDocument.Parse(await (await client.GetAsync("/api/portfolio/holdings")).Content.ReadAsStringAsync());
+        var secondHolding = Assert.Single(secondPayload.RootElement.GetProperty("holdings").EnumerateArray());
+        Assert.Equal(200, secondHolding.GetProperty("availableQuantity").GetInt64());
+        Assert.Equal(1, await dbContext.SettlementRuns.CountAsync(run => run.SettledLotCount == 1));
     }
 
     [Fact]
@@ -318,6 +391,36 @@ public sealed class SimulatedTradingEndpointTests : IClassFixture<WebApplication
         var dbContext = scope.ServiceProvider.GetRequiredService<InvestViewDbContext>();
         var user = await dbContext.Users.SingleAsync(user => user.Email == DemoEmail);
         dbContext.Holdings.Add(new Holding(user.Id, symbol, boardId, quantity, quantity, averageCost));
+        await dbContext.SaveChangesAsync();
+    }
+
+    private async Task SeedPendingHoldingLotAsync(
+        string symbol,
+        string boardId,
+        long quantity,
+        decimal averageCost,
+        DateOnly tradeDate,
+        DateOnly availableFromDate)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<InvestViewDbContext>();
+        var user = await dbContext.Users.SingleAsync(user => user.Email == DemoEmail);
+        var order = new SimulatedOrder(user.Id, symbol, boardId, OrderSide.Buy, OrderType.MTL, quantity, null);
+        order.Fill(quantity, averageCost);
+        var execution = order.Executions.Single();
+
+        dbContext.Orders.Add(order);
+        dbContext.Holdings.Add(new Holding(user.Id, symbol, boardId, quantity, 0, averageCost, pendingReceiveQuantity: quantity));
+        dbContext.HoldingSettlementLots.Add(new HoldingSettlementLot(
+            user.Id,
+            symbol,
+            boardId,
+            order.Id,
+            execution.Id,
+            quantity,
+            tradeDate,
+            availableFromDate,
+            availableFromDate));
         await dbContext.SaveChangesAsync();
     }
 

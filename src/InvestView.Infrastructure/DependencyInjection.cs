@@ -3,6 +3,7 @@ using InvestView.Application.Abstractions.Orders;
 using InvestView.Application.Abstractions.Portfolio;
 using InvestView.Application.Abstractions.Realtime;
 using InvestView.Application.Abstractions.Auth;
+using InvestView.Application.Abstractions.Trading;
 using InvestView.Application.Abstractions.Watchlists;
 using InvestView.Infrastructure.Auth;
 using InvestView.Infrastructure.Data;
@@ -95,6 +96,9 @@ public static class DependencyInjection
         services.AddScoped<IWatchlistService, WatchlistService>();
         services.AddScoped<ISimulatedOrderService, SimulatedOrderService>();
         services.AddScoped<IPortfolioService, PortfolioService>();
+        services.AddSingleton<ITradingCalendar, WeekdayTradingCalendar>();
+        services.AddSingleton<ISettlementDateCalculator, SettlementDateCalculator>();
+        services.AddScoped<ISettlementProcessor, SettlementProcessor>();
         services.AddScoped<DemoDataSeeder>();
 
         services.AddSingleton<MockMarketDataProvider>();

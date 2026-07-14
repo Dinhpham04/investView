@@ -2,46 +2,93 @@
 
 ## Objective
 
-Make simulated trading behave closer to the Vietnamese equity market while staying simple enough for a demo account.
+Make simulated trading track when bought shares become sellable. The simulator still assumes infinite market liquidity: any order that satisfies the current market matching rule is filled in full at the simulated execution price. Settlement starts after the order is filled.
 
-The system still simulates execution and does not model scarce liquidity: when an order satisfies the current market condition, it is filled in full. After a sell fills, cash is available immediately. After a buy fills, the stock is owned but remains in a pending-receive state until settlement makes it available to sell.
+Users must be able to answer:
 
-## Current scope
+- How many shares do I own?
+- How many shares can I sell now?
+- How many bought shares are waiting for settlement?
+- Which pending shares are T0/T1/T2?
+- What is the next date a pending share lot becomes sellable?
 
-Implement the first settlement slice for LO and MTL orders:
+## Product rules
 
-- Order placement is rejected when the current stock market session is not open.
-- For this slice, only continuous-session LO/MTL trading is supported.
-- MTL orders always use the latest available market price and fill in full.
-- LO buy fills in full when limit price is greater than or equal to the market price.
-- LO sell fills in full when limit price is less than or equal to the market price.
-- Non-marketable LO buy remains pending and reserves cash.
-- Non-marketable LO sell remains pending and reserves available stock.
-- Filled buy decreases cash immediately and increases total holding quantity, but not sellable quantity.
-- Filled sell decreases sellable holding quantity and credits cash immediately.
-- ATO/ATC matching remains out of scope for this slice.
+- The simulator does not model scarce liquidity, visible order-book depth, queue priority, or partial fills.
+- MTL buy/sell fills in full when the market is open and a valid market price exists.
+- LO buy fills in full when `limitPrice >= marketPrice`; otherwise it remains pending and reserves cash.
+- LO sell fills in full when `limitPrice <= marketPrice`; otherwise it remains pending and reserves sellable shares.
+- Filled sell credits cash immediately.
+- Filled buy debits cash immediately, increases total holding quantity, and creates pending settlement lots.
+- Bought shares are not sellable until their settlement lot becomes available.
+- `Holding.PendingReceiveQuantity` is a cached summary. Settlement lots are the source of truth for when shares become available.
 
-## Portfolio quantities
+## Production data model
 
-Holdings must expose enough information for the "Danh mục nắm giữ" UI:
+### Holding
 
-- `quantity`: total owned shares, including shares waiting to settle.
-- `availableQuantity`: shares that can be sold now.
-- `pendingReceiveQuantity`: bought shares waiting to become available.
-- reserved sell quantity can be inferred as `quantity - availableQuantity - pendingReceiveQuantity`.
+Aggregated current state for a user/symbol/board.
 
-## Tasks
+- `Quantity`: total owned shares, including shares waiting for settlement.
+- `AvailableQuantity`: shares that can be sold now.
+- `PendingReceiveQuantity`: bought shares waiting to become sellable.
+- `AverageCost`: weighted average cost.
 
-1. Add domain support for pending-receive holdings.
-2. Update order placement so filled buy orders add stock to pending receive instead of available quantity.
-3. Expose pending receive quantity through portfolio DTO/API/frontend types.
-4. Update tests around buy fill, insufficient sellable quantity, pending sell reservation, and portfolio response.
-5. Keep ATO/ATC matching and automatic end-of-day settlement for a later slice.
+### HoldingSettlementLot
+
+One filled buy execution creates one pending settlement lot.
+
+- `UserId`
+- `Symbol`
+- `BoardId`
+- `SourceOrderId`
+- `SourceExecutionId`
+- `Quantity`
+- `RemainingQuantity`
+- `TradeDate`
+- `SettlementDate`
+- `AvailableFromDate`
+- `Status`: `Pending`, `Settled`, `Cancelled`, `Failed`
+- `CreatedAt`
+- `SettledAt`
+
+### Trading calendar
+
+Settlement dates must be calculated using trading days, not calendar days. The first implementation may generate weekday trading days in code, but the abstraction must allow a holiday-aware calendar later.
+
+## Task list
+
+### Phase 1: Settlement foundation
+
+1. Add `HoldingSettlementLot` domain entity and EF persistence.
+2. Add trading-day calendar abstraction and settlement-date calculator.
+3. Create a pending settlement lot whenever a buy order fills in full.
+4. Add tests proving filled buys create pending lots with a real `AvailableFromDate`.
+
+### Phase 2: Settlement processing
+
+5. Add settlement processor that settles due lots idempotently.
+6. Add settlement run/audit records for observability.
+7. Add tests for due lots, not-yet-due lots, repeat runs, and failure handling.
+
+### Phase 3: Holdings API
+
+8. Add `GET /api/portfolio/holdings`.
+9. Aggregate holdings with pending T0/T1/T2 quantities and `nextAvailableDate`.
+10. Add API tests for empty, available-only, pending-only, and mixed portfolios.
+
+### Phase 4: Holdings UI
+
+11. Add “Danh mục nắm giữ” as a navbar view next to “Bảng giá”.
+12. Render holdings with AG Grid, grouped pending columns, footer totals, and sell action.
+13. Add lot detail drilldown for pending T0/T1/T2 quantities.
 
 ## Success criteria
 
-- Buying 100 shares with a marketable order creates a filled order, debits cash, returns portfolio `quantity = 100`, `availableQuantity = 0`, and `pendingReceiveQuantity = 100`.
-- Selling right after that buy is rejected because the shares are not available yet.
-- Selling an already available holding still fills in full and credits cash immediately.
-- Pending LO buy and pending LO sell cancellation still release reserved cash/stock.
-- Placing an order while the resolved market session is closed, pre-open, or lunch break returns a bad request and does not create an order.
+- A marketable buy for 100 shares fills in full and creates exactly one pending settlement lot for 100 shares.
+- The holding immediately has `Quantity = 100`, `AvailableQuantity = 0`, and `PendingReceiveQuantity = 100`.
+- The settlement lot has deterministic `TradeDate`, `SettlementDate`, and `AvailableFromDate`.
+- The user cannot sell pending shares before settlement.
+- When settlement is processed on or after `AvailableFromDate`, pending quantity moves to available quantity exactly once.
+- Holdings API can report T0/T1/T2 pending quantities from settlement lots, not from frontend guesses.
+

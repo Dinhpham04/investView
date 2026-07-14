@@ -24,6 +24,10 @@ public sealed class InvestViewDbContext : DbContext
 
     public DbSet<OrderExecution> OrderExecutions => Set<OrderExecution>();
 
+    public DbSet<HoldingSettlementLot> HoldingSettlementLots => Set<HoldingSettlementLot>();
+
+    public DbSet<SettlementRun> SettlementRuns => Set<SettlementRun>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<UserAccount>(ConfigureUserAccount);
@@ -33,6 +37,8 @@ public sealed class InvestViewDbContext : DbContext
         modelBuilder.Entity<Holding>(ConfigureHolding);
         modelBuilder.Entity<SimulatedOrder>(ConfigureSimulatedOrder);
         modelBuilder.Entity<OrderExecution>(ConfigureOrderExecution);
+        modelBuilder.Entity<HoldingSettlementLot>(ConfigureHoldingSettlementLot);
+        modelBuilder.Entity<SettlementRun>(ConfigureSettlementRun);
     }
 
     private static void ConfigureUserAccount(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<UserAccount> entity)
@@ -200,5 +206,42 @@ public sealed class InvestViewDbContext : DbContext
             .HasPrecision(18, 2);
 
         entity.HasIndex(execution => new { execution.OrderId, execution.ExecutedAt });
+    }
+
+    private static void ConfigureHoldingSettlementLot(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<HoldingSettlementLot> entity)
+    {
+        entity.ToTable("HoldingSettlementLots");
+        entity.HasKey(lot => lot.Id);
+
+        entity.Property(lot => lot.Symbol)
+            .HasMaxLength(16)
+            .IsRequired();
+        entity.Property(lot => lot.BoardId)
+            .HasMaxLength(8)
+            .IsRequired();
+
+        entity.HasIndex(lot => new { lot.UserId, lot.BoardId, lot.Symbol, lot.Status });
+        entity.HasIndex(lot => new { lot.UserId, lot.AvailableFromDate, lot.Status });
+        entity.HasIndex(lot => lot.SourceOrderId);
+        entity.HasIndex(lot => lot.SourceExecutionId);
+
+        entity.HasOne(lot => lot.User)
+            .WithMany()
+            .HasForeignKey(lot => lot.UserId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        entity.HasOne(lot => lot.SourceOrder)
+            .WithMany()
+            .HasForeignKey(lot => lot.SourceOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    private static void ConfigureSettlementRun(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<SettlementRun> entity)
+    {
+        entity.ToTable("SettlementRuns");
+        entity.HasKey(run => run.Id);
+
+        entity.HasIndex(run => run.StartedAt);
+        entity.HasIndex(run => run.TriggeredByUserId);
     }
 }

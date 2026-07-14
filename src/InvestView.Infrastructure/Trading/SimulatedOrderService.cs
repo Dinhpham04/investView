@@ -1,5 +1,6 @@
 using InvestView.Application.Abstractions.MarketData;
 using InvestView.Application.Abstractions.Orders;
+using InvestView.Application.Abstractions.Trading;
 using InvestView.Application.Dtos.MarketData;
 using InvestView.Domain.Trading;
 using InvestView.Infrastructure.Data;
@@ -16,17 +17,20 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
     private readonly InvestViewDbContext _dbContext;
     private readonly IMarketDataProvider _marketDataProvider;
     private readonly IMarketStateStore _marketStateStore;
+    private readonly ISettlementDateCalculator _settlementDateCalculator;
     private readonly TimeProvider _timeProvider;
 
     public SimulatedOrderService(
         InvestViewDbContext dbContext,
         IMarketDataProvider marketDataProvider,
         IMarketStateStore marketStateStore,
+        ISettlementDateCalculator settlementDateCalculator,
         TimeProvider timeProvider)
     {
         _dbContext = dbContext;
         _marketDataProvider = marketDataProvider;
         _marketStateStore = marketStateStore;
+        _settlementDateCalculator = settlementDateCalculator;
         _timeProvider = timeProvider;
     }
 
@@ -118,6 +122,19 @@ public sealed class SimulatedOrderService : ISimulatedOrderService
                     cancellationToken);
                 holding.ApplyBuy(command.Quantity, executionPrice, now);
                 order.Fill(command.Quantity, executionPrice, now);
+                var execution = order.Executions.Single();
+                var settlementDates = _settlementDateCalculator.CalculateStockSettlement(normalizedBoardId, execution.ExecutedAt);
+                _dbContext.HoldingSettlementLots.Add(new HoldingSettlementLot(
+                    userId,
+                    normalizedSymbol,
+                    normalizedBoardId,
+                    order.Id,
+                    execution.Id,
+                    execution.Quantity,
+                    settlementDates.TradeDate,
+                    settlementDates.SettlementDate,
+                    settlementDates.AvailableFromDate,
+                    now));
             }
             else
             {

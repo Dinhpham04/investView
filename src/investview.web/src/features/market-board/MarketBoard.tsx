@@ -9,6 +9,7 @@ import { marketBoardTheme } from './marketBoardTheme';
 import { systemExchangeLists, systemIndexLists, type SystemMarketList } from './marketLists';
 import { applyQuoteUpdate } from './marketBoardRealtime';
 import { MarketIndexOverview } from '../market-index/MarketIndexOverview';
+import { HoldingsView } from '../holdings/HoldingsView';
 import { SymbolDetailPanel } from '../symbol-detail/SymbolDetailPanel';
 import { TradingDrawer } from '../trading/TradingDrawer';
 import { WatchlistPanel } from '../watchlist/WatchlistPanel';
@@ -16,6 +17,7 @@ import type { OrderTicketPreset } from '../order-ticket/OrderTicketPanel';
 import type { SymbolDetailSelection } from '../symbol-detail/useSymbolDetailQueries';
 import { useQuoteHubConnection, type QuoteHubConnectionStatus, type SymbolOhlcSubscription } from '../../shared/realtime/useQuoteHubConnection';
 import type { MarketIndexUpdate, MarketOhlcUpdate, MarketQuote, MarketQuoteUpdate, MarketSessionUpdate, MarketTradeUpdate } from '../../shared/types/market';
+import type { PortfolioHolding } from '../../shared/types/trading';
 import type { WatchlistGroup } from '../../shared/types/watchlist';
 
 type ActiveMarketFilter =
@@ -26,6 +28,8 @@ type ActiveMarketFilter =
 type MarketBoardProps = {
   onConnectionStatusChange?: (status: QuoteHubConnectionStatus) => void;
 };
+
+type UserFeatureView = 'market-board' | 'holdings';
 
 const userNavigationItems: Array<{ hasDropdown?: boolean; isActive?: boolean; label: string }> = [
   { isActive: true, label: 'Bảng giá' },
@@ -41,6 +45,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const flashClassesByRowRef = useRef<Record<string, MarketBoardFlashClasses>>({});
   const flashClearTimersRef = useRef<Record<string, number>>({});
   const [selectedIndexCode, setSelectedIndexCode] = useState('VN30');
+  const [activeFeatureView, setActiveFeatureView] = useState<UserFeatureView>('market-board');
   const [activeFilter, setActiveFilter] = useState<ActiveMarketFilter>({
     kind: 'index',
     list: systemIndexLists.find((marketList) => marketList.code === 'VN30') ?? systemIndexLists[0],
@@ -59,6 +64,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const [latestMarketSessionUpdate, setLatestMarketSessionUpdate] = useState<MarketSessionUpdate | null>(null);
   const [latestTradeUpdate, setLatestTradeUpdate] = useState<MarketTradeUpdate | null>(null);
   const deferredSymbolSearch = useDeferredValue(symbolSearch);
+  const isMarketBoardActive = activeFeatureView === 'market-board';
   const isEmptyWatchlistFilter = activeFilter.kind === 'watchlist' && activeFilter.group.items.length === 0;
   const quotesQueryParams = useMemo(
     () => ({
@@ -71,7 +77,7 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
     }),
     [activeFilter],
   );
-  const quotesQuery = useMarketQuotesQuery(quotesQueryParams, { enabled: !isEmptyWatchlistFilter });
+  const quotesQuery = useMarketQuotesQuery(quotesQueryParams, { enabled: isMarketBoardActive && !isEmptyWatchlistFilter });
   const marketSessionQueryParams = useMemo(
     () => ({
       boardId: 'G1',
@@ -84,9 +90,9 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const marketBoardSubscription = useMemo(
     () => ({
       boardId: quotesQueryParams.boardId,
-      symbols: (quotesQuery.data ?? []).map((quote) => quote.symbol),
+      symbols: isMarketBoardActive ? (quotesQuery.data ?? []).map((quote) => quote.symbol) : [],
     }),
-    [quotesQuery.data, quotesQueryParams.boardId],
+    [isMarketBoardActive, quotesQuery.data, quotesQueryParams.boardId],
   );
   const scheduleFlashClear = useCallback((rowId: string) => {
     const existingTimer = flashClearTimersRef.current[rowId];
@@ -200,6 +206,14 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   const closeTradingDrawer = useCallback(() => {
     setIsTradingDrawerOpen(false);
   }, []);
+  const handleSellHolding = useCallback((holding: PortfolioHolding) => {
+    setSelectedSymbol({
+      boardId: holding.boardId,
+      symbol: holding.symbol,
+    });
+    setIsSymbolDetailOpen(false);
+    openTradingDrawer({ limitPrice: null, orderType: 'MTL' }, { closeSymbolDetail: false });
+  }, [openTradingDrawer]);
   const handleOhlcSubscriptionChange = useCallback((subscription: SymbolOhlcSubscription | null) => {
     setSymbolOhlcSubscription(subscription);
   }, []);
@@ -209,23 +223,27 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   }, [marketSessionQueryParams]);
 
   useEffect(() => {
-    const nextQuotes = isEmptyWatchlistFilter ? [] : quotesQuery.data ?? [];
+    const nextQuotes = !isMarketBoardActive || isEmptyWatchlistFilter ? [] : quotesQuery.data ?? [];
     Object.values(flashClearTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
     flashClearTimersRef.current = {};
     flashClassesByRowRef.current = {};
     setFlashClassesByRow({});
     quotesRef.current = nextQuotes;
     setQuotes(nextQuotes);
-  }, [isEmptyWatchlistFilter, quotesQuery.data]);
+  }, [isEmptyWatchlistFilter, isMarketBoardActive, quotesQuery.data]);
 
   useEffect(() => {
+    if (!isMarketBoardActive) {
+      return;
+    }
+
     if (selectedSymbol == null || quotes.some((quote) => getRowId(quote) === `${selectedSymbol.boardId}:${selectedSymbol.symbol}`)) {
       return;
     }
 
     setSelectedSymbol(null);
     setIsSymbolDetailOpen(false);
-  }, [quotes, selectedSymbol]);
+  }, [isMarketBoardActive, quotes, selectedSymbol]);
 
   useEffect(() => {
     return () => {
@@ -261,7 +279,21 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
 
   return (
     <section className="flex min-h-[620px] min-w-0 flex-col border border-market-border bg-market-bg">
-      <UserFeatureNavigation />
+      <UserFeatureNavigation
+        activeView={activeFeatureView}
+        onOpenOrderTicket={() => openTradingDrawer()}
+        onViewChange={(view) => {
+          setActiveFeatureView(view);
+          if (view !== 'market-board') {
+            setIsSymbolDetailOpen(false);
+          }
+        }}
+      />
+
+      {activeFeatureView === 'holdings' ? (
+        <HoldingsView onSellHolding={handleSellHolding} />
+      ) : (
+        <>
 
       <MarketIndexOverview
         isMarketSessionLoading={marketSessionQuery.isPending}
@@ -409,6 +441,8 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
           />
         </div>
       ) : null}
+        </>
+      )}
 
       <SymbolDetailPanel
         liveQuote={selectedLiveQuote}
@@ -435,40 +469,75 @@ export function MarketBoard({ onConnectionStatusChange }: MarketBoardProps = {})
   );
 }
 
-function UserFeatureNavigation() {
+function UserFeatureNavigation({
+  activeView,
+  onOpenOrderTicket,
+  onViewChange,
+}: {
+  activeView: UserFeatureView;
+  onOpenOrderTicket: () => void;
+  onViewChange: (view: UserFeatureView) => void;
+}) {
   return (
     <nav
       aria-label="Chức năng người dùng"
       className="min-h-7 overflow-x-auto border-x border-t border-market-border bg-[#1c1928]"
     >
       <div className="flex min-w-max items-stretch">
-        {userNavigationItems.map((item) => (
-          <button
-            aria-current={item.isActive ? 'page' : undefined}
-            className={`flex h-7 items-center gap-1.5 px-2.5 !text-xs font-bold whitespace-nowrap transition-colors ${
-              item.isActive
-                ? 'bg-[#5c566b] text-white'
-                : 'text-[#e0dce8] hover:bg-[#2a2637] hover:text-white'
-            }`}
-            key={item.label}
-            type="button"
-          >
-            <span className="!text-xs">{item.label}</span>
-            {item.hasDropdown ? (
-              <svg
-                aria-hidden="true"
-                className="size-2.5 shrink-0 text-[#b9b4c4]"
-                fill="none"
-                viewBox="0 0 10 6"
-              >
-                <path d="M1 1L5 5L9 1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
-              </svg>
-            ) : null}
-          </button>
-        ))}
+        {userNavigationItems.map((item, index) => {
+          const itemView = getNavigationItemView(index);
+          const isActive = itemView === activeView;
+
+          return (
+            <button
+              aria-current={isActive ? 'page' : undefined}
+              className={`flex h-7 items-center gap-1.5 px-2.5 !text-xs font-bold whitespace-nowrap transition-colors ${
+                isActive
+                  ? 'bg-[#5c566b] text-white'
+                  : 'text-[#e0dce8] hover:bg-[#2a2637] hover:text-white'
+              }`}
+              key={item.label}
+              type="button"
+              onClick={() => {
+                if (itemView != null) {
+                  onViewChange(itemView);
+                  return;
+                }
+
+                if (index === 1 || index === 2) {
+                  onOpenOrderTicket();
+                }
+              }}
+            >
+              <span className="!text-xs">{item.label}</span>
+              {item.hasDropdown ? (
+                <svg
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 text-[#b9b4c4]"
+                  fill="none"
+                  viewBox="0 0 10 6"
+                >
+                  <path d="M1 1L5 5L9 1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
+                </svg>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
     </nav>
   );
+}
+
+function getNavigationItemView(index: number): UserFeatureView | null {
+  if (index === 0) {
+    return 'market-board';
+  }
+
+  if (index === 3) {
+    return 'holdings';
+  }
+
+  return null;
 }
 
 function getRowId(quote: Pick<MarketQuote, 'boardId' | 'symbol'>) {

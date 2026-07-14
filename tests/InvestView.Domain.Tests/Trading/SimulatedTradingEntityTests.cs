@@ -73,6 +73,55 @@ public sealed class SimulatedTradingEntityTests
     }
 
     [Fact]
+    public void HoldingSettlementLot_WhenCreated_ShouldNormalizeIdentityAndRemainPending()
+    {
+        var userId = Guid.NewGuid();
+        var orderId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+
+        var lot = new HoldingSettlementLot(
+            userId,
+            " hpg ",
+            " g1 ",
+            orderId,
+            executionId,
+            100,
+            new DateOnly(2026, 7, 14),
+            new DateOnly(2026, 7, 16),
+            new DateOnly(2026, 7, 16));
+
+        Assert.Equal(userId, lot.UserId);
+        Assert.Equal("HPG", lot.Symbol);
+        Assert.Equal("G1", lot.BoardId);
+        Assert.Equal(orderId, lot.SourceOrderId);
+        Assert.Equal(executionId, lot.SourceExecutionId);
+        Assert.Equal(100, lot.Quantity);
+        Assert.Equal(100, lot.RemainingQuantity);
+        Assert.Equal(HoldingSettlementLotStatus.Pending, lot.Status);
+    }
+
+    [Fact]
+    public void HoldingSettlementLot_MarkSettled_ShouldClearRemainingQuantity()
+    {
+        var lot = new HoldingSettlementLot(
+            Guid.NewGuid(),
+            "HPG",
+            "G1",
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            100,
+            new DateOnly(2026, 7, 14),
+            new DateOnly(2026, 7, 16),
+            new DateOnly(2026, 7, 16));
+
+        lot.MarkSettled(new DateTimeOffset(2026, 7, 16, 2, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(0, lot.RemainingQuantity);
+        Assert.Equal(HoldingSettlementLotStatus.Settled, lot.Status);
+        Assert.NotNull(lot.SettledAt);
+    }
+
+    [Fact]
     public void Holding_ApplySell_WhenQuantityIsAvailable_ShouldDecreaseQuantity()
     {
         var holding = new Holding(Guid.NewGuid(), "hpg", "g1", 100, 100, 20_000m);

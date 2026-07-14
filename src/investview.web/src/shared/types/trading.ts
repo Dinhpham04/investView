@@ -58,6 +58,14 @@ export type HoldingPosition = {
   updatedAt: string;
 };
 
+export type PortfolioHolding = HoldingPosition & {
+  pendingT0Quantity: number;
+  pendingT1Quantity: number;
+  pendingT2Quantity: number;
+  nextAvailableDate: string | null;
+  unrealizedPnLPercent: number;
+};
+
 export type PortfolioSnapshot = {
   cashAccounts: CashAccount[];
   holdings: HoldingPosition[];
@@ -65,6 +73,17 @@ export type PortfolioSnapshot = {
   totalAvailableCash: number;
   totalMarketValue: number;
   totalEquity: number;
+  totalUnrealizedPnL: number;
+  updatedAt: string;
+};
+
+export type PortfolioHoldingsSnapshot = {
+  holdings: PortfolioHolding[];
+  totalQuantity: number;
+  totalAvailableQuantity: number;
+  totalPendingReceiveQuantity: number;
+  totalCostValue: number;
+  totalMarketValue: number;
   totalUnrealizedPnL: number;
   updatedAt: string;
 };

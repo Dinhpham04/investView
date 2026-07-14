@@ -466,6 +466,30 @@ describe('MarketBoard', () => {
     expect(screen.queryByTestId('trading-drawer')).not.toBeInTheDocument();
   });
 
+  it('renders the holdings workspace from the user navigation', async () => {
+    const fetchMock = mockMarketBoardFetch();
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderWithQueryClient(<><DemoSessionControls /><MarketBoard /></>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Đăng nhập demo' }));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/watchlist', expect.any(Object)),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Danh mục nắm giữ' }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/portfolio/holdings', expect.any(Object)),
+    );
+    expect(await screen.findByTestId('holdings-grid')).toBeInTheDocument();
+    expect(screen.getByText('HPG')).toBeInTheDocument();
+    expect(screen.getByText('Mua chờ về')).toBeInTheDocument();
+    expect(screen.getByText('Bán chờ giao')).toBeInTheDocument();
+    expect(screen.getAllByText('100').length).toBeGreaterThan(0);
+    expect(screen.getByText('Về 16/07/2026')).toBeInTheDocument();
+  });
+
   it('opens the trading drawer from the symbol detail order button', async () => {
     vi.stubGlobal('fetch', mockMarketBoardFetch());
 
@@ -1092,6 +1116,36 @@ function mockMarketBoardFetch(
 
     if (url === '/api/watchlist' && method === 'GET') {
       return Promise.resolve(jsonResponse(groups));
+    }
+
+    if (url === '/api/portfolio/holdings' && method === 'GET') {
+      return Promise.resolve(jsonResponse({
+        holdings: [{
+          symbol: 'HPG',
+          boardId: 'G1',
+          quantity: 100,
+          availableQuantity: 0,
+          pendingReceiveQuantity: 100,
+          pendingT0Quantity: 100,
+          pendingT1Quantity: 0,
+          pendingT2Quantity: 0,
+          nextAvailableDate: '2026-07-16',
+          averageCost: 29_150,
+          lastPrice: 29_150,
+          costValue: 2_915_000,
+          marketValue: 2_915_000,
+          unrealizedPnL: 0,
+          unrealizedPnLPercent: 0,
+          updatedAt: '2026-07-14T03:00:00Z',
+        }],
+        totalQuantity: 100,
+        totalAvailableQuantity: 0,
+        totalPendingReceiveQuantity: 100,
+        totalCostValue: 2_915_000,
+        totalMarketValue: 2_915_000,
+        totalUnrealizedPnL: 0,
+        updatedAt: '2026-07-14T03:00:00Z',
+      }));
     }
 
     const addWatchlistItemMatch = url.match(/^\/api\/watchlist\/([^/]+)\/items$/);

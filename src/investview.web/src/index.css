@@ -286,6 +286,61 @@ input::placeholder {
   padding-right: 6px;
 }
 
+.holdings-grid {
+  --ag-background-color: #1b1828;
+  --ag-border-color: #343143;
+  --ag-data-color: #d7d4e3;
+  --ag-header-background-color: #393647;
+  --ag-header-foreground-color: #c7c3ce;
+  --ag-odd-row-background-color: #1b1828;
+}
+
+.holdings-grid .ag-root-wrapper {
+  border: 0;
+  background: #1b1828;
+}
+
+.holdings-grid .ag-header {
+  border-bottom-color: #343143;
+  background: #393647;
+}
+
+.holdings-grid .ag-row {
+  border-bottom-color: #343143;
+  font-weight: 700;
+}
+
+.holdings-grid .ag-row:hover {
+  background-color: #242033;
+}
+
+.holdings-grid .ag-row .ag-cell,
+.holdings-grid .ag-header-cell,
+.holdings-grid .ag-header-group-cell {
+  border-right-color: #302d3d;
+}
+
+.holdings-cell {
+  align-items: center;
+  display: flex;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.holdings-cell--number {
+  justify-content: flex-end;
+}
+
+.holdings-cell--center {
+  justify-content: center;
+}
+
+.holdings-cell--muted {
+  color: #aaa6b4;
+  justify-content: flex-end;
+}
+
 .latest-trade-cell {
   --quote-cell-color: #d7d4e3;
   align-items: center;
