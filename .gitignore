@@ -4,6 +4,16 @@ Thumbs.db
 .idea/
 .vscode/
 
+# AI / coding-agent local workspace
+.agents/
+agents/
+commands/
+automation/
+hooks/
+references/
+scripts/
+AGENTS.md
+
 # Environment and secrets
 .env
 .env.*
